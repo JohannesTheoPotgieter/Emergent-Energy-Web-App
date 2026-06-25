@@ -22,6 +22,11 @@ interface RolePermissionsMatrixProps {
    */
   allowedEntityIds?: Set<string>;
   /**
+   * Entities already controlled elsewhere in the unified editor (the page/screen
+   * access list). Hidden here so each entity is configured in exactly one place.
+   */
+  hiddenEntityIds?: Set<string>;
+  /**
    * UI/UX audit X6 — called with the audit justification the admin entered
    * when confirming a bulk Grant-All / Revoke-All flip. The parent threads
    * this through the save mutation so it is persisted to the audit log.
@@ -115,7 +120,7 @@ function getPermissionState(
   return { allowed: false, source: "none" };
 }
 
-export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRoles, enabledNavSections, disabledEntityIds, allowedEntityIds, onBulkAuditReason }: RolePermissionsMatrixProps) {
+export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRoles, enabledNavSections, disabledEntityIds, allowedEntityIds, hiddenEntityIds, onBulkAuditReason }: RolePermissionsMatrixProps) {
   const [permSearch, setPermSearch] = useState("");
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   // UI/UX audit X6 — bulk flips are gated behind a confirm + justification.
@@ -128,8 +133,8 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
   // the disabled set. allEntities (drives global Grant/Revoke All) respects the
   // same scope so a bulk flip never touches a hidden entity.
   const isEntityVisible = useCallback(
-    (e: string) => (!allowedEntityIds || allowedEntityIds.has(e)) && !disabledEntityIds?.has(e),
-    [allowedEntityIds, disabledEntityIds],
+    (e: string) => (!allowedEntityIds || allowedEntityIds.has(e)) && !disabledEntityIds?.has(e) && !hiddenEntityIds?.has(e),
+    [allowedEntityIds, disabledEntityIds, hiddenEntityIds],
   );
   const allEntities = Object.values(ENTITY_CATEGORIES).flatMap((c) => c.entities).filter(isEntityVisible).sort();
 

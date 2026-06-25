@@ -51,14 +51,14 @@ interface RoleDetailPanelProps {
   onDismissDiff?: () => void;
 }
 
-type SectionKey = "navigation" | "permissions" | "authority";
+type SectionKey = "access" | "authority";
 
 export function RoleDetailPanel({
   role, users, draft, onUpdateDraft, onResetDraft, onSave, onClone, onArchive, onDelete, canManageRoles, isSaving, lastSaveDiff, onDismissDiff,
 }: RoleDetailPanelProps) {
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState("");
-  const [expandedSections, setExpandedSections] = useState<Set<SectionKey>>(new Set(["navigation", "permissions"]));
+  const [expandedSections, setExpandedSections] = useState<Set<SectionKey>>(new Set(["access"]));
   // UI/UX audit X2 — the direct full-matrix save now also requires a reason
   // (symmetric with, and at least as governed as, the Apply-template path).
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
@@ -98,6 +98,18 @@ export function RoleDetailPanel({
       if (cat) cat.entities.forEach((e) => entities.add(e));
     }
     return entities;
+  }, []);
+
+  // Entities already configured in the page-access list (nav screens). Hidden
+  // from the detailed-permissions matrix so each entity lives in one place.
+  const navCoveredEntities = useMemo(() => {
+    const s = new Set<string>();
+    for (const section of NAVIGATION_PERMISSION_MODEL) {
+      for (const item of section.items) {
+        if (item.permissionEntity) s.add(item.permissionEntity);
+      }
+    }
+    return s;
   }, []);
 
   // Compute permission stats for header
@@ -145,8 +157,7 @@ export function RoleDetailPanel({
   };
 
   const SECTIONS: Array<{ key: SectionKey; label: string; icon: React.ReactNode; badge?: string }> = [
-    { key: "navigation", label: "Navigation Access", icon: <Compass className="h-4 w-4" />, badge: `${navCount}/${NAV_SECTION_TOTAL} sections` },
-    { key: "permissions", label: "Permissions", icon: <Key className="h-4 w-4" />, badge: `${permStats.granted}/${permStats.total} (${permStats.pct}%)` },
+    { key: "access", label: "Permissions & Page Access", icon: <Key className="h-4 w-4" />, badge: `${navCount}/${NAV_SECTION_TOTAL} sections · ${permStats.pct}% perms` },
     { key: "authority", label: "Authority Scope", icon: <Shield className="h-4 w-4" /> },
   ];
 
@@ -288,11 +299,23 @@ export function RoleDetailPanel({
             </button>
             {isOpen && (
               <CardContent className="pt-0 pb-4 px-4 border-t border-gray-100">
-                {section.key === "navigation" && (
-                  <RoleNavAccess role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />
-                )}
-                {section.key === "permissions" && (
-                  <RolePermissionsMatrix role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} enabledNavSections={(draft.sections ?? role.sections) || []} disabledEntityIds={disabledEntityIds} allowedEntityIds={allowedEntityIds} onBulkAuditReason={setBulkReason} />
+                {section.key === "access" && (
+                  <div className="space-y-5">
+                    <div>
+                      <p className="text-xs font-semibold text-gray-700">Page access</p>
+                      <p className="text-[11px] text-muted-foreground mb-1">
+                        Which menu sections &amp; screens this role sees, and whether they can view or edit each.
+                      </p>
+                      <RoleNavAccess role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />
+                    </div>
+                    <div className="border-t border-gray-200 pt-4">
+                      <p className="text-xs font-semibold text-gray-700">Detailed permissions</p>
+                      <p className="text-[11px] text-muted-foreground mb-1">
+                        Fine-grained access for everything not shown above — project-detail tabs, sub-features, and back-office entities.
+                      </p>
+                      <RolePermissionsMatrix role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} enabledNavSections={(draft.sections ?? role.sections) || []} disabledEntityIds={disabledEntityIds} allowedEntityIds={allowedEntityIds} hiddenEntityIds={navCoveredEntities} onBulkAuditReason={setBulkReason} />
+                    </div>
+                  </div>
                 )}
                 {section.key === "authority" && (
                   <RoleAuthorityConfig role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />
