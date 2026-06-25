@@ -15,8 +15,6 @@ import { registerExceptionDashboardRoutes } from './exception-dashboard.routes';
 import { registerDocumentManagementRoutes } from './document-management.routes';
 import { registerDocumentCommentsRoutes } from './document-comments.routes';
 import { registerDocumentManagementAdminRoutes } from './document-management-admin.routes';
-import { registerDocumentProvisioningRoutes } from './document-provisioning.routes';
-import { registerDocumentFilesRoutes } from './document-files.routes';
 import { registerManagedDocumentApprovalRoutes } from './managed-document-approvals.routes';
 import { registerDocumentReadinessRoutes } from './document-readiness.routes';
 import { registerProjectDocumentRegisterRoutes } from './project-document-register.routes';
@@ -33,6 +31,7 @@ import { registerSmartImportReviewRoutes } from './smart-import-review.routes';
 import { registerCosLineReviewRoutes } from './cos-line-review.routes';
 import { registerEngineeringHomeRoutes } from './engineering-home.routes';
 import { registerEngineeringTasksRoutes } from './engineering-tasks.routes';
+import { registerProjectDisciplineFoldersRoutes } from './project-discipline-folders.routes';
 import { registerCashflowWorklistsRoutes } from './cashflow-worklists.routes';
 import { registerFinanceHealthRoutes } from './finance-health.routes';
 import { registerExecutionBoardRoutes } from './execution-board.routes';
@@ -61,8 +60,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerDocumentManagementRoutes(app);
   registerDocumentCommentsRoutes(app);
   registerDocumentManagementAdminRoutes(app);
-  registerDocumentProvisioningRoutes(app);
-  registerDocumentFilesRoutes(app);
   registerManagedDocumentApprovalRoutes(app);
   registerDocumentReadinessRoutes(app);
   registerProjectDocumentRegisterRoutes(app);
@@ -79,5 +76,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerCosLineReviewRoutes(app);
   registerEngineeringHomeRoutes(app);
   registerEngineeringTasksRoutes(app);
+  registerProjectDisciplineFoldersRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }

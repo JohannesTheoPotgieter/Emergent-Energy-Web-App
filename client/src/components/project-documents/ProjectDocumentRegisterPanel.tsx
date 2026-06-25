@@ -23,7 +23,10 @@ import { useApiMutation } from "@/hooks/use-api-mutation";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { useProjectFolders, usePublicFolderTaxonomy } from "@/hooks/use-document-management-admin";
+import {
+  useDisciplineFolders,
+  useDisciplineFolderDocuments,
+} from "@/hooks/use-discipline-folders";
 import type { ProjectDocumentDomain } from "@shared/project-document-register";
 
 interface GraphItem {
@@ -131,7 +134,6 @@ export function ProjectDocumentRegisterPanel({
   domain,
 }: ProjectDocumentRegisterPanelProps) {
   const queryClient = useQueryClient();
-  const [parentItemId, setParentItemId] = useState<string | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
   const [selectedFile, setSelectedFile] = useState<GraphItem | null>(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
@@ -150,38 +152,30 @@ export function ProjectDocumentRegisterPanel({
       ),
   });
 
-  // Folder-first browsing: pick a provisioned project_folders folder, then
-  // browse within it via the canonical folder-keyed endpoints (the cutover
-  // off the deprecated project_sharepoint_roots table).
-  const foldersQuery = useProjectFolders(projectId);
-  const taxonomy = usePublicFolderTaxonomy();
+  // Browse-and-bind: pick one of the project's bound discipline folders
+  // (project_discipline_folders), then browse its contents. The link endpoint
+  // takes the chosen discipline folder's id as `folderId`.
+  const foldersQuery = useDisciplineFolders(projectId);
 
-  const folderOptions = useMemo(() => {
-    const labels = new Map<string, string>();
-    for (const t of taxonomy.data?.taxonomy ?? []) labels.set(t.internalKey, t.displayName);
-    return (foldersQuery.data?.folders ?? [])
-      .filter((f) => f.taxonomyKey !== "_project_root_" && !!f.itemId)
-      .sort((a, b) => a.taxonomyKey.localeCompare(b.taxonomyKey))
-      .map((f) => ({ id: f.id, label: labels.get(f.taxonomyKey) ?? f.taxonomyKey }));
-  }, [foldersQuery.data, taxonomy.data]);
+  const folderOptions = useMemo(
+    () =>
+      (foldersQuery.data?.folders ?? [])
+        .slice()
+        .sort((a, b) => a.discipline.localeCompare(b.discipline))
+        .map((f) => ({ id: f.id, discipline: f.discipline, label: f.discipline })),
+    [foldersQuery.data],
+  );
 
-  const childrenQuery = useQuery({
-    queryKey: [
-      "project-document-register",
-      projectId,
-      "folder",
-      selectedFolderId,
-      "children",
-      parentItemId ?? "__root__",
-    ],
-    enabled: selectedFolderId != null,
-    queryFn: () => {
-      const qs = parentItemId ? `?parentItemId=${encodeURIComponent(parentItemId)}` : "";
-      return fetchJson<{ items: GraphItem[] }>(
-        `/api/projects/${projectId}/folders/${selectedFolderId}/children${qs}`,
-      );
-    },
-  });
+  const selectedDiscipline = useMemo(
+    () => folderOptions.find((f) => f.id === selectedFolderId)?.discipline ?? null,
+    [folderOptions, selectedFolderId],
+  );
+
+  const childrenQuery = useDisciplineFolderDocuments(
+    projectId,
+    selectedDiscipline ?? "",
+    selectedFolderId != null && selectedDiscipline != null,
+  );
 
   const linkMutation = useApiMutation({
     mutationFn: async () => {
@@ -231,8 +225,16 @@ export function ProjectDocumentRegisterPanel({
   const documents = response?.documents ?? [];
   const selectedDocument =
     documents.find((document) => document.id === selectedDocumentId) ?? documents[0] ?? null;
-  const folders = (childrenQuery.data?.items ?? []).filter((item) => item.isFolder);
-  const files = (childrenQuery.data?.items ?? []).filter((item) => !item.isFolder);
+  const items: GraphItem[] = (childrenQuery.data?.items ?? []).map((item) => ({
+    id: item.itemId,
+    name: item.name,
+    path: item.path,
+    isFolder: item.isFolder,
+    webUrl: item.webUrl,
+    lastModifiedDateTime: item.lastModifiedDateTime,
+  }));
+  const folders = items.filter((item) => item.isFolder);
+  const files = items.filter((item) => !item.isFolder);
 
   return (
     <div className="space-y-4" data-testid={`project-${domain}-documents`}>
@@ -443,7 +445,8 @@ export function ProjectDocumentRegisterPanel({
             <div className="p-3 text-sm text-muted-foreground">Loading project folders…</div>
           ) : folderOptions.length === 0 ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              No provisioned folders for this project yet.
+              No discipline folders bound for this project yet. Bind one from the project's documents
+              page first.
             </div>
           ) : (
             <>
@@ -452,7 +455,6 @@ export function ProjectDocumentRegisterPanel({
                   value={selectedFolderId != null ? String(selectedFolderId) : ""}
                   onValueChange={(v) => {
                     setSelectedFolderId(Number(v));
-                    setParentItemId(null);
                     setSelectedFile(null);
                   }}
                 >
@@ -465,11 +467,6 @@ export function ProjectDocumentRegisterPanel({
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedFolderId != null && (
-                  <Button size="sm" variant="outline" className="h-7" onClick={() => setParentItemId(null)}>
-                    Folder root
-                  </Button>
-                )}
               </div>
 
               {selectedFolderId == null ? (
@@ -486,18 +483,13 @@ export function ProjectDocumentRegisterPanel({
                   ) : (
                     <>
                       {folders.map((folder) => (
-                        <button
+                        <div
                           key={folder.id}
-                          type="button"
-                          onClick={() => {
-                            setParentItemId(folder.id);
-                            setSelectedFile(null);
-                          }}
-                          className="w-full px-3 py-2 text-left hover:bg-muted/40 flex items-center gap-2"
+                          className="w-full px-3 py-2 text-left flex items-center gap-2 text-muted-foreground"
                         >
                           <Folder className="h-4 w-4 text-amber-600" />
                           <span className="text-sm truncate">{folder.name}</span>
-                        </button>
+                        </div>
                       ))}
                       {files.map((file) => (
                         <button

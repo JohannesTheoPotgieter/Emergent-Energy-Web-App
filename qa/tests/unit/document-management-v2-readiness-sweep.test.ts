@@ -1,13 +1,19 @@
 /**
- * D6 readiness sweep — verifies the production-readiness fixes that
- * pulled Phases 3-6 from ~6.5/10 up to 9/10:
+ * D6 readiness sweep — verifies the production-readiness wiring for Phases 3-6,
+ * rebased onto the Phase 5 browse-and-bind reality:
  *
  *   Phase 3.1 — admin UI for `companySharepointRoots[kind=active_projects]`
  *               + webUrl persistence + deep-link rendering.
- *   Phase 4.1 — deep-linkable discipline tabs + per-tab folder counts.
+ *   Phase 3.2 — document-management SharePoint setup panel.
+ *   Phase 4.1 — deep-linkable discipline tabs + per-tab "bound" badge.
  *   Phase 5.1 — notification fan-out on request/approve/reject.
- *   Phase 6.1 — stage-aware filter, file_name_pattern matching, mount on
- *               coo-home.
+ *   Phase 6.1 — discipline-basis readiness rollup + tile mount on coo-home.
+ *
+ * PHASE 5 DECOMMISSION: the legacy folder_taxonomy + project_folders +
+ * manual-provisioning surface was removed, so the provisioning-service,
+ * project-folders-repository, taxonomy-seed, and stage-filter / file-name
+ * matcher assertions are gone. Readiness is now computed on the discipline
+ * basis (project_discipline_folders + discipline requirements).
  */
 
 import { describe, expect, it } from "vitest";
@@ -28,20 +34,8 @@ const adminPage = fs.readFileSync(
   path.join(repoRoot, "client", "src", "pages", "admin-document-management.tsx"),
   "utf8",
 );
-const provisionService = fs.readFileSync(
-  path.join(repoRoot, "server", "services", "folder-provisioning-service.ts"),
-  "utf8",
-);
-const projectFoldersRepo = fs.readFileSync(
-  path.join(repoRoot, "server", "repositories", "project-folders-repository.ts"),
-  "utf8",
-);
 const documentsSchema = fs.readFileSync(
   path.join(repoRoot, "shared", "schema", "documents.ts"),
-  "utf8",
-);
-const seedFile = fs.readFileSync(
-  path.join(repoRoot, "server", "seed-folder-taxonomy.ts"),
   "utf8",
 );
 const disciplinePanel = fs.readFileSync(
@@ -116,37 +110,19 @@ describe("D6 Phase 3.1 — admin UI + webUrl", () => {
     expect(companyRootsRepo).not.toContain("eq(companySharepointRoots.active, true)");
   });
 
-  it("project_folders schema declares webUrl column with backing migration", () => {
+  it("project_discipline_folders schema declares a webUrl column with backing migration", () => {
     expect(documentsSchema).toMatch(/webUrl:\s*text\(["']web_url["']\)/);
-    // After the merge with main, the two D6 migrations (taxonomy + web_url
-    // column) were consolidated into a single drizzle-kit-generated
-    // 0044_document_management_v2 migration that ships both at once.
+    // 0044 (the original D6 surface) is still in the journal; the Phase 5 drop
+    // ships as 0114.
     const tags = journal.entries.map((e) => e.tag);
     expect(tags).toContain("0044_document_management_v2");
-  });
-
-  it("provisioning service threads webUrl through onLink + report", () => {
-    // The service captures webUrl from both the create-and-fetch path and
-    // the already-on-Graph reconciliation path before passing it to
-    // upsertProjectFolder.
-    expect(provisionService).toMatch(/created\.webUrl/);
-    expect(provisionService).toMatch(/alreadyOnGraph\.webUrl/);
-    expect(provisionService).toMatch(/webUrl\?: string \| null/);
-  });
-
-  it("project-folders repository persists webUrl on upsert", () => {
-    expect(projectFoldersRepo).toMatch(/webUrl:\s*input\.webUrl/);
+    expect(tags.some((t) => t?.includes("phase5_drop_folder_taxonomy"))).toBe(true);
   });
 
   it("DisciplinePanel renders webUrl as a clickable deep link when present", () => {
     expect(disciplinePanel).toMatch(/folder\.webUrl/);
     expect(disciplinePanel).toMatch(/target="_blank"/);
     expect(disciplinePanel).toMatch(/discipline-link-/);
-  });
-
-  it("dev seed creates a placeholder active_projects root in mock-connector mode", () => {
-    expect(seedFile).toMatch(/isConnectorMocked\(["']ms-graph["']\)/);
-    expect(seedFile).toMatch(/kind:\s*["']active_projects["']/);
   });
 });
 
@@ -187,15 +163,15 @@ describe("D6 Phase 3.2 — Integration Statuses document setup", () => {
   });
 });
 
-describe("D6 Phase 4.1 — deep-linkable tabs + counts", () => {
+describe("D6 Phase 4.1 — deep-linkable tabs + bound badge", () => {
   it("project-documents reads ?discipline=X from the URL and routes to that tab", () => {
     expect(projectDocsPage).toMatch(/URLSearchParams\(window\.location\.search\)/);
     expect(projectDocsPage).toMatch(/params\.get\("discipline"\)/);
   });
 
-  it("tab labels surface a per-discipline folder count badge", () => {
-    expect(projectDocsPage).toMatch(/folderCountByDiscipline/);
-    expect(projectDocsPage).toMatch(/data-testid={`tab-discipline-count-\$\{d\}`}/);
+  it("tabs are driven by LIFECYCLE_DEPARTMENTS and surface a per-discipline bound badge", () => {
+    expect(projectDocsPage).toMatch(/LIFECYCLE_DEPARTMENTS/);
+    expect(projectDocsPage).toMatch(/data-testid={`tab-discipline-bound-\$\{d\}`}/);
   });
 });
 
@@ -229,24 +205,26 @@ describe("D6 Phase 5.1 — notifications", () => {
   });
 });
 
-describe("D6 Phase 6.1 — stage filter + pattern matching + tile mount", () => {
-  it("readiness service imports SEQUENTIAL_STAGE_CODES and projectExecutionState", () => {
-    expect(readinessService).toMatch(/SEQUENTIAL_STAGE_CODES/);
-    expect(readinessService).toMatch(/projectExecutionState/);
+describe("D6 Phase 6.1 — discipline-basis readiness + tile mount", () => {
+  it("readiness service is rebased onto the browse-and-bind discipline surface", () => {
+    expect(readinessService).toMatch(/loadActiveDisciplineRequirements/);
+    expect(readinessService).toMatch(/projectDisciplineFolders/);
+    expect(readinessService).toMatch(/disciplineFolderId/);
   });
 
-  it("readiness service declares filterRequirementsByStage helper", () => {
-    expect(readinessService).toMatch(/function filterRequirementsByStage/);
-    expect(readinessService).toMatch(/cross-stage \/ pre-construction always in scope/);
+  it("readiness service no longer depends on the removed taxonomy surface", () => {
+    expect(readinessService).not.toMatch(/folderTaxonomy/);
+    expect(readinessService).not.toMatch(/filterRequirementsByStage/);
+    expect(readinessService).not.toMatch(/SEQUENTIAL_STAGE_CODES/);
   });
 
-  it("readiness service compiles file_name_pattern and filters docs through it", () => {
-    expect(readinessService).toMatch(/function compileFilenameMatcher/);
-    expect(readinessService).toMatch(/matcher \? matcher\.test\(d\.name\) : true/);
+  it("readiness service matches docs by fileNamePattern under the bound folder", () => {
+    expect(readinessService).toMatch(/function docMatchesRequirement/);
+    expect(readinessService).toMatch(/new RegExp\(req\.fileNamePattern/);
   });
 
-  it("portfolio + project flows both call filterRequirementsByStage", () => {
-    const matches = readinessService.match(/filterRequirementsByStage\(/g);
+  it("portfolio + project flows both load active discipline requirements", () => {
+    const matches = readinessService.match(/loadActiveDisciplineRequirements\(/g);
     expect(matches).toBeTruthy();
     expect((matches ?? []).length).toBeGreaterThanOrEqual(2);
   });

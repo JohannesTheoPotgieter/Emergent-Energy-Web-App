@@ -38,13 +38,6 @@ export interface CompleteUploadInput {
   notes?: string | null;
   userId: number;
   actorRole: string | null;
-  /**
-   * D6: SharePoint parent item id. When the upload lands inside a
-   * provisioned project_folders row, the workflow links the resulting
-   * managed_document via parentFolderId so the readiness rollup picks it
-   * up. Optional — uploads to untracked paths simply skip the link.
-   */
-  parentDriveItemId?: string | null;
 }
 
 export interface CompleteUploadResult {
@@ -59,17 +52,6 @@ export interface CompleteUploadResult {
 export async function completeUpload(
   input: CompleteUploadInput,
 ): Promise<CompleteUploadResult> {
-  // D6: link the managed document to its taxonomy folder when the upload
-  // landed inside a provisioned project_folders row. Failures are
-  // swallowed — the upload is still valid even if the lookup hiccups.
-  let parentFolderId: number | null = null;
-  if (input.parentDriveItemId) {
-    const match = await docs
-      .findProjectFolderByDriveItem(input.driveId, input.parentDriveItemId)
-      .catch(() => null);
-    parentFolderId = match?.id ?? null;
-  }
-
   const document = await docs.upsertManagedDocumentFromGraph({
     rootScope: input.rootScope,
     projectId: input.projectId,
@@ -79,7 +61,6 @@ export async function completeUpload(
     name: input.name,
     path: input.path,
     createdByUserId: input.userId,
-    parentFolderId,
   });
 
   const revision = await revisions.appendRevision({
