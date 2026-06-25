@@ -311,7 +311,8 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'hse' | '
   | 'hse_dashboard' | 'hse_compliance' | 'hse_sseg' | 'hse_incidents'
   | 'company_team'
   | 'documents' | 'project_document_register' | 'engineering_documents' | 'quality_documents' | 'sharepoint_sync'
-  | 'documents_provision' | 'documents_admin';
+  | 'documents_provision' | 'documents_admin'
+  | 'integration_health';
 // Collapsed permission model: every protected resource is governed by a
 // three-state scale — No access / View / Edit. `edit` subsumes every mutating
 // capability (create, update, approve, override, delete). See

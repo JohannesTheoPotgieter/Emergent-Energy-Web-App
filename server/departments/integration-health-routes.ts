@@ -23,6 +23,7 @@
 
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth, requireAdmin } from "./shared-middleware";
+import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import {
   getIntegrationHealth,
@@ -36,7 +37,7 @@ const router = Router();
 
 // ===================== DASHBOARD =====================
 
-router.get("/api/integrations", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+router.get("/api/integrations", requireAuth, requirePermission("integration_health", "view"), async (_req: Request, res: Response) => {
   try {
     const health = await getIntegrationHealth();
     res.json(health);
@@ -48,7 +49,7 @@ router.get("/api/integrations", requireAuth, requireAdmin, async (_req: Request,
 
 // ===================== RUN HISTORY =====================
 
-router.get("/api/integrations/:name/runs", requireAuth, async (req: Request, res: Response) => {
+router.get("/api/integrations/:name/runs", requireAuth, requirePermission("integration_health", "view"), async (req: Request, res: Response) => {
   try {
     const name = String(req.params.name ?? "").trim();
     if (!name) return res.status(400).json({ error: "Invalid integration name" });
