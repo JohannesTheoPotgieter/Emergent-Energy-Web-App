@@ -26,6 +26,10 @@ import {
   unlinkTaskCost,
   linkTaskDependency,
   unlinkTaskDependency,
+  listActivityTemplates,
+  deleteActivityTemplate,
+  createTemplateFromProject,
+  applyTemplateToProject,
   MilestoneLinkError,
 } from "../services/milestone-tracker-service";
 
@@ -45,6 +49,16 @@ const taskDependencySchema = z.object({
   projectId: z.number().int().positive(),
   predecessorId: z.number().int().positive(),
   successorId: z.number().int().positive(),
+});
+
+const templateFromProjectSchema = z.object({
+  projectId: z.number().int().positive(),
+  name: z.string().min(1).max(120),
+  description: z.string().max(500).optional().nullable(),
+});
+
+const applyTemplateSchema = z.object({
+  projectId: z.number().int().positive(),
 });
 
 export function registerMilestoneTrackerRoutes(app: Express) {
@@ -169,6 +183,67 @@ export function registerMilestoneTrackerRoutes(app: Express) {
         if (e instanceof MilestoneLinkError) throw badRequest(e.message);
         throw e;
       }
+      res.json({ ok: true });
+    },
+  );
+
+  // ── Link templates (build once from a linked project, apply to new ones) ──
+  app.get(
+    "/api/milestone-tracker/templates",
+    jwtAuth,
+    requireAuth,
+    requirePermission("execution_review", "view"),
+    async (_req: Request, res: Response) => {
+      res.json(await listActivityTemplates());
+    },
+  );
+
+  app.post(
+    "/api/milestone-tracker/templates/from-project",
+    jwtAuth,
+    requireAuth,
+    requirePermission("execution_review", "create"),
+    validateBody(templateFromProjectSchema),
+    async (req: Request, res: Response) => {
+      const body = templateFromProjectSchema.parse(req.body);
+      try {
+        const tpl = await createTemplateFromProject(body.projectId, body.name, body.description ?? null, getEffectiveUser(req)?.id ?? null);
+        res.status(201).json(tpl);
+      } catch (e) {
+        if (e instanceof MilestoneLinkError) throw badRequest(e.message);
+        throw e;
+      }
+    },
+  );
+
+  app.post(
+    "/api/milestone-tracker/templates/:id/apply",
+    jwtAuth,
+    requireAuth,
+    requirePermission("execution_review", "create"),
+    validateBody(applyTemplateSchema),
+    async (req: Request, res: Response) => {
+      const id = parseIntParam(req.params.id);
+      if (!id || Number.isNaN(id)) throw badRequest("Invalid template id");
+      const body = applyTemplateSchema.parse(req.body);
+      try {
+        res.json(await applyTemplateToProject(body.projectId, id, getEffectiveUser(req)?.id ?? null));
+      } catch (e) {
+        if (e instanceof MilestoneLinkError) throw badRequest(e.message);
+        throw e;
+      }
+    },
+  );
+
+  app.delete(
+    "/api/milestone-tracker/templates/:id",
+    jwtAuth,
+    requireAuth,
+    requirePermission("execution_review", "delete"),
+    async (req: Request, res: Response) => {
+      const id = parseIntParam(req.params.id);
+      if (!id || Number.isNaN(id)) throw notFound("Template");
+      await deleteActivityTemplate(id);
       res.json({ ok: true });
     },
   );
