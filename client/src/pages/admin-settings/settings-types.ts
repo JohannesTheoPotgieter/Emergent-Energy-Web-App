@@ -318,7 +318,7 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   admin: {
     label: "Admin",
-    entities: ["admin", "admin_control_center", "admin_roles", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail", "ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "admin_processes", "admin_templates", "admin_recovery", "training", "knowledge_game", "feedback"],
+    entities: ["admin", "admin_control_center", "admin_roles", "integration_health", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail", "ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "admin_processes", "admin_templates", "admin_recovery", "training", "knowledge_game", "feedback"],
   },
   project_detail: {
     label: "Project Detail Tabs",

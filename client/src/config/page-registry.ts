@@ -222,7 +222,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "weeklyReviews", path: "/weekly-reviews", label: "Weekly Reviews", iconKey: "CalendarCheck", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "weekly_review_wizard", showInSidebar: false, routeComponentKey: "WeeklyReviewsPage" },
   { id: "adminRoles", path: "/admin/roles", label: "Roles & Permissions", iconKey: "ShieldAlert", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: true, routeComponentKey: "AdminRolesPage" },
   { id: "adminFunctionality", path: "/admin/functionality", label: "Functionality Control", iconKey: "ToggleLeft", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: true, routeComponentKey: "AdminFunctionalityPage" },
-  { id: "adminIntegrations", path: "/admin/integrations", label: "Integration Statuses", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: true, routeComponentKey: "AdminIntegrationsPage" },
+  { id: "adminIntegrations", path: "/admin/integrations", label: "Integration Statuses", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "integration_health", showInSidebar: true, routeComponentKey: "AdminIntegrationsPage" },
   { id: "leaderboard", path: "/leaderboard", label: "Leaderboard", iconKey: "Trophy", navGroup: "KNOWLEDGE", permissionEntity: "leaderboard", showInSidebar: false, routeComponentKey: "LeaderboardPage" },
   // Prompt 0.7: Feedback & Support is not actively monitored — hide from
   // sidebar/command palette. Route still resolves for direct access.
