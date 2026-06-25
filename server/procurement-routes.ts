@@ -125,7 +125,7 @@ export function registerProcurementRoutes(app: Express): void {
   app.post("/api/procurement", jwtAuth, requireAuth, requirePermission("procurement", "create"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
-      const { projectId, title, description, category, quantity, unit, expectedCost, supplierId, ownerUserId, requiredDate, linkedTaskId, notes, budgetLine, linkedDeliverableId, linkedMilestone, progressPercent, receiptRef, paymentStatus } = req.body;
+      const { projectId, title, description, category, quantity, unit, expectedCost, supplierId, ownerUserId, requiredDate, linkedTaskId, notes, budgetLine, linkedDeliverableId, linkedMilestone, progressPercent, receiptRef, paymentStatus, linkedWorkItemId, leadTimeDays, orderDate } = req.body;
       if (!projectId || !title) return res.status(400).json({ error: "projectId and title required" });
 
       const result = await db.insert(procurementItems).values({
@@ -149,6 +149,9 @@ export function registerProcurementRoutes(app: Express): void {
         progressPercent: progressPercent || null,
         receiptRef: receiptRef || null,
         paymentStatus: paymentStatus || 'not_applicable',
+        linkedWorkItemId: linkedWorkItemId || null,
+        leadTimeDays: leadTimeDays ?? null,
+        orderDate: orderDate || null,
       }).returning();
 
       logAuditFromReq(req, {
@@ -189,9 +192,11 @@ export function registerProcurementRoutes(app: Express): void {
       const old = existing[0];
 
       const updates: Record<string, unknown> = { updatedAt: new Date() };
-      const fields = ['title', 'description', 'category', 'quantity', 'unit', 'expectedCost', 'actualCost', 'supplierId', 'ownerUserId', 'requiredDate', 'poId', 'invoiceRef', 'linkedTaskId', 'notes', 'budgetLine', 'linkedDeliverableId', 'linkedMilestone', 'progressPercent', 'receiptRef', 'paymentStatus', 'linkedInvoiceCaptureId',
+      const fields = ['title', 'description', 'category', 'quantity', 'unit', 'expectedCost', 'actualCost', 'supplierId', 'ownerUserId', 'requiredDate', 'poId', 'invoiceRef', 'linkedTaskId', 'notes', 'budgetLine', 'linkedDeliverableId', 'linkedMilestone', 'progressPercent', 'receiptRef', 'paymentStatus', 'linkedInvoiceCaptureId', 'status',
         // C2: enriched procurement fields
-        'requisitionStatus', 'rfqSentDate', 'quoteReceivedDate', 'quoteAmount', 'boqReference', 'deliveryExpectedDate', 'deliveryActualDate', 'deliveryStatus', 'isLongLead'];
+        'requisitionStatus', 'rfqSentDate', 'quoteReceivedDate', 'quoteAmount', 'boqReference', 'deliveryExpectedDate', 'deliveryActualDate', 'deliveryStatus', 'isLongLead',
+        // Delivery planning (Execution > Deliveries)
+        'linkedWorkItemId', 'leadTimeDays', 'orderDate'];
       for (const f of fields) {
         if (req.body[f] !== undefined) updates[f] = req.body[f];
       }

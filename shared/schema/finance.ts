@@ -1369,6 +1369,15 @@ export const procurementItems = pgTable("procurement_items", {
   deliveryActualDate: date("delivery_actual_date"),
   deliveryStatus: text("delivery_status").default("not_ordered"),         // 'not_ordered', 'ordered', 'shipped', 'delivered', 'partial'
   isLongLead: boolean("is_long_lead").default(false),
+  // Delivery planning (Execution > Deliveries): the order is planned BACKWARD
+  // from the execution task it feeds. linkedWorkItemId → work_items(id) (plain
+  // integer to avoid the finance↔tasks circular import, same pattern as
+  // counterpartyId); the task's start date is the "needed on site" date.
+  // leadTimeDays is captured on creation; orderDate is when the PO was placed —
+  // together they drive the order-by date and the "will it make it?" check.
+  linkedWorkItemId: integer("linked_work_item_id"),
+  leadTimeDays: integer("lead_time_days"),
+  orderDate: date("order_date"),
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
 });
