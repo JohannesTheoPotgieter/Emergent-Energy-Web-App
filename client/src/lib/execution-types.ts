@@ -56,7 +56,7 @@ export interface ItemCounts {
 export interface InstallerSummary {
   count: number;
   primary: string | null;
-  list: Array<{ name: string | null; type: string | null; workPackage: string | null }>;
+  list: Array<{ id: number; counterpartyId: number; name: string | null; type: string | null; role: string | null; workPackage: string | null; scopeDescription: string | null }>;
 }
 
 export interface BoardRow {
@@ -145,10 +145,15 @@ export interface InstallerRow {
   counterpartyId: number;
   counterpartyName: string | null;
   counterpartyType: string | null;
+  role: string | null;
   workPackage: string | null;
   scopeDescription: string | null;
   status: string;
 }
+
+/** Allocation role a subcontractor plays on a project — mirrors
+ *  SUBCONTRACTOR_ROLES in shared/schema/projects.ts. */
+export const SUBCONTRACTOR_ROLES = ["Installer", "Supplier", "EPC", "Electrical", "Civil", "Logistics", "O&M", "Other"] as const;
 
 export interface DeliveryMilestone {
   id: number;

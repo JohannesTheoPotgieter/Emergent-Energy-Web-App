@@ -1567,10 +1567,18 @@ export type ProjectPdPmHandover = typeof projectPdPmHandover.$inferSelect;
 
 export const subcontractorAssignmentStatusEnum = pgEnum('subcontractor_assignment_status', ['active', 'completed', 'suspended', 'terminated']);
 
+/** Allocation role a subcontractor plays on a specific project (per-assignment —
+ *  distinct from the counterparty's default type, since the same firm can be an
+ *  installer on one site and a supplier on another). Stored as free text against
+ *  this list so it can grow without an enum migration. */
+export const SUBCONTRACTOR_ROLES = ["Installer", "Supplier", "EPC", "Electrical", "Civil", "Logistics", "O&M", "Other"] as const;
+export type SubcontractorRole = (typeof SUBCONTRACTOR_ROLES)[number];
+
 export const projectSubcontractorAssignments = pgTable("project_subcontractor_assignments", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
   counterpartyId: integer("counterparty_id").notNull(), // FK to counterparties(id) — defined in finance.ts (circular dep)
+  role: text("role"), // SUBCONTRACTOR_ROLES — per-assignment role on this project
   workPackage: text("work_package"),
   scopeDescription: text("scope_description"),
   ownerUserId: integer("owner_user_id").references(() => users.id),

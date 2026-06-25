@@ -8,18 +8,37 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Download } from "lucide-react";
+import { Download, Pencil } from "lucide-react";
 import { AllocateDialog } from "@/components/execution/execution-dialogs";
 import { downloadCsv } from "@/lib/table-utils";
-import type { AllocationProgramRow } from "@/lib/execution-types";
+import type { AllocationProgramRow, InstallerRow, InstallerSummary } from "@/lib/execution-types";
 
 const CONSTRUCTION_PHASES = ["construction", "commission"]; // substring match
+
+type AllocItem = InstallerSummary["list"][number];
+
+/** Reconstruct the full InstallerRow the edit dialog expects from a program
+ *  list item + its parent site. */
+function toAssignment(projectId: number, i: AllocItem): InstallerRow {
+  return {
+    id: i.id, projectId, counterpartyId: i.counterpartyId,
+    counterpartyName: i.name, counterpartyType: i.type, role: i.role,
+    workPackage: i.workPackage, scopeDescription: i.scopeDescription, status: "active",
+  };
+}
+
+function RoleBadge({ i }: { i: AllocItem }) {
+  const label = i.role ?? (i.type ? i.type.charAt(0) + i.type.slice(1).toLowerCase() : null);
+  if (!label) return null;
+  return <Badge variant="secondary" className="text-[10px]">{label}</Badge>;
+}
 
 export default function ExecutionAllocations() {
   const [, navigate] = useLocation();
   const qc = useQueryClient();
   const [lens, setLens] = useState<"site" | "counterparty">("site");
   const [allocFor, setAllocFor] = useState<number | null>(null);
+  const [edit, setEdit] = useState<{ projectId: number; assignment: InstallerRow } | null>(null);
   const [search, setSearch] = useState("");
 
   const { data, isLoading, isError, refetch } = useQuery<AllocationProgramRow[]>({
@@ -35,12 +54,12 @@ export default function ExecutionAllocations() {
   }, [data, search]);
 
   const byCounterparty = useMemo(() => {
-    const m = new Map<string, AllocationProgramRow[]>();
+    const m = new Map<string, Array<{ site: AllocationProgramRow; item: AllocItem }>>();
     for (const r of data ?? []) {
-      for (const inst of r.installers.list) {
-        const k = inst.name ?? "Unassigned";
+      for (const item of r.installers.list) {
+        const k = item.name ?? "Unassigned";
         const arr = m.get(k) ?? [];
-        arr.push(r);
+        arr.push({ site: r, item });
         m.set(k, arr);
       }
     }
@@ -50,19 +69,21 @@ export default function ExecutionAllocations() {
       .sort((a, b) => a[0].localeCompare(b[0]));
   }, [data, search]);
 
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["/api/execution-review/program/allocations"] });
+
   const exportCsv = () => downloadCsv(
     "execution-allocations",
-    ["Site", "Phase", "Installers", "Installer count", "PM", "Needs installer"],
-    (data ?? []).map((r) => [
-      r.projectName, r.phase ?? "",
-      r.installers.list.map((i) => i.name).filter(Boolean).join("; "),
-      r.installers.count, r.pmName ?? "", needsInstaller(r) ? "yes" : "",
-    ]),
+    ["Site", "Phase", "Counterparty", "Role", "Work package", "Scope"],
+    (data ?? []).flatMap((r) =>
+      r.installers.list.length === 0
+        ? [[r.projectName, r.phase ?? "", "", "", "", ""]]
+        : r.installers.list.map((i) => [r.projectName, r.phase ?? "", i.name ?? "", i.role ?? "", i.workPackage ?? "", i.scopeDescription ?? ""]),
+    ),
   );
 
   return (
     <PageShell className="max-w-5xl p-4 md:p-6" data-testid="execution-allocations-page">
-      <PageHeader title="Allocations" subtitle="Who is installing where, across all active sites" />
+      <PageHeader title="Allocations" subtitle="Subcontractors & suppliers — their role, scope of work, and which sites they're on" />
       <div className="flex flex-wrap items-center gap-2 mt-3">
         <Button size="sm" variant={lens === "site" ? "default" : "outline"} onClick={() => setLens("site")}>By site</Button>
         <Button size="sm" variant={lens === "counterparty" ? "default" : "outline"} onClick={() => setLens("counterparty")}>By counterparty</Button>
@@ -83,34 +104,72 @@ export default function ExecutionAllocations() {
           sites.length === 0 ? (
             <p className="text-sm text-muted-foreground">No sites match your search.</p>
           ) : sites.map((r) => (
-            <Card key={r.projectId}><CardContent className="p-3 flex items-center gap-3">
-              <button className="flex-1 text-left" onClick={() => navigate(`/execution/site/${r.projectId}`)}>
-                <div className="font-medium">{r.projectName}</div>
-                <div className="text-xs text-muted-foreground">
-                  {r.phase ?? "—"} · {r.installers.count > 0 ? r.installers.list.map((i) => i.name).join(", ") : "no installer"}
+            <Card key={r.projectId}><CardContent className="p-3">
+              <div className="flex items-center gap-3">
+                <button className="flex-1 text-left min-w-0" onClick={() => navigate(`/execution/site/${r.projectId}`)}>
+                  <div className="font-medium truncate">{r.projectName}</div>
+                  <div className="text-xs text-muted-foreground">{r.phase ?? "—"} · {r.installers.count} allocated</div>
+                </button>
+                {needsInstaller(r) && <Badge variant="destructive">no installer</Badge>}
+                <Button size="sm" variant="outline" onClick={() => setAllocFor(r.projectId)} data-testid={`allocate-${r.projectId}`}>Allocate</Button>
+              </div>
+              {r.installers.list.length > 0 && (
+                <div className="mt-2 divide-y border-t">
+                  {r.installers.list.map((i) => (
+                    <div key={i.id} className="flex items-start gap-2 py-1.5 text-xs" data-testid={`alloc-row-${i.id}`}>
+                      <span className="font-medium truncate">{i.name ?? "—"}</span>
+                      <RoleBadge i={i} />
+                      <div className="min-w-0 flex-1 text-muted-foreground">
+                        {i.workPackage && <span className="text-foreground">{i.workPackage}</span>}
+                        {i.workPackage && i.scopeDescription && <span> · </span>}
+                        {i.scopeDescription && <span className="truncate">{i.scopeDescription}</span>}
+                      </div>
+                      <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => setEdit({ projectId: r.projectId, assignment: toAssignment(r.projectId, i) })} aria-label="Edit allocation" data-testid={`alloc-edit-${i.id}`}>
+                        <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                      </Button>
+                    </div>
+                  ))}
                 </div>
-              </button>
-              {needsInstaller(r) && <Badge variant="destructive">no installer</Badge>}
-              <Button size="sm" variant="outline" onClick={() => setAllocFor(r.projectId)}>Allocate</Button>
+              )}
             </CardContent></Card>
           ))
         ) : byCounterparty.length === 0 ? (
           <p className="text-sm text-muted-foreground">No counterparties match your search.</p>
         ) : (
-          byCounterparty.map(([name, siteList]) => (
+          byCounterparty.map(([name, rows]) => (
             <Card key={name}><CardContent className="p-3">
               <div className="font-medium">{name}</div>
-              <div className="text-xs text-muted-foreground">{siteList.map((s) => s.projectName).join(", ")}</div>
+              <div className="mt-1.5 divide-y border-t">
+                {rows.map(({ site, item }) => (
+                  <div key={`${site.projectId}-${item.id}`} className="flex items-center gap-2 py-1.5 text-xs">
+                    <button className="font-medium truncate hover:underline" onClick={() => navigate(`/execution/site/${site.projectId}`)}>{site.projectName}</button>
+                    <RoleBadge i={item} />
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">{item.workPackage || item.scopeDescription || ""}</span>
+                    <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => setEdit({ projectId: site.projectId, assignment: toAssignment(site.projectId, item) })} aria-label="Edit allocation">
+                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </CardContent></Card>
           ))
         )}
       </div>
 
+      {/* create */}
       <AllocateDialog
         projectId={allocFor ?? 0}
         open={allocFor != null}
         onOpenChange={(v) => { if (!v) setAllocFor(null); }}
-        onSaved={() => qc.invalidateQueries({ queryKey: ["/api/execution-review/program/allocations"] })}
+        onSaved={invalidate}
+      />
+      {/* edit */}
+      <AllocateDialog
+        projectId={edit?.projectId ?? 0}
+        assignment={edit?.assignment ?? null}
+        open={edit != null}
+        onOpenChange={(v) => { if (!v) setEdit(null); }}
+        onSaved={invalidate}
       />
     </PageShell>
   );

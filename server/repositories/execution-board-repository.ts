@@ -60,6 +60,9 @@ export interface InstallerRow {
   counterpartyId: number;
   counterpartyName: string | null;
   counterpartyType: string | null;
+  /** Per-assignment role on this project (SUBCONTRACTOR_ROLES); falls back to the
+   *  counterparty type for display when not set. */
+  role: string | null;
   workPackage: string | null;
   scopeDescription: string | null;
   status: string;
@@ -266,6 +269,7 @@ export class ExecutionBoardRepository {
         counterpartyId: projectSubcontractorAssignments.counterpartyId,
         counterpartyName: counterparties.nameCanonical,
         counterpartyType: counterparties.typeDefault,
+        role: projectSubcontractorAssignments.role,
         workPackage: projectSubcontractorAssignments.workPackage,
         scopeDescription: projectSubcontractorAssignments.scopeDescription,
         status: projectSubcontractorAssignments.status,

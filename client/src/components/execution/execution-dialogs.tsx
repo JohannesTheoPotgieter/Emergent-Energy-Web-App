@@ -27,6 +27,7 @@ import type {
   PlanTaskView,
   InstallerRow,
 } from "@/lib/execution-types";
+import { SUBCONTRACTOR_ROLES } from "@/lib/execution-types";
 
 const SEVERITIES: ExecItemSeverity[] = ["low", "medium", "high", "critical"];
 const STATUSES: ExecItemStatus[] = ["open", "flagged", "actioned", "closed"];
@@ -218,6 +219,7 @@ export function AllocateDialog({
   const { toast } = useToast();
   const isEdit = Boolean(assignment);
   const [counterpartyId, setCounterpartyId] = useState<string>("");
+  const [role, setRole] = useState<string>("");
   const [workPackage, setWorkPackage] = useState("");
   const [scope, setScope] = useState("");
   const [status, setStatus] = useState("active");
@@ -225,6 +227,7 @@ export function AllocateDialog({
   useEffect(() => {
     if (!open) return;
     setCounterpartyId(assignment ? String(assignment.counterpartyId) : "");
+    setRole(assignment?.role ?? "");
     setWorkPackage(assignment?.workPackage ?? "");
     setScope(assignment?.scopeDescription ?? "");
     setStatus(assignment?.status ?? "active");
@@ -234,6 +237,7 @@ export function AllocateDialog({
     mutationFn: async () => {
       if (isEdit && assignment) {
         await apiRequest("PATCH", `/api/subcontractor-assignments/${assignment.id}`, {
+          role: role || null,
           workPackage: workPackage || null,
           scopeDescription: scope || null,
           status,
@@ -242,6 +246,7 @@ export function AllocateDialog({
         await apiRequest("POST", "/api/subcontractor-assignments", {
           projectId,
           counterpartyId: Number(counterpartyId),
+          role: role || null,
           workPackage: workPackage || null,
           scopeDescription: scope || null,
         });
@@ -279,12 +284,21 @@ export function AllocateDialog({
             </label>
           )}
           <label className="text-sm block">
+            <span className="text-muted-foreground">Role</span>
+            <Select value={role} onValueChange={setRole}>
+              <SelectTrigger data-testid="allocate-role"><SelectValue placeholder="Installer, supplier…" /></SelectTrigger>
+              <SelectContent>
+                {SUBCONTRACTOR_ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="text-sm block">
             <span className="text-muted-foreground">Work package</span>
             <Input value={workPackage} onChange={(e) => setWorkPackage(e.target.value)} placeholder="e.g. AC installation" />
           </label>
           <label className="text-sm block">
-            <span className="text-muted-foreground">Scope</span>
-            <Textarea value={scope} onChange={(e) => setScope(e.target.value)} rows={2} />
+            <span className="text-muted-foreground">Scope of work / product supplied</span>
+            <Textarea value={scope} onChange={(e) => setScope(e.target.value)} rows={2} placeholder="What they do, or the product they provide" />
           </label>
           {isEdit && (
             <label className="text-sm block">
