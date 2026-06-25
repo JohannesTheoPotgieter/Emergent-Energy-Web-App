@@ -22,18 +22,27 @@ async function fetchJson<T>(url: string): Promise<T> {
  * runs against:
  *  - "company": a company-wide SharePoint root (company_sharepoint_roots),
  *    served by the /api/documents/company/:rootId/* endpoints.
- *
- * Per-project document browsing is now done per discipline via the
- * browse-and-bind flow (DisciplinePanel / DisciplineFolderBinder), not through
- * this generic browser.
+ *  - "discipline": a project's bound discipline folder (browse-and-bind),
+ *    served by the /api/projects/:projectId/discipline-folders/:discipline/*
+ *    endpoints. The bound folder is the root; the same children/item/upload/
+ *    folder/rename verbs apply, so the generic browser components (FileListTable,
+ *    DocumentDetailDrawer, UploadDialog, …) work unchanged against it.
  */
-export type BrowseTarget = { kind: "company"; rootId: number };
+export type BrowseTarget =
+  | { kind: "company"; rootId: number }
+  | { kind: "discipline"; projectId: number; discipline: string };
 
 function targetBase(t: BrowseTarget): string {
+  if (t.kind === "discipline") {
+    return `/api/projects/${t.projectId}/discipline-folders/${encodeURIComponent(t.discipline)}`;
+  }
   return `/api/documents/company/${t.rootId}`;
 }
 
 function targetKey(t: BrowseTarget): Array<string | number> {
+  if (t.kind === "discipline") {
+    return ["documents", "discipline", t.projectId, t.discipline];
+  }
   return ["documents", "company", t.rootId];
 }
 

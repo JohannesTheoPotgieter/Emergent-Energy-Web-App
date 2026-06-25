@@ -55,6 +55,10 @@ const statusSchema = z.object({
   reason: z.string().max(1000).optional(),
 });
 
+const ownerSchema = z.object({
+  ownerUserId: z.number().int().positive().nullable(),
+});
+
 const linkDocSchema = z
   .object({
     managedDocumentId: z.number().int().positive().optional(),
@@ -175,6 +179,26 @@ export function registerEngineeringTasksRoutes(app: Express): void {
         res.json({ task });
       } catch (err) {
         handleError("status", err);
+      }
+    },
+  );
+
+  app.patch(
+    "/api/engineering/tasks/:id",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    validateBody(ownerSchema),
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      const body = req.body as z.infer<typeof ownerSchema>;
+      try {
+        const task = await tasksRepo.reassignEngineeringTaskOwner(parsedId.data, body.ownerUserId, actorId(req));
+        if (!task) throw notFound("Task");
+        res.json({ task });
+      } catch (err) {
+        handleError("reassign-owner", err);
       }
     },
   );

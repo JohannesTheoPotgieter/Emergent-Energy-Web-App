@@ -18,6 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDisciplineFolders } from "@/hooks/use-discipline-folders";
 import { DisciplinePanel } from "@/components/documents/DisciplinePanel";
+import { DisciplineFolderBinder } from "@/components/documents/DisciplineFolderBinder";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { ProjectReadinessCard } from "@/components/documents/ProjectReadinessCard";
 import { ProjectSharepointConnectionCard } from "@/components/documents/ProjectSharepointConnectionCard";
@@ -89,6 +90,7 @@ export function ProjectDocumentsView({
         {showApprovals && (
           <ManagedDocumentApprovalQueue projectId={projectId} title="Approvals waiting on you" />
         )}
+        <DisciplineFolderBinder projectId={projectId} discipline={discipline} />
         <DisciplinePanel projectId={projectId} discipline={discipline} />
       </div>
     );

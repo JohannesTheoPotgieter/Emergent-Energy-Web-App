@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ListTodo,
@@ -9,6 +9,11 @@ import {
   Link2,
   Trash2,
   ArrowRightLeft,
+  Search,
+  LayoutList,
+  Kanban,
+  UserCircle,
+  X,
 } from "lucide-react";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,7 +21,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -34,7 +41,10 @@ import {
 } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
+import { useEngineeringProjectOptions } from "@/hooks/use-engineering-project-options";
+import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import {
   ENGINEERING_DELIVERY_TASK_TYPE_TAGS,
   ENGINEERING_SEAM_TASK_TYPE_TAGS,
@@ -43,12 +53,31 @@ import {
   type EngineeringDeliveryTaskTypeTag,
   type EngineeringSeamTaskTypeTag,
 } from "@shared/engineering/delivery-task-catalog";
-import { TASK_STATUSES, getTaskStatusLabel, getUniversalStatusBadgeClass } from "@shared/task-status";
+import { TASK_STATUSES, getTaskStatusLabel } from "@shared/task-status";
+import { isTaskComplete } from "@/lib/task-status";
+import type { Task } from "@/components/tasks/types";
+import {
+  useEngineeringTaskFilters,
+  type EngineeringDueDateFilter,
+  type EngineeringWorkloadStateFilter,
+} from "@/hooks/useEngineeringTaskFilters";
+import {
+  DUE_DATE_FILTER_OPTIONS,
+  WORKLOAD_STATE_OPTIONS,
+  SAVED_FILTERS,
+} from "./task-filter-config";
+import { InlineListView, ProjectKanbanView, MyTasksView, PersonalKpiStrip } from "./engineering-task-views";
 
 /**
- * Engineering Task Manager (delivery-scope rebuild, Phase 2D).
- * Consumes the spine /api/engineering/tasks surface. Surfaces the doc-link
- * column + Done-gate, and seam handoffs. Replaces the legacy engineering-tasks.
+ * Engineering Task Manager — work-tracking rebuild.
+ *
+ * Consumes the spine `/api/engineering/tasks` surface (TaskListItem) and reuses
+ * the rich, prop-driven view components (List / Kanban / My Tasks) by adapting
+ * each spine row into the shared `Task` shape. Status changes route through the
+ * single workflow chokepoint (`PATCH /api/engineering/tasks/:id/status`); owner
+ * reassignment uses `PATCH /api/engineering/tasks/:id`. Keeps the New-Task
+ * dialog (project picker fed by use-engineering-project-options) and the Task
+ * drawer (status edit + document linking + seam handoff).
  */
 
 interface TaskListItem {
@@ -84,40 +113,270 @@ interface Options {
   users: { id: number; name: string }[];
 }
 
+type ViewMode = "list" | "kanban" | "mytasks";
+
 const NONE = "__none__";
+const ALL = "all";
+const VIEW_STORAGE_KEY = "eng_task_manager_view";
 
 function typeLabel(tag: string | null): string {
   if (!tag) return "—";
   return ENGINEERING_TASK_TYPE_LABELS[tag as keyof typeof ENGINEERING_TASK_TYPE_LABELS] ?? tag;
 }
 
+/**
+ * Adapt a spine TaskListItem into the legacy `Task` shape the rich view
+ * components consume. Only the fields those views read are populated; the rest
+ * are null/empty defaults so the structural type is satisfied without lying
+ * about data we don't have.
+ */
+function toTask(t: TaskListItem): Task {
+  const ownerName = t.ownerName ?? null;
+  return {
+    id: t.id,
+    projectId: t.projectId,
+    projectName: t.projectName,
+    title: t.title,
+    description: null,
+    status: t.status,
+    priority: t.priority ?? "Normal",
+    phase: null,
+    primaryWorkstream: "ENG",
+    ownerUserId: t.ownerUserId,
+    approverUserId: null,
+    assigneeUserId: t.ownerUserId,
+    assigneeUserIds: t.ownerUserId != null ? [t.ownerUserId] : [],
+    dueDate: t.endDate,
+    startDate: null,
+    percentComplete: 0,
+    holdReason: null,
+    blockedType: null,
+    trackingRag: null,
+    summaryText: null,
+    taskTypeTag: t.taskTypeTag,
+    externalSource: null,
+    externalTaskId: null,
+    parentTaskId: null,
+    linkedPlanItemId: null,
+    linkedDeliverableId: null,
+    linkedQualityItemInstanceId: null,
+    assignees: ownerName ? [ownerName] : [],
+    watchers: [],
+    tags: [],
+    createdAt: "",
+    updatedAt: "",
+    isUnassigned: t.ownerUserId == null,
+    projectLinkedDeliverableCount: t.documentCount,
+  };
+}
+
 export default function EngineeringTaskManagerPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { options: projectOptions } = useEngineeringProjectOptions();
 
+  const [view, setView] = useState<ViewMode>(() => {
+    const saved = (typeof window !== "undefined" && localStorage.getItem(VIEW_STORAGE_KEY)) as ViewMode | null;
+    return saved === "list" || saved === "kanban" || saved === "mytasks" ? saved : "list";
+  });
+  useEffect(() => {
+    localStorage.setItem(VIEW_STORAGE_KEY, view);
+  }, [view]);
+
+  // Filters
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>(NONE);
-  const [typeFilter, setTypeFilter] = useState<string>(NONE);
+  const [siteFilter, setSiteFilter] = useState<string>(ALL); // by projectId (string)
+  const [ownerFilter, setOwnerFilter] = useState<string>(ALL); // by ownerUserId (string)
+  const [statusFilter, setStatusFilter] = useState<string>(ALL);
+  const [typeFilter, setTypeFilter] = useState<string>(ALL);
+  const [dueDateFilter, setDueDateFilter] = useState<EngineeringDueDateFilter>("all");
+  const [workloadStateFilter, setWorkloadStateFilter] = useState<EngineeringWorkloadStateFilter>("all");
+  const [hideCompleted, setHideCompleted] = useState(true); // DEFAULT ON
+
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const tasksQuery = useQuery<{ tasks: TaskListItem[] }>({ queryKey: ["/api/engineering/tasks"] });
   const optionsQuery = useQuery<Options>({ queryKey: ["/api/engineering/options"] });
 
-  const tasks = tasksQuery.data?.tasks ?? [];
-  const filtered = useMemo(() => {
-    return tasks.filter((t) => {
-      if (statusFilter !== NONE && t.status !== statusFilter) return false;
-      if (typeFilter !== NONE && t.taskTypeTag !== typeFilter) return false;
-      if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
+  const rawTasks = useMemo(() => tasksQuery.data?.tasks ?? [], [tasksQuery.data]);
+
+  // Spine-specific pre-filters (Site/Owner/Type/Hide-completed) before handing
+  // the rest to the shared engineering filter engine.
+  const preFiltered = useMemo(() => {
+    return rawTasks.filter((t) => {
+      if (siteFilter !== ALL && String(t.projectId ?? "") !== siteFilter) return false;
+      if (ownerFilter !== ALL) {
+        if (ownerFilter === NONE) {
+          if (t.ownerUserId != null) return false;
+        } else if (String(t.ownerUserId ?? "") !== ownerFilter) {
+          return false;
+        }
+      }
+      if (typeFilter !== ALL && t.taskTypeTag !== typeFilter) return false;
+      if (hideCompleted && isTaskComplete(t.status)) return false;
       return true;
     });
-  }, [tasks, statusFilter, typeFilter, search]);
+  }, [rawTasks, siteFilter, ownerFilter, typeFilter, hideCompleted]);
 
-  const selected = tasks.find((t) => t.id === selectedId) ?? null;
+  const adapted = useMemo(() => preFiltered.map(toTask), [preFiltered]);
+
+  // Shared filter engine handles status / search / due-date / workload-state.
+  const { filtered, openTasks } = useEngineeringTaskFilters({
+    tasks: adapted,
+    statusFilter,
+    priorityFilter: "all",
+    assigneeFilter: "all",
+    projectFilter: "all",
+    searchTerm: search,
+    dueDateFilter,
+    workloadStateFilter,
+    linkedSourceFilter: "all",
+  });
+
+  const selected = rawTasks.find((t) => t.id === selectedId) ?? null;
+  const myName = (user?.name || "").split(/\s+/)[0] || user?.name || "";
 
   function refresh() {
     qc.invalidateQueries({ queryKey: ["/api/engineering/tasks"] });
+  }
+
+  // ── Status change (workflow-guarded) ──────────────────────────────────────
+  const statusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) =>
+      apiRequest("PATCH", `/api/engineering/tasks/${id}/status`, { status }),
+    onSuccess: () => {
+      toast({ title: "Status updated" });
+      refresh();
+    },
+    onError: (e: unknown) =>
+      toast({
+        title: "Couldn't update status",
+        description: e instanceof Error ? e.message : undefined,
+        variant: "destructive",
+      }),
+  });
+
+  const handleStatusChange = useCallback(
+    (id: number, status: string) => {
+      const task = rawTasks.find((t) => t.id === id);
+      if (task) {
+        if (task.status === status) return;
+        // Best-effort client-side guard — surface the reason before the round
+        // trip. The server chokepoint remains the authority (Done-gate etc.).
+        const blockReason = getTaskWorkflowBlockReason(
+          { status: task.status, taskTypeTag: task.taskTypeTag },
+          status,
+        );
+        if (blockReason) {
+          toast({ title: "Blocked", description: blockReason, variant: "destructive" });
+          return;
+        }
+      }
+      statusMutation.mutate({ id, status });
+    },
+    [rawTasks, statusMutation, toast],
+  );
+
+  // Inline priority/due-date edits aren't supported by the spine surface yet —
+  // surface a clear, non-destructive toast rather than silently failing.
+  const handleUnsupported = useCallback(
+    (label: string) => {
+      toast({
+        title: `${label} not editable here`,
+        description: "Open the task to manage details.",
+      });
+    },
+    [toast],
+  );
+  const handlePriorityChange = useCallback(() => handleUnsupported("Priority"), [handleUnsupported]);
+
+  // ── Bulk actions ──────────────────────────────────────────────────────────
+  const bulkStatusMutation = useMutation({
+    mutationFn: async ({ taskIds, status }: { taskIds: number[]; status: string }) => {
+      const results = await Promise.allSettled(
+        taskIds.map((id) => apiRequest("PATCH", `/api/engineering/tasks/${id}/status`, { status })),
+      );
+      const failures = results.filter((r) => r.status === "rejected").length;
+      return { total: taskIds.length, failures };
+    },
+    onSuccess: ({ total, failures }) => {
+      if (failures > 0) {
+        toast({
+          title: `Updated ${total - failures} of ${total}`,
+          description: `${failures} couldn't change (workflow rules).`,
+          variant: failures === total ? "destructive" : "default",
+        });
+      } else {
+        toast({ title: `Updated ${total} task${total === 1 ? "" : "s"}` });
+      }
+      refresh();
+    },
+    onError: (e: unknown) =>
+      toast({
+        title: "Bulk status failed",
+        description: e instanceof Error ? e.message : undefined,
+        variant: "destructive",
+      }),
+  });
+
+  const bulkOwnerMutation = useMutation({
+    mutationFn: async ({ taskIds, ownerUserId }: { taskIds: number[]; ownerUserId: number | null }) => {
+      const results = await Promise.allSettled(
+        taskIds.map((id) => apiRequest("PATCH", `/api/engineering/tasks/${id}`, { ownerUserId })),
+      );
+      const failures = results.filter((r) => r.status === "rejected").length;
+      return { total: taskIds.length, failures };
+    },
+    onSuccess: ({ total, failures }) => {
+      if (failures > 0) {
+        toast({
+          title: `Reassigned ${total - failures} of ${total}`,
+          description: `${failures} couldn't be reassigned.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: `Reassigned ${total} task${total === 1 ? "" : "s"}` });
+      }
+      refresh();
+    },
+    onError: (e: unknown) =>
+      toast({
+        title: "Bulk reassign failed",
+        description: e instanceof Error ? e.message : undefined,
+        variant: "destructive",
+      }),
+  });
+
+  const handleBulkStatusChange = useCallback(
+    (taskIds: number[], status: string) => bulkStatusMutation.mutate({ taskIds, status }),
+    [bulkStatusMutation],
+  );
+  const handleBulkOwnerChange = useCallback(
+    (taskIds: number[], ownerUserId: number | null) => bulkOwnerMutation.mutate({ taskIds, ownerUserId }),
+    [bulkOwnerMutation],
+  );
+
+  const onCardClick = useCallback((task: Task) => setSelectedId(task.id), []);
+
+  const activeFilterCount =
+    (siteFilter !== ALL ? 1 : 0) +
+    (ownerFilter !== ALL ? 1 : 0) +
+    (statusFilter !== ALL ? 1 : 0) +
+    (typeFilter !== ALL ? 1 : 0) +
+    (dueDateFilter !== "all" ? 1 : 0) +
+    (workloadStateFilter !== "all" ? 1 : 0) +
+    (search ? 1 : 0);
+
+  function resetFilters() {
+    setSearch("");
+    setSiteFilter(ALL);
+    setOwnerFilter(ALL);
+    setStatusFilter(ALL);
+    setTypeFilter(ALL);
+    setDueDateFilter("all");
+    setWorkloadStateFilter("all");
   }
 
   return (
@@ -141,104 +400,243 @@ export default function EngineeringTaskManagerPage() {
         }
       />
 
-      {/* Filters */}
-      <Card className="border-border bg-card">
+      {/* View switcher */}
+      <div className="flex items-center justify-between gap-3">
+        <Tabs value={view} onValueChange={(v) => setView(v as ViewMode)}>
+          <TabsList data-testid="view-switcher">
+            <TabsTrigger value="list" data-testid="view-list">
+              <LayoutList className="mr-1.5 h-4 w-4" />
+              List
+            </TabsTrigger>
+            <TabsTrigger value="kanban" data-testid="view-kanban">
+              <Kanban className="mr-1.5 h-4 w-4" />
+              Kanban
+            </TabsTrigger>
+            <TabsTrigger value="mytasks" data-testid="view-mytasks">
+              <UserCircle className="mr-1.5 h-4 w-4" />
+              My Tasks
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {filtered.length} of {rawTasks.length} task{rawTasks.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {/* Filter bar */}
+      <Card className="mt-3 border-border bg-card">
         <CardContent className="flex flex-wrap items-center gap-2 p-3">
-          <Input
-            placeholder="Search tasks…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-56"
-          />
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-9 w-44"><SelectValue placeholder="Status" /></SelectTrigger>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search tasks…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9 w-56 pl-9"
+              data-testid="task-search"
+            />
+          </div>
+
+          <Select value={siteFilter} onValueChange={setSiteFilter}>
+            <SelectTrigger className="h-9 w-48" data-testid="filter-site">
+              <SelectValue placeholder="Site" />
+            </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NONE}>All statuses</SelectItem>
-              {TASK_STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>{getTaskStatusLabel(s)}</SelectItem>
+              <SelectItem value={ALL}>All sites</SelectItem>
+              {projectOptions.map((p) => (
+                <SelectItem key={p.id} value={String(p.id)}>
+                  {p.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="h-9 w-48"><SelectValue placeholder="Type" /></SelectTrigger>
+
+          <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+            <SelectTrigger className="h-9 w-44" data-testid="filter-owner">
+              <SelectValue placeholder="Owner" />
+            </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NONE}>All types</SelectItem>
+              <SelectItem value={ALL}>All owners</SelectItem>
+              <SelectItem value={NONE}>Unassigned</SelectItem>
+              {optionsQuery.data?.users.map((u) => (
+                <SelectItem key={u.id} value={String(u.id)}>
+                  {u.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="h-9 w-44" data-testid="filter-status">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All statuses</SelectItem>
+              {TASK_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {getTaskStatusLabel(s)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="h-9 w-48" data-testid="filter-type">
+              <SelectValue placeholder="Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All types</SelectItem>
               {ENGINEERING_DELIVERY_TASK_TYPE_TAGS.map((t) => (
-                <SelectItem key={t} value={t}>{ENGINEERING_TASK_TYPE_LABELS[t]}</SelectItem>
+                <SelectItem key={t} value={t}>
+                  {ENGINEERING_TASK_TYPE_LABELS[t]}
+                </SelectItem>
               ))}
               {ENGINEERING_SEAM_TASK_TYPE_TAGS.map((t) => (
-                <SelectItem key={t} value={t}>{ENGINEERING_TASK_TYPE_LABELS[t]}</SelectItem>
+                <SelectItem key={t} value={t}>
+                  {ENGINEERING_TASK_TYPE_LABELS[t]}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <span className="ml-auto text-xs text-muted-foreground">{filtered.length} of {tasks.length}</span>
+
+          <Select value={dueDateFilter} onValueChange={(v) => setDueDateFilter(v as EngineeringDueDateFilter)}>
+            <SelectTrigger className="h-9 w-40" data-testid="filter-due">
+              <SelectValue placeholder="Due date" />
+            </SelectTrigger>
+            <SelectContent>
+              {DUE_DATE_FILTER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={workloadStateFilter}
+            onValueChange={(v) => setWorkloadStateFilter(v as EngineeringWorkloadStateFilter)}
+          >
+            <SelectTrigger className="h-9 w-44" data-testid="filter-workload">
+              <SelectValue placeholder="Work state" />
+            </SelectTrigger>
+            <SelectContent>
+              {WORKLOAD_STATE_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <label className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="hide-completed">
+            <Switch checked={hideCompleted} onCheckedChange={setHideCompleted} />
+            Hide completed
+          </label>
+
+          {activeFilterCount > 0 ? (
+            <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={resetFilters} data-testid="reset-filters">
+              <X className="h-3.5 w-3.5" />
+              Clear ({activeFilterCount})
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
 
-      {/* Table */}
-      <Card className="mt-4 border-border bg-card">
-        <CardContent className="p-0">
-          {tasksQuery.isLoading ? (
-            <div className="space-y-2 p-4">
-              {[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-9 animate-pulse rounded bg-muted" />)}
-            </div>
-          ) : tasksQuery.isError ? (
-            <div className="flex flex-col items-center gap-2 p-8 text-center">
+      {/* Saved views */}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="saved-views">
+        <span className="text-[11px] text-muted-foreground">Quick views:</span>
+        {SAVED_FILTERS.map((sv) => (
+          <button
+            key={sv.label}
+            type="button"
+            className="rounded-full border border-border px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted"
+            onClick={() => {
+              if (sv.filter.status) setStatusFilter(sv.filter.status);
+              if (sv.filter.dueDateFilter) setDueDateFilter(sv.filter.dueDateFilter);
+              if (sv.filter.workloadStateFilter) setWorkloadStateFilter(sv.filter.workloadStateFilter);
+            }}
+            data-testid={`saved-view-${sv.label.toLowerCase().replace(/\s+/g, "-")}`}
+          >
+            {sv.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="mt-4">
+        {tasksQuery.isLoading ? (
+          <Card className="border-border bg-card">
+            <CardContent className="space-y-2 p-4">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-9 animate-pulse rounded bg-muted" />
+              ))}
+            </CardContent>
+          </Card>
+        ) : tasksQuery.isError ? (
+          <Card className="border-border bg-card">
+            <CardContent className="flex flex-col items-center gap-2 p-8 text-center">
               <AlertTriangle className="h-5 w-5 text-amber-500" />
               <p className="text-sm text-muted-foreground">Couldn't load tasks.</p>
-              <Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="h-4 w-4" />Retry</Button>
-            </div>
-          ) : filtered.length === 0 ? (
-            <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-              {tasks.length === 0 ? "No engineering tasks yet. Create one to get started." : "No tasks match your filters."}
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border/60 text-left text-xs text-muted-foreground">
-                    <th className="px-4 py-2 font-medium">Task</th>
-                    <th className="px-4 py-2 font-medium">Project</th>
-                    <th className="px-4 py-2 font-medium">Type</th>
-                    <th className="px-4 py-2 font-medium">Owner</th>
-                    <th className="px-4 py-2 font-medium">Status</th>
-                    <th className="px-4 py-2 font-medium">Due</th>
-                    <th className="px-4 py-2 text-center font-medium">Docs</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((t) => (
-                    <tr
-                      key={t.id}
-                      className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-muted/40"
-                      onClick={() => setSelectedId(t.id)}
-                      data-testid={`task-row-${t.id}`}
-                    >
-                      <td className="px-4 py-2.5 font-medium text-foreground">{t.title}</td>
-                      <td className="px-4 py-2.5 text-muted-foreground">{t.projectName ?? "—"}</td>
-                      <td className="px-4 py-2.5"><Badge variant="outline" className="font-normal">{typeLabel(t.taskTypeTag)}</Badge></td>
-                      <td className="px-4 py-2.5 text-muted-foreground">{t.ownerName ?? "Unassigned"}</td>
-                      <td className="px-4 py-2.5"><Badge variant="secondary" className={cn("font-normal", getUniversalStatusBadgeClass(t.status))}>{getTaskStatusLabel(t.status)}</Badge></td>
-                      <td className="px-4 py-2.5 text-muted-foreground tabular-nums">{t.endDate ?? "—"}</td>
-                      <td className="px-4 py-2.5 text-center">
-                        <span className={cn("inline-flex items-center gap-1 text-xs", t.documentCount > 0 ? "text-emerald-600" : "text-muted-foreground")}>
-                          <FileText className="h-3.5 w-3.5" />{t.documentCount}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              <Button variant="outline" size="sm" onClick={refresh}>
+                <RefreshCw className="h-4 w-4" />
+                Retry
+              </Button>
+            </CardContent>
+          </Card>
+        ) : rawTasks.length === 0 ? (
+          <Card className="border-border bg-card">
+            <CardContent className="px-4 py-12 text-center">
+              <ListTodo className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
+              <p className="text-sm font-medium">No engineering tasks yet</p>
+              <p className="mt-1 text-xs text-muted-foreground">Create one to get started.</p>
+            </CardContent>
+          </Card>
+        ) : view === "list" ? (
+          <InlineListView
+            tasks={filtered}
+            onCardClick={onCardClick}
+            onStatusChange={handleStatusChange}
+            onPriorityChange={handlePriorityChange}
+            onBulkStatusChange={handleBulkStatusChange}
+            onBulkOwnerChange={handleBulkOwnerChange}
+            owners={optionsQuery.data?.users ?? []}
+          />
+        ) : view === "kanban" ? (
+          <ProjectKanbanView
+            tasks={filtered}
+            onCardClick={onCardClick}
+            onDrop={handleStatusChange}
+            onStatusChange={handleStatusChange}
+            searchTerm={search}
+          />
+        ) : (
+          <div className="space-y-4">
+            <PersonalKpiStrip tasks={filtered} myTasks={filtered.filter((t) => t.ownerUserId === user?.id)} />
+            <MyTasksView
+              tasks={filtered}
+              myName={myName}
+              onCardClick={onCardClick}
+              onStatusChange={handleStatusChange}
+              onPriorityChange={handlePriorityChange}
+              filterStatuses={[...TASK_STATUSES]}
+            />
+          </div>
+        )}
+        {view !== "mytasks" && rawTasks.length > 0 ? (
+          <p className="mt-2 text-[11px] text-muted-foreground" data-testid="open-work-count">
+            {openTasks.length} open · select rows in List view for bulk status / owner actions.
+          </p>
+        ) : null}
+      </div>
 
       <CreateTaskDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        options={optionsQuery.data}
-        onCreated={() => { refresh(); setCreateOpen(false); }}
+        users={optionsQuery.data?.users ?? []}
+        onCreated={() => {
+          refresh();
+          setCreateOpen(false);
+        }}
       />
 
       <TaskDrawer
@@ -258,15 +656,16 @@ export default function EngineeringTaskManagerPage() {
 function CreateTaskDialog({
   open,
   onOpenChange,
-  options,
+  users,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  options?: Options;
+  users: { id: number; name: string }[];
   onCreated: () => void;
 }) {
   const { toast } = useToast();
+  const { options: projectOptions } = useEngineeringProjectOptions();
   const [title, setTitle] = useState("");
   const [types, setTypes] = useState<Set<EngineeringDeliveryTaskTypeTag>>(new Set());
   const [projectId, setProjectId] = useState<string>(NONE);
@@ -274,7 +673,11 @@ function CreateTaskDialog({
   const [due, setDue] = useState("");
 
   function reset() {
-    setTitle(""); setTypes(new Set()); setProjectId(NONE); setOwnerId(NONE); setDue("");
+    setTitle("");
+    setTypes(new Set());
+    setProjectId(NONE);
+    setOwnerId(NONE);
+    setDue("");
   }
 
   const mutation = useMutation({
@@ -300,24 +703,42 @@ function CreateTaskDialog({
         });
       }
     },
-    onSuccess: () => { toast({ title: "Task created" }); reset(); onCreated(); },
-    onError: (e: unknown) => toast({ title: "Couldn't create task", description: e instanceof Error ? e.message : undefined, variant: "destructive" }),
+    onSuccess: () => {
+      toast({ title: "Task created" });
+      reset();
+      onCreated();
+    },
+    onError: (e: unknown) =>
+      toast({
+        title: "Couldn't create task",
+        description: e instanceof Error ? e.message : undefined,
+        variant: "destructive",
+      }),
   });
 
   function toggleType(tag: EngineeringDeliveryTaskTypeTag) {
     setTypes((prev) => {
       const next = new Set(prev);
-      if (next.has(tag)) next.delete(tag); else next.add(tag);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
       return next;
     });
   }
 
-  const canSubmit = types.size > 0 && (types.size > 1 || title.trim().length > 0 || types.size === 1);
+  const canSubmit = types.size > 0;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) reset();
+        onOpenChange(v);
+      }}
+    >
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>New engineering task</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>New engineering task</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
             <Label>Type(s)</Label>
@@ -329,7 +750,9 @@ function CreateTaskDialog({
                   onClick={() => toggleType(t)}
                   className={cn(
                     "rounded-full border px-2.5 py-1 text-xs transition-colors",
-                    types.has(t) ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted",
+                    types.has(t)
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:bg-muted",
                   )}
                   data-testid={`type-${t}`}
                 >
@@ -342,27 +765,44 @@ function CreateTaskDialog({
           {types.size <= 1 ? (
             <div className="space-y-1.5">
               <Label htmlFor="task-title">Title</Label>
-              <Input id="task-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Defaults to the type name" />
+              <Input
+                id="task-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Defaults to the type name"
+              />
             </div>
           ) : null}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Project</Label>
               <Select value={projectId} onValueChange={setProjectId}>
-                <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+                <SelectTrigger data-testid="create-project">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>None</SelectItem>
-                  {options?.projects.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
+                  {projectOptions.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Owner</Label>
               <Select value={ownerId} onValueChange={setOwnerId}>
-                <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>Unassigned</SelectItem>
-                  {options?.users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={String(u.id)}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -373,8 +813,14 @@ function CreateTaskDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => mutation.mutate()} disabled={!canSubmit || mutation.isPending} data-testid="create-submit">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!canSubmit || mutation.isPending}
+            data-testid="create-submit"
+          >
             {mutation.isPending ? "Creating…" : "Create"}
           </Button>
         </DialogFooter>
@@ -431,19 +877,55 @@ function TaskDrawer({
 
   const statusMutation = useMutation({
     mutationFn: async (status: string) => apiRequest("PATCH", `/api/engineering/tasks/${taskId}/status`, { status }),
-    onSuccess: () => { toast({ title: "Status updated" }); onChanged(); },
-    onError: (e: unknown) => toast({ title: "Couldn't update status", description: e instanceof Error ? e.message : undefined, variant: "destructive" }),
+    onSuccess: () => {
+      toast({ title: "Status updated" });
+      onChanged();
+    },
+    onError: (e: unknown) =>
+      toast({
+        title: "Couldn't update status",
+        description: e instanceof Error ? e.message : undefined,
+        variant: "destructive",
+      }),
+  });
+
+  const ownerMutation = useMutation({
+    mutationFn: async (ownerUserId: number | null) =>
+      apiRequest("PATCH", `/api/engineering/tasks/${taskId}`, { ownerUserId }),
+    onSuccess: () => {
+      toast({ title: "Owner updated" });
+      onChanged();
+    },
+    onError: (e: unknown) =>
+      toast({
+        title: "Couldn't reassign owner",
+        description: e instanceof Error ? e.message : undefined,
+        variant: "destructive",
+      }),
   });
 
   const linkMutation = useMutation({
-    mutationFn: async () => apiRequest("POST", `/api/engineering/tasks/${taskId}/documents`, { managedDocumentId: Number(docId) }),
-    onSuccess: () => { toast({ title: "Document linked" }); setDocId(""); invalidateDocs(); },
-    onError: (e: unknown) => toast({ title: "Couldn't link document", description: e instanceof Error ? e.message : undefined, variant: "destructive" }),
+    mutationFn: async () =>
+      apiRequest("POST", `/api/engineering/tasks/${taskId}/documents`, { managedDocumentId: Number(docId) }),
+    onSuccess: () => {
+      toast({ title: "Document linked" });
+      setDocId("");
+      invalidateDocs();
+    },
+    onError: (e: unknown) =>
+      toast({
+        title: "Couldn't link document",
+        description: e instanceof Error ? e.message : undefined,
+        variant: "destructive",
+      }),
   });
 
   const unlinkMutation = useMutation({
     mutationFn: async (linkId: number) => apiRequest("DELETE", `/api/engineering/tasks/${taskId}/documents/${linkId}`),
-    onSuccess: () => { toast({ title: "Document unlinked" }); invalidateDocs(); },
+    onSuccess: () => {
+      toast({ title: "Document unlinked" });
+      invalidateDocs();
+    },
   });
 
   const seamMutation = useMutation({
@@ -456,12 +938,38 @@ function TaskDrawer({
         fromTaskId: taskId,
         projectId: task?.projectId ?? undefined,
       }),
-    onSuccess: () => { toast({ title: "Seam handoff created" }); setSeamNote(""); setSeamOwner(NONE); onChanged(); },
-    onError: (e: unknown) => toast({ title: "Couldn't create handoff", description: e instanceof Error ? e.message : undefined, variant: "destructive" }),
+    onSuccess: () => {
+      toast({ title: "Seam handoff created" });
+      setSeamNote("");
+      setSeamOwner(NONE);
+      onChanged();
+    },
+    onError: (e: unknown) =>
+      toast({
+        title: "Couldn't create handoff",
+        description: e instanceof Error ? e.message : undefined,
+        variant: "destructive",
+      }),
   });
 
+  // Guard the in-drawer status select with the workflow rules + Done-gate.
+  function attemptStatus(next: string) {
+    if (!task || next === task.status) return;
+    const blockReason = getTaskWorkflowBlockReason({ status: task.status, taskTypeTag: task.taskTypeTag }, next);
+    if (blockReason) {
+      toast({ title: "Blocked", description: blockReason, variant: "destructive" });
+      return;
+    }
+    statusMutation.mutate(next);
+  }
+
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Sheet
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onClose();
+      }}
+    >
       <SheetContent className="w-full overflow-y-auto sm:max-w-md">
         {task ? (
           <>
@@ -478,8 +986,10 @@ function TaskDrawer({
               {/* Status + Done-gate */}
               <div className="space-y-1.5">
                 <Label>Status</Label>
-                <Select value={task.status} onValueChange={(s) => statusMutation.mutate(s)}>
-                  <SelectTrigger data-testid="status-select"><SelectValue /></SelectTrigger>
+                <Select value={task.status} onValueChange={attemptStatus}>
+                  <SelectTrigger data-testid="status-select">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     {TASK_STATUSES.map((s) => (
                       <SelectItem key={s} value={s} disabled={s === "complete" && docGated}>
@@ -489,27 +999,62 @@ function TaskDrawer({
                   </SelectContent>
                 </Select>
                 {docGated ? (
-                  <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800" data-testid="done-gate-banner">
+                  <div
+                    className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800"
+                    data-testid="done-gate-banner"
+                  >
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>This task produces a document — link one below before it can be marked done.</span>
                   </div>
                 ) : null}
               </div>
 
+              {/* Owner reassign */}
+              <div className="space-y-1.5">
+                <Label>Owner</Label>
+                <Select
+                  value={task.ownerUserId != null ? String(task.ownerUserId) : NONE}
+                  onValueChange={(v) => ownerMutation.mutate(v === NONE ? null : Number(v))}
+                >
+                  <SelectTrigger data-testid="owner-select">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>Unassigned</SelectItem>
+                    {options?.users.map((u) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Documents */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" />Linked documents</Label>
+                  <Label className="flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5" />
+                    Linked documents
+                  </Label>
                   <span className="text-xs text-muted-foreground">{links.length}</span>
                 </div>
                 {links.length > 0 ? (
                   <ul className="space-y-1">
                     {links.map((l) => (
-                      <li key={l.id} className="flex items-center justify-between rounded border border-border/60 px-2 py-1 text-xs">
+                      <li
+                        key={l.id}
+                        className="flex items-center justify-between rounded border border-border/60 px-2 py-1 text-xs"
+                      >
                         <span className="text-muted-foreground">
-                          {l.managedDocumentId ? `Doc #${l.managedDocumentId}` : `Project doc #${l.projectDocumentLinkId}`} · {l.linkRole}
+                          {l.managedDocumentId ? `Doc #${l.managedDocumentId}` : `Project doc #${l.projectDocumentLinkId}`} ·{" "}
+                          {l.linkRole}
                         </span>
-                        <button onClick={() => unlinkMutation.mutate(l.id)} className="text-muted-foreground hover:text-red-600" aria-label="Unlink">
+                        <button
+                          onClick={() => unlinkMutation.mutate(l.id)}
+                          className="text-muted-foreground hover:text-red-600"
+                          aria-label="Unlink"
+                        >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </li>
@@ -521,39 +1066,77 @@ function TaskDrawer({
                 <div className="flex items-center gap-2">
                   <Select value={docId} onValueChange={setDocId}>
                     <SelectTrigger className="h-8" data-testid="doc-candidate-select">
-                      <SelectValue placeholder={availableCandidates.length ? "Choose a document…" : "No documents on this project"} />
+                      <SelectValue
+                        placeholder={availableCandidates.length ? "Choose a document…" : "No documents on this project"}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {availableCandidates.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          {c.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button size="sm" variant="outline" disabled={!docId || linkMutation.isPending} onClick={() => linkMutation.mutate()}>
-                    <Link2 className="h-3.5 w-3.5" />Link
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!docId || linkMutation.isPending}
+                    onClick={() => linkMutation.mutate()}
+                  >
+                    <Link2 className="h-3.5 w-3.5" />
+                    Link
                   </Button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">Documents come from this project's SharePoint folders (Document Manager).</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Documents come from this project's SharePoint folders (Document Manager).
+                </p>
               </div>
 
               {/* Seam handoff */}
               <div className="space-y-2 rounded-md border border-border/60 p-3">
-                <Label className="flex items-center gap-1.5"><ArrowRightLeft className="h-3.5 w-3.5" />Seam handoff</Label>
+                <Label className="flex items-center gap-1.5">
+                  <ArrowRightLeft className="h-3.5 w-3.5" />
+                  Seam handoff
+                </Label>
                 <Select value={seamType} onValueChange={(v) => setSeamType(v as EngineeringSeamTaskTypeTag)}>
-                  <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {ENGINEERING_SEAM_TASK_TYPE_TAGS.map((t) => <SelectItem key={t} value={t}>{ENGINEERING_TASK_TYPE_LABELS[t]}</SelectItem>)}
+                    {ENGINEERING_SEAM_TASK_TYPE_TAGS.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {ENGINEERING_TASK_TYPE_LABELS[t]}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Select value={seamOwner} onValueChange={setSeamOwner}>
-                  <SelectTrigger className="h-8"><SelectValue placeholder="Hand to…" /></SelectTrigger>
+                  <SelectTrigger className="h-8">
+                    <SelectValue placeholder="Hand to…" />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={NONE}>Hand to…</SelectItem>
-                    {options?.users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
+                    {options?.users.map((u) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-                <Textarea value={seamNote} onChange={(e) => setSeamNote(e.target.value)} placeholder="Note (optional)" className="min-h-[60px] text-sm" />
-                <Button size="sm" variant="outline" className="w-full" disabled={seamOwner === NONE || seamMutation.isPending} onClick={() => seamMutation.mutate()}>
+                <Textarea
+                  value={seamNote}
+                  onChange={(e) => setSeamNote(e.target.value)}
+                  placeholder="Note (optional)"
+                  className="min-h-[60px] text-sm"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  disabled={seamOwner === NONE || seamMutation.isPending}
+                  onClick={() => seamMutation.mutate()}
+                >
                   Create handoff
                 </Button>
               </div>

@@ -6,26 +6,19 @@
  * filters over the same provisioned folder tree.
  */
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { useProjectsSummary } from "@/hooks/use-projects-summary";
+import { useEngineeringProjectOptions } from "@/hooks/use-engineering-project-options";
 import { ProjectDocumentsView } from "@/components/documents/ProjectDocumentsView";
-import { DisciplineFolderBinder } from "@/components/documents/DisciplineFolderBinder";
 
 export function DisciplineProjectDocuments({ discipline }: { discipline: string }) {
-  const { projectsSummary, isLoading } = useProjectsSummary();
+  // Shared by the Engineering AND Quality document pages: the active-execution-
+  // window project picker (alphabetical, live delivery work only).
+  const { options: projectOptions, isLoading } = useEngineeringProjectOptions();
   const [projectId, setProjectId] = useState<number | null>(null);
-
-  const projectOptions = useMemo(
-    () =>
-      (projectsSummary ?? [])
-        .filter((p) => typeof p.project_info_id === "number")
-        .map((p) => ({ id: p.project_info_id as number, name: p.project_name })),
-    [projectsSummary],
-  );
 
   return (
     <div className="space-y-4">
@@ -54,14 +47,7 @@ export function DisciplineProjectDocuments({ discipline }: { discipline: string 
       </Card>
 
       {projectId ? (
-        <>
-          <DisciplineFolderBinder projectId={projectId} discipline={discipline} />
-          <ProjectDocumentsView
-            projectId={projectId}
-            discipline={discipline}
-            showApprovals={false}
-          />
-        </>
+        <ProjectDocumentsView projectId={projectId} discipline={discipline} />
       ) : (
         <Card>
           <CardContent className="py-8 text-sm text-muted-foreground text-center">

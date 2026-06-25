@@ -13,13 +13,14 @@
  * `work_items`.
  */
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, inArray, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import {
   projectInfo,
   projectExecutionState,
   workItems,
   workItemAssignments,
+  users,
 } from "@shared/schema";
 import {
   summarizeEngineeringHome,
@@ -31,11 +32,38 @@ function isoToday(): string {
 }
 
 /**
+ * Optional slice for the Engineering Home — site (project), engineer (owner),
+ * and hide-completed. Mirrors the route's query params. Predicates that can be
+ * pushed into SQL (project + owner) are; `includeCompleted` is applied by the
+ * pure aggregator so its behaviour stays unit-testable.
+ */
+export interface EngineeringHomeQuery {
+  projectIds?: number[];
+  ownerUserId?: number;
+  includeCompleted?: boolean;
+}
+
+/**
  * Build the Engineering Home summary for a given user. "My work" is scoped to
  * tasks the user owns or is assigned to; metrics + portfolio are program-wide
- * across the ENG workstream.
+ * across the ENG workstream, narrowed by any supplied filters.
  */
-export async function getEngineeringHome(userId: number): Promise<EngineeringHomeSummary> {
+export async function getEngineeringHome(
+  userId: number,
+  query: EngineeringHomeQuery = {},
+): Promise<EngineeringHomeSummary> {
+  const { projectIds, ownerUserId, includeCompleted } = query;
+
+  // Push the project (site) predicate into SQL — it narrows the read without
+  // affecting the engineer dropdown (owners are derived from the in-scope ENG
+  // tasks). The `ownerUserId` filter is deliberately NOT pushed here: the pure
+  // aggregator applies it, so it can still see every owner and build the full
+  // `owners` list for the client's Engineer picker.
+  const taskPredicates: SQL[] = [eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)];
+  if (projectIds && projectIds.length > 0) {
+    taskPredicates.push(inArray(workItems.projectId, projectIds));
+  }
+
   const taskRows = await db
     .select({
       id: workItems.id,
@@ -43,11 +71,13 @@ export async function getEngineeringHome(userId: number): Promise<EngineeringHom
       status: workItems.status,
       endDate: workItems.endDate,
       ownerUserId: workItems.ownerUserId,
+      ownerName: users.name,
       title: workItems.title,
       priority: workItems.priority,
     })
     .from(workItems)
-    .where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
+    .leftJoin(users, eq(users.id, workItems.ownerUserId))
+    .where(and(...taskPredicates));
 
   const projectRows = await db
     .select({
@@ -71,6 +101,7 @@ export async function getEngineeringHome(userId: number): Promise<EngineeringHom
       status: t.status,
       endDate: t.endDate ?? null,
       ownerUserId: t.ownerUserId ?? null,
+      ownerName: t.ownerName ?? null,
       title: t.title,
       priority: t.priority ?? null,
     })),
@@ -83,5 +114,6 @@ export async function getEngineeringHome(userId: number): Promise<EngineeringHom
     myUserId: userId,
     myAssignedTaskIds: new Set(assignmentRows.map((a: (typeof assignmentRows)[number]) => a.workItemId)),
     today: isoToday(),
+    filters: { projectIds, ownerUserId, includeCompleted },
   });
 }
