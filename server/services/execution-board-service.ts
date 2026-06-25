@@ -507,11 +507,66 @@ export interface DeliveryProgramRow {
   projectId: number;
   projectName: string;
   label: string;
-  date: string | null;
-  rag: ScheduleRag | null;
+  date: string | null; // sort/anchor date — the needed-on-site date
+  rag: ScheduleRag | null; // for procurement: the will-it-make-it signal
   source: "milestone" | "procurement" | "task";
   overdue: boolean;
   complete: boolean;
+  // ── delivery planning (procurement orders only) ──
+  id?: number; // procurement_items.id — present on editable rows
+  editable?: boolean;
+  linkedWorkItemId?: number | null;
+  neededBy?: string | null; // from the linked execution task's start date
+  leadTimeDays?: number | null;
+  orderDate?: string | null;
+  orderBy?: string | null; // latest safe order date = neededBy − leadTime
+  eta?: string | null; // orderDate + leadTime, once ordered
+  willMakeIt?: ScheduleRag | null;
+  taskNo?: string | null;
+  taskTitle?: string | null;
+  isLongLead?: boolean;
+}
+
+/** yyyy-mm-dd shifted by n days (n may be negative). */
+function shiftIso(iso: string | null, days: number): string | null {
+  const d = parsePlanDate(iso);
+  if (!d) return null;
+  const shifted = new Date(d.getTime() + days * 86_400_000);
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, "0")}-${String(shifted.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Plan a procurement order backward from the date it's needed on site. Returns
+ * the latest-safe order date, the ETA once ordered, and a will-it-make-it RAG:
+ *   delivered  → did the actual delivery beat the needed date? (green/red)
+ *   ordered    → ETA (orderDate+lead) vs needed: green / amber (≤7d slack) / red
+ *   not ordered→ order-by (needed−lead) vs today: green / amber (≤7d) / red (late)
+ *   missing lead time or needed date → null (can't assess yet)
+ */
+export function planDelivery(
+  neededBy: string | null,
+  leadTimeDays: number | null,
+  orderDate: string | null,
+  deliveredDate: string | null,
+  today: Date,
+): { orderBy: string | null; eta: string | null; willMakeIt: ScheduleRag | null } {
+  if (deliveredDate) {
+    const made = !neededBy || (parsePlanDate(deliveredDate)?.getTime() ?? 0) <= (parsePlanDate(neededBy)?.getTime() ?? Infinity);
+    return { orderBy: null, eta: deliveredDate, willMakeIt: made ? "green" : "red" };
+  }
+  const rag = (slackDays: number): ScheduleRag => (slackDays < 0 ? "red" : slackDays <= 7 ? "amber" : "green");
+  if (orderDate != null && leadTimeDays != null) {
+    const eta = shiftIso(orderDate, leadTimeDays);
+    const etaD = parsePlanDate(eta);
+    const needD = parsePlanDate(neededBy);
+    return { orderBy: null, eta, willMakeIt: etaD && needD ? rag(diffDays(needD, etaD)) : null };
+  }
+  if (leadTimeDays != null && neededBy != null) {
+    const orderBy = shiftIso(neededBy, -leadTimeDays);
+    const obD = parsePlanDate(orderBy);
+    return { orderBy, eta: null, willMakeIt: obD ? rag(diffDays(obD, today)) : null };
+  }
+  return { orderBy: null, eta: null, willMakeIt: null };
 }
 
 /**
@@ -554,7 +609,7 @@ export async function getDeliveriesProgram(now: Date = new Date()): Promise<Deli
   const nameById = new Map(active.map((p) => [p.id, p.projectName]));
   const [milestones, procurement, tasksByProject] = await Promise.all([
     executionBoardRepository.getDeliveryMilestonesForProjects(ids),
-    executionBoardRepository.getOpenProcurementForProjects(ids),
+    executionBoardRepository.getProcurementDeliveriesForProjects(ids),
     executionBoardRepository.getPlanTasksForProjects(ids),
   ]);
   const out: DeliveryProgramRow[] = [];
@@ -575,16 +630,34 @@ export async function getDeliveriesProgram(now: Date = new Date()): Promise<Deli
     });
   }
   for (const p of procurement) {
-    const d = parsePlanDate(p.requiredDate);
+    // Needed-on-site = the linked execution task's start date; fall back to the
+    // task end, then the manual required date.
+    const neededBy = p.taskStartDate ?? p.taskEndDate ?? p.requiredDate;
+    const complete = ["received", "invoiced", "closed"].includes(p.status)
+      || p.deliveryStatus === "delivered" || Boolean(p.deliveryActualDate);
+    const plan = planDelivery(neededBy, p.leadTimeDays, p.orderDate, p.deliveryActualDate, today);
+    const nd = parsePlanDate(neededBy);
     out.push({
       projectId: p.projectId,
       projectName: nameById.get(p.projectId) ?? "",
       label: p.title,
-      date: p.requiredDate,
-      rag: deliveryRag(d, today, false),
+      date: neededBy,
+      rag: plan.willMakeIt,
       source: "procurement",
-      overdue: d != null && diffDays(d, today) < 0,
-      complete: false,
+      overdue: !complete && nd != null && diffDays(nd, today) < 0,
+      complete,
+      id: p.id,
+      editable: true,
+      linkedWorkItemId: p.linkedWorkItemId,
+      neededBy,
+      leadTimeDays: p.leadTimeDays,
+      orderDate: p.orderDate,
+      orderBy: plan.orderBy,
+      eta: plan.eta,
+      willMakeIt: plan.willMakeIt,
+      taskNo: p.taskNo,
+      taskTitle: p.taskTitle,
+      isLongLead: p.isLongLead ?? false,
     });
   }
   // Plan tasks whose name mentions "delivery" — the imported tracker's delivery

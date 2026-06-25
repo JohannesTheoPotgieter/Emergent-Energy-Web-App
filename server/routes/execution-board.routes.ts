@@ -18,6 +18,7 @@ import { validateBody } from "../middleware/validateBody";
 import { parseIntParam } from "../lib/req-params";
 import { notFound } from "../lib/api-error";
 import { executionReviewRepository } from "../repositories/execution-review-repository";
+import { executionBoardRepository } from "../repositories/execution-board-repository";
 import {
   getBoard,
   getProjectDetail,
@@ -114,6 +115,20 @@ export function registerExecutionBoardRoutes(app: Express) {
     requirePermission("execution_review", "view"),
     async (_req: Request, res: Response) => {
       res.json(await getAllocationsProgram());
+    },
+  );
+
+  // Work items for a project — the Deliveries task picker (link an order to the
+  // execution task that defines when it's needed on site).
+  app.get(
+    "/api/execution-review/projects/:projectId/work-items",
+    jwtAuth,
+    requireAuth,
+    requirePermission("execution_review", "view"),
+    async (req: Request, res: Response) => {
+      const projectId = parseIntParam(req.params.projectId);
+      if (!projectId || Number.isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
+      res.json(await executionBoardRepository.getWorkItemsForProject(projectId));
     },
   );
 

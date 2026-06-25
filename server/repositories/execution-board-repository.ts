@@ -78,6 +78,36 @@ export interface ProcurementDeliveryRow {
   progressPercent: number | null;
 }
 
+/** A procurement order as a planned delivery: its lead-time fields plus the
+ *  execution task it feeds (the task's start date is the "needed on site" date). */
+export interface ProcurementDeliveryFullRow {
+  id: number;
+  projectId: number;
+  title: string;
+  status: string;
+  requiredDate: string | null;
+  leadTimeDays: number | null;
+  orderDate: string | null;
+  deliveryExpectedDate: string | null;
+  deliveryActualDate: string | null;
+  deliveryStatus: string | null;
+  isLongLead: boolean | null;
+  linkedWorkItemId: number | null;
+  taskNo: string | null;
+  taskTitle: string | null;
+  taskStartDate: string | null;
+  taskEndDate: string | null;
+}
+
+/** A work item exposed for the deliveries task picker. */
+export interface WorkItemPickRow {
+  id: number;
+  taskNo: string | null;
+  title: string;
+  startDate: string | null;
+  endDate: string | null;
+}
+
 export interface EngStageRow {
   projectId: number;
   status: string;
@@ -318,6 +348,84 @@ export class ExecutionBoardRepository {
           notInArray(procurementItems.status, ["received", "invoiced", "closed"]),
         ),
       );
+  }
+
+  /** All (non-deleted) procurement orders as planned deliveries, with the linked
+   *  execution task's dates for "needed on site". Includes completed ones so the
+   *  Deliveries view can hide/show them (the board still uses the open-only read). */
+  async getProcurementDeliveriesForProjects(projectIds: number[]): Promise<ProcurementDeliveryFullRow[]> {
+    if (projectIds.length === 0) return [];
+    const rows = await this.dbInstance
+      .select({
+        id: procurementItems.id,
+        projectId: procurementItems.projectId,
+        title: procurementItems.title,
+        status: procurementItems.status,
+        requiredDate: procurementItems.requiredDate,
+        leadTimeDays: procurementItems.leadTimeDays,
+        orderDate: procurementItems.orderDate,
+        deliveryExpectedDate: procurementItems.deliveryExpectedDate,
+        deliveryActualDate: procurementItems.deliveryActualDate,
+        deliveryStatus: procurementItems.deliveryStatus,
+        isLongLead: procurementItems.isLongLead,
+        linkedWorkItemId: procurementItems.linkedWorkItemId,
+        wbsCode: workItems.wbsCode,
+        outlineNumber: workItems.outlineNumber,
+        taskTitle: workItems.title,
+        taskStartDate: workItems.startDate,
+        taskEndDate: workItems.endDate,
+      })
+      .from(procurementItems)
+      .leftJoin(workItems, eq(workItems.id, procurementItems.linkedWorkItemId))
+      .where(and(inArray(procurementItems.projectId, projectIds), isNull(procurementItems.deletedAt)));
+    const out: ProcurementDeliveryFullRow[] = [];
+    for (const r of rows) {
+      out.push({
+        id: r.id,
+        projectId: r.projectId,
+        title: r.title,
+        status: r.status,
+        requiredDate: r.requiredDate,
+        leadTimeDays: r.leadTimeDays,
+        orderDate: r.orderDate,
+        deliveryExpectedDate: r.deliveryExpectedDate,
+        deliveryActualDate: r.deliveryActualDate,
+        deliveryStatus: r.deliveryStatus,
+        isLongLead: r.isLongLead,
+        linkedWorkItemId: r.linkedWorkItemId,
+        taskNo: r.wbsCode || r.outlineNumber || (r.linkedWorkItemId ? `#${r.linkedWorkItemId}` : null),
+        taskTitle: r.taskTitle ?? null,
+        taskStartDate: r.taskStartDate ?? null,
+        taskEndDate: r.taskEndDate ?? null,
+      });
+    }
+    return out;
+  }
+
+  /** Work items for a project, for the deliveries task picker. */
+  async getWorkItemsForProject(projectId: number): Promise<WorkItemPickRow[]> {
+    const rows = await this.dbInstance
+      .select({
+        id: workItems.id,
+        wbsCode: workItems.wbsCode,
+        outlineNumber: workItems.outlineNumber,
+        title: workItems.title,
+        startDate: workItems.startDate,
+        endDate: workItems.endDate,
+      })
+      .from(workItems)
+      .where(and(eq(workItems.projectId, projectId), isNull(workItems.deletedAt)));
+    const out: WorkItemPickRow[] = [];
+    for (const r of rows) {
+      out.push({
+        id: r.id,
+        taskNo: r.wbsCode || r.outlineNumber || `#${r.id}`,
+        title: r.title,
+        startDate: r.startDate ?? null,
+        endDate: r.endDate ?? null,
+      });
+    }
+    return out;
   }
 
   /** Engineering stage statuses for a set of projects. */

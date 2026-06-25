@@ -245,6 +245,27 @@ export interface DeliveryProgramRow {
   source: "milestone" | "procurement" | "task";
   overdue: boolean;
   complete: boolean;
+  // delivery planning (procurement orders only)
+  id?: number;
+  editable?: boolean;
+  linkedWorkItemId?: number | null;
+  neededBy?: string | null;
+  leadTimeDays?: number | null;
+  orderDate?: string | null;
+  orderBy?: string | null;
+  eta?: string | null;
+  willMakeIt?: Rag;
+  taskNo?: string | null;
+  taskTitle?: string | null;
+  isLongLead?: boolean;
+}
+
+export interface WorkItemPick {
+  id: number;
+  taskNo: string | null;
+  title: string;
+  startDate: string | null;
+  endDate: string | null;
 }
 
 export interface AllocationProgramRow {
