@@ -71,6 +71,20 @@ export class ActivityPlanTemplateRepository {
     return { id: r.id, name: r.name, description: r.description, rules: (r.rules as ActivityTemplateRule[]) ?? [], createdBy: r.createdBy, createdAt: r.createdAt };
   }
 
+  async update(id: number, patch: { name?: string; description?: string | null; rules?: ActivityTemplateRule[] }): Promise<ActivityTemplateRow | null> {
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if (patch.name !== undefined) set.name = patch.name;
+    if (patch.description !== undefined) set.description = patch.description;
+    if (patch.rules !== undefined) set.rules = patch.rules;
+    const [r] = await this.dbInstance
+      .update(activityPlanTemplates)
+      .set(set)
+      .where(and(eq(activityPlanTemplates.id, id), isNull(activityPlanTemplates.deletedAt)))
+      .returning();
+    if (!r) return null;
+    return { id: r.id, name: r.name, description: r.description, rules: (r.rules as ActivityTemplateRule[]) ?? [], createdBy: r.createdBy, createdAt: r.createdAt };
+  }
+
   async softDelete(id: number): Promise<void> {
     await this.dbInstance
       .update(activityPlanTemplates)

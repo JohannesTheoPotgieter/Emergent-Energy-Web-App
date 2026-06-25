@@ -16,13 +16,13 @@ const { mtRepo, tplRepo } = vi.hoisted(() => ({
     addMilestoneTaskLink: vi.fn(),
     addTaskCostLink: vi.fn(),
   },
-  tplRepo: { getById: vi.fn(), create: vi.fn(), list: vi.fn(), softDelete: vi.fn() },
+  tplRepo: { getById: vi.fn(), create: vi.fn(), list: vi.fn(), softDelete: vi.fn(), update: vi.fn() },
 }));
 vi.mock("../../../server/repositories/milestone-tracker-repository", () => ({ milestoneTrackerRepository: mtRepo }));
 vi.mock("../../../server/repositories/activity-plan-template-repository", () => ({ activityPlanTemplateRepository: tplRepo }));
 vi.mock("../../../server/repositories/execution-board-repository", () => ({ executionBoardRepository: {} }));
 
-import { applyTemplateToProject, createTemplateFromProject } from "../../../server/services/milestone-tracker-service";
+import { applyTemplateToProject, createTemplateFromProject, updateActivityTemplate } from "../../../server/services/milestone-tracker-service";
 
 const milestones = [
   { projectId: 1, rowHash: "m1", milestoneNo: "1", milestoneName: "Acceptance and Initial Deposit" },
@@ -105,5 +105,20 @@ describe("createTemplateFromProject", () => {
   it("throws when the project has no links to capture", async () => {
     await expect(createTemplateFromProject(1, "Empty", null, 99)).rejects.toThrow(/no milestone/i);
     expect(tplRepo.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateActivityTemplate", () => {
+  it("passes the patch through and returns the updated template", async () => {
+    const patch = { name: "Renamed", rules: [{ label: "R", milestoneKeywords: ["x"], taskKeywords: ["y"], outflowKeywords: [] }] };
+    tplRepo.update.mockResolvedValue({ id: 7, name: "Renamed", description: null, rules: patch.rules, createdBy: 1, createdAt: new Date() });
+    const r = await updateActivityTemplate(7, patch);
+    expect(tplRepo.update).toHaveBeenCalledWith(7, patch);
+    expect(r.name).toBe("Renamed");
+  });
+
+  it("throws when the template does not exist", async () => {
+    tplRepo.update.mockResolvedValue(null);
+    await expect(updateActivityTemplate(999, { name: "x" })).rejects.toThrow(/not found/i);
   });
 });
