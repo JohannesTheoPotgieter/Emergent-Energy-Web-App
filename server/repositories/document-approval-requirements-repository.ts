@@ -60,6 +60,22 @@ export async function listRequirementsForTaxonomy(
     .orderBy(asc(documentApprovalRequirements.sortOrder));
 }
 
+/** All requirements pinned to a particular discipline (browse-and-bind basis). */
+export async function listRequirementsForDiscipline(
+  discipline: string,
+): Promise<DocumentApprovalRequirement[]> {
+  return db
+    .select()
+    .from(documentApprovalRequirements)
+    .where(
+      and(
+        eq(documentApprovalRequirements.discipline, discipline),
+        eq(documentApprovalRequirements.active, true),
+      ),
+    )
+    .orderBy(asc(documentApprovalRequirements.sortOrder));
+}
+
 export async function getRequirementById(id: number): Promise<DocumentApprovalRequirement | null> {
   const [row] = await db
     .select()
@@ -70,33 +86,62 @@ export async function getRequirementById(id: number): Promise<DocumentApprovalRe
 }
 
 /**
- * Match a file against active requirements for a folder. Returns the
- * highest-priority requirement (lowest sortOrder) whose `fileNamePattern`
- * matches the file name, or the unconditional requirement (null pattern)
- * if no pattern matches. Returns null if nothing applies — caller treats
- * the file as not requiring approval.
+ * Pure matcher: pick the highest-priority requirement from `candidates`
+ * (already ordered by sortOrder) that applies to a file. A requirement with a
+ * `subfolderPattern` only applies when it matches `relPath` (the path under
+ * the bound folder; "" at the folder root). Among applicable rows a
+ * `fileNamePattern` match wins; otherwise the first unconditional row (no
+ * fileNamePattern) is the fallback. Bad regexes are skipped, never thrown.
  */
-export async function findMatchingRequirement(
-  taxonomyKey: string,
+export function pickRequirement(
+  candidates: DocumentApprovalRequirement[],
   fileName: string,
-): Promise<DocumentApprovalRequirement | null> {
-  const candidates = await listRequirementsForTaxonomy(taxonomyKey);
+  relPath: string,
+): DocumentApprovalRequirement | null {
   let unconditional: DocumentApprovalRequirement | null = null;
   for (const req of candidates) {
+    if (req.subfolderPattern) {
+      try {
+        if (!new RegExp(req.subfolderPattern, "i").test(relPath)) continue;
+      } catch {
+        continue;
+      }
+    }
     if (req.fileNamePattern == null || req.fileNamePattern === "") {
       unconditional ??= req;
       continue;
     }
     try {
-      const re = new RegExp(req.fileNamePattern, "i");
-      if (re.test(fileName)) return req;
+      if (new RegExp(req.fileNamePattern, "i").test(fileName)) return req;
     } catch {
       // Bad regex — skip silently. Validation at insert time should have
-      // caught this; if it didn't, we don't want a single broken pattern
-      // to crash the whole match.
+      // caught this; a single broken pattern must not crash the match.
     }
   }
   return unconditional;
+}
+
+/**
+ * Legacy taxonomy basis: match a file against active requirements pinned to a
+ * taxonomy folder. Returns the matching requirement or null (no approval).
+ */
+export async function findMatchingRequirement(
+  taxonomyKey: string,
+  fileName: string,
+): Promise<DocumentApprovalRequirement | null> {
+  return pickRequirement(await listRequirementsForTaxonomy(taxonomyKey), fileName, "");
+}
+
+/**
+ * Browse-and-bind basis: match a file in a bound discipline folder against
+ * active requirements for that discipline, narrowed by subfolder + filename.
+ */
+export async function findMatchingRequirementByDiscipline(
+  discipline: string,
+  relPath: string,
+  fileName: string,
+): Promise<DocumentApprovalRequirement | null> {
+  return pickRequirement(await listRequirementsForDiscipline(discipline), fileName, relPath);
 }
 
 // =========================================================================
@@ -107,6 +152,11 @@ export type CreateRequirementInput = z.infer<typeof insertDocumentApprovalRequir
 
 export async function createRequirement(input: CreateRequirementInput): Promise<DocumentApprovalRequirement> {
   const parsed = insertDocumentApprovalRequirementSchema.parse(input);
+  // A requirement targets exactly one basis: a legacy taxonomy folder OR a
+  // browse-and-bind discipline. (Zod allows both nullish; enforce here.)
+  if (!parsed.taxonomyKey && !parsed.discipline) {
+    throw new Error("An approval requirement must target either a taxonomyKey or a discipline.");
+  }
   const [row] = await db
     .insert(documentApprovalRequirements)
     .values(parsed)

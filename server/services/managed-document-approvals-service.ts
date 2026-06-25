@@ -31,16 +31,16 @@ import { db } from "../db";
 import { approvals, type Approval } from "@shared/schema/collaboration";
 import {
   managedDocuments,
-  documentApprovalRequirements,
-  projectFolders,
-  folderTaxonomy,
   MANAGED_DOCUMENT_APPROVAL_TYPE,
   type ManagedDocument,
   type DocumentApprovalRequirement,
 } from "@shared/schema/documents";
 import { users, type User } from "@shared/schema/users";
 import { getManagedDocumentById } from "../repositories/managed-documents-repository";
-import { findMatchingRequirement } from "../repositories/document-approval-requirements-repository";
+import {
+  findMatchingRequirementByDiscipline,
+} from "../repositories/document-approval-requirements-repository";
+import { getDisciplineFolderById } from "../repositories/project-discipline-folders-repository";
 import { createNotification, notifyUsers } from "./notification-service";
 
 // =========================================================================
@@ -162,20 +162,39 @@ export async function listApprovalsForDocument(documentId: number): Promise<Appr
 // Writes
 // =========================================================================
 
+/**
+ * The subfolder path of `docPath` relative to its bound folder `folderPath`
+ * (the directory part under the bound folder, excluding the filename). "" when
+ * the file sits directly in the bound folder. Defensive — returns "" if the
+ * paths don't line up.
+ */
+function relativePathUnder(docPath: string, folderPath: string | null): string {
+  if (!folderPath) return "";
+  const idx = docPath.indexOf(folderPath);
+  if (idx < 0) return "";
+  const tail = docPath.slice(idx + folderPath.length).replace(/^\/+/, "");
+  const lastSlash = tail.lastIndexOf("/");
+  return lastSlash >= 0 ? tail.slice(0, lastSlash) : "";
+}
+
 async function loadRequirementForDocument(
   doc: ManagedDocument,
 ): Promise<DocumentApprovalRequirement | null> {
-  if (!doc.parentFolderId) return null;
-  // Resolve the taxonomy key via project_folders -> folder_taxonomy.
-  const [join] = await db
-    .select({
-      taxonomyKey: projectFolders.taxonomyKey,
-    })
-    .from(projectFolders)
-    .where(eq(projectFolders.id, doc.parentFolderId))
-    .limit(1);
-  if (!join) return null;
-  return findMatchingRequirement(join.taxonomyKey, doc.name);
+  // Browse-and-bind basis first: the doc is tagged with a bound discipline
+  // folder. Match discipline-scoped requirements (subfolder + filename).
+  if (doc.disciplineFolderId) {
+    const binding = await getDisciplineFolderById(doc.disciplineFolderId);
+    if (binding && !binding.deletedAt && binding.discipline) {
+      const relPath = relativePathUnder(doc.path, binding.sharepointPath);
+      const req = await findMatchingRequirementByDiscipline(binding.discipline, relPath, doc.name);
+      if (req) return req;
+    }
+  }
+
+  // PHASE 5: the legacy taxonomy fallback (parent_folder_id -> project_folders
+  // -> folder_taxonomy) was removed with those tables. Documents not under a
+  // bound discipline folder have no approval requirement.
+  return null;
 }
 
 /**

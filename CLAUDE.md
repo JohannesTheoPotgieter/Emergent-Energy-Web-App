@@ -152,10 +152,15 @@ Three current vs deprecated surfaces agents currently miss:
   comms-to-project tables. Use these for any new comms ingestion. Do not
   invent parallel "messages" / "activity" / "mentions" tables. See
   `docs/AGENT_GUARDRAILS.md` § 4B.
-- ✅ `managed_documents` + `folder_taxonomy` + `project_folders` are the
-  current document-management surface. New document features attach here.
-- 🚫 `controlled_documents`, `controlled_document_types`, and
-  `project_sharepoint_roots` are DEPRECATED. Do not extend.
+- ✅ `managed_documents` + `project_discipline_folders` (browse-and-bind) +
+  `document_approval_requirements` are the current document-management surface.
+  New document features attach here. Per project, per discipline, a user binds
+  an EXISTING SharePoint folder (`project_discipline_folders`); tracked files
+  hang off it via `managed_documents.discipline_folder_id`.
+- 🚫 `controlled_documents`, `controlled_document_types`,
+  `project_sharepoint_roots`, and (Phase 5) `folder_taxonomy` + `project_folders`
+  + the manual folder-provisioning path are DEPRECATED/REMOVED. Do not
+  reintroduce them.
 
 ## Local QA: mock connectors
 
@@ -221,8 +226,10 @@ Three current vs deprecated surfaces agents currently miss:
   + `phaseAtLinkTime` (use `email_project_links` / `teams_project_links`).
 - ❌ Mutate `phaseAtLinkTime` after creation (HARD — corrupts history).
 - ❌ Extend `controlled_documents` / `controlled_document_types` /
-  `project_sharepoint_roots` (deprecated; use `managed_documents` +
-  `folder_taxonomy` + `project_folders`).
+  `project_sharepoint_roots`, or reintroduce `folder_taxonomy` /
+  `project_folders` / manual folder provisioning (all deprecated/removed; use
+  `managed_documents` + `project_discipline_folders` +
+  `document_approval_requirements`).
 - ❌ Store email bodies, attachment bytes, message contents, or transcripts
   in the DB (HARD — § 5A).
 - ❌ Skip the canonical comms tables when ingesting from a new source

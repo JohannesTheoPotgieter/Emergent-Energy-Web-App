@@ -12,17 +12,10 @@ export async function runStartupSeeds(options: {
 
   if (!startupDataSeedEnabled) return;
 
-  // D6 — Active Clients folder taxonomy. Runs OUTSIDE the startup_seeds_v1
-  // one-shot guard so it executes on every boot (idempotent insert keyed
-  // on internal_key). New rows added to the seed picked up automatically;
-  // admin-edited rows preserved (we only insert when missing).
-  try {
-    const { seedFolderTaxonomy } = await import("../seed-folder-taxonomy");
-    const { inserted, skipped } = await seedFolderTaxonomy();
-    log(`[Seed] Folder taxonomy: inserted=${inserted} skipped=${skipped}`, "Startup");
-  } catch (err) {
-    log(`[Seed] Folder taxonomy error: ${err}`, "Startup");
-  }
+  // PHASE 5 DECOMMISSION: the Active Clients folder-taxonomy seed
+  // (seedFolderTaxonomy) was removed along with the folder_taxonomy /
+  // project_folders tables. Project document folders are now bound manually
+  // via browse-and-bind (project_discipline_folders) — nothing to seed.
 
   // One-time guard: skip the v1 batch if all original seeds have already completed
   if (await hasBackfillRun("startup_seeds_v1")) return;

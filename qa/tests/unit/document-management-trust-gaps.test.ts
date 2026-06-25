@@ -1,18 +1,20 @@
 /**
  * Document management trust-gap fixes — static analysis tests.
  *
- * Covers the four P0 fixes landed in this session:
- *   1. Approver role filtering — FolderFiles.tsx uses useApproverCandidates,
- *      not useUserNames.
+ * Covers the server/service-layer fixes that survive Phase 5:
+ *   1. Approver role filtering — the approver-candidates endpoint + hook exist
+ *      and the service filters candidates by the requirement's approver roles.
  *   2. Server-side role validation — requestApproval rejects approvers whose
  *      role is not in requirement.approverRoles.
- *   3. Active Clients upload — Upload button rendered per provisioned folder.
- *   4. Download failure toast — onDownload shows an error toast on !res.ok.
  *
  * Also asserts the three state-transition paths in the service:
  *   draft → in_review   (requestApproval)
  *   in_review → approved (recordApproval)
  *   in_review → draft    (recordRejection)
+ *
+ * PHASE 5 DECOMMISSION: the FolderFiles.tsx component and the folder-keyed
+ * Active-Clients upload/download surface in pages/documents.tsx were removed
+ * with the manual-provisioning path; their UI-level assertions were dropped.
  */
 
 import { describe, expect, it } from "vitest";
@@ -31,14 +33,6 @@ const routesFile = fs.readFileSync(
 );
 const hooksFile = fs.readFileSync(
   path.join(repoRoot, "client", "src", "hooks", "use-managed-document-approvals.ts"),
-  "utf8",
-);
-const folderFilesComponent = fs.readFileSync(
-  path.join(repoRoot, "client", "src", "components", "documents", "FolderFiles.tsx"),
-  "utf8",
-);
-const documentsPage = fs.readFileSync(
-  path.join(repoRoot, "client", "src", "pages", "documents.tsx"),
   "utf8",
 );
 
@@ -84,10 +78,10 @@ describe("fix 2: server-side approver role validation", () => {
 });
 
 // =========================================================================
-// Fix 1 — Approver candidate filtering in the UI
+// Fix 1 — Approver candidate endpoint + role filtering
 // =========================================================================
 
-describe("fix 1: approver candidate endpoint and UI filtering", () => {
+describe("fix 1: approver candidate endpoint and role filtering", () => {
   it("service exports getApproverCandidatesForDocument", () => {
     expect(serviceFile).toMatch(/export async function getApproverCandidatesForDocument/);
   });
@@ -109,62 +103,12 @@ describe("fix 1: approver candidate endpoint and UI filtering", () => {
     expect(hooksFile).toMatch(/export function useApproverCandidates/);
   });
 
-  it("FolderFiles uses useApproverCandidates, not useUserNames", () => {
-    expect(folderFilesComponent).toMatch(/useApproverCandidates/);
-    expect(folderFilesComponent).not.toMatch(/useUserNames/);
-  });
-
-  it("FolderFiles shows a loading state while candidates are fetched", () => {
-    expect(folderFilesComponent).toMatch(/Loading eligible approvers/);
-  });
-
-  it("FolderFiles shows required roles hint in the approvers label", () => {
-    expect(folderFilesComponent).toMatch(/requiredRoles/);
-  });
-});
-
-// =========================================================================
-// Fix 3 — Upload from Active Clients view
-// =========================================================================
-
-describe("fix 3: upload button in Active Clients view (folder-keyed)", () => {
-  // Stage 2 of the project_sharepoint_roots → project_folders migration cut
-  // this upload over from a project-root + Graph-itemId target to the
-  // canonical folder-keyed endpoint, which enforces folder membership
-  // server-side (stronger than the old arbitrary-parentItemId path).
-  it("ActiveClientsView tracks the target provisioned folder id for upload", () => {
-    expect(documentsPage).toMatch(/uploadFolderId/);
-  });
-
-  it("renders an upload button per provisioned folder", () => {
-    expect(documentsPage).toMatch(/btn-active-clients-upload-/);
-  });
-
-  it("mounts UploadDialog with a folder-keyed target, not a project root", () => {
-    expect(documentsPage).toContain(
-      'target={{ kind: "folder", projectId, folderId: uploadFolderId }}',
-    );
-    expect(documentsPage).not.toMatch(/projectRootId/);
-  });
-});
-
-// =========================================================================
-// Fix 4 — Download failure toast
-// =========================================================================
-
-describe("fix 4: download failure toast", () => {
-  it("documents page imports toast", () => {
-    expect(documentsPage).toMatch(/import.*toast.*from.*use-toast/);
-  });
-
-  it("onDownload calls toast on !res.ok rather than silently returning", () => {
-    // Must call toast before the return (not just 'return' bare).
-    expect(documentsPage).toMatch(/title:\s*["']Download failed["']/);
-    expect(documentsPage).toMatch(/variant:\s*["']destructive["']/);
-  });
-
-  it("the silent bare 'if (!res.ok) return' is gone", () => {
-    // The old pattern was a single-line guard with no toast call.
-    expect(documentsPage).not.toMatch(/if\s*\(!res\.ok\)\s*return;/);
+  it("the approval requirement resolves on the discipline basis only (no taxonomy fallback)", () => {
+    // Phase 5: loadRequirementForDocument resolves via disciplineFolderId →
+    // binding → findMatchingRequirementByDiscipline; the legacy taxonomy
+    // fallback (findMatchingRequirement) was removed.
+    expect(serviceFile).toMatch(/findMatchingRequirementByDiscipline/);
+    expect(serviceFile).toMatch(/getDisciplineFolderById/);
+    expect(serviceFile).not.toMatch(/findMatchingRequirement\(/);
   });
 });

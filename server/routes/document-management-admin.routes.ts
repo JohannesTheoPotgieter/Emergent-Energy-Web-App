@@ -37,17 +37,8 @@ import {
   serverError,
 } from "../lib/api-error";
 import {
-  listActiveTaxonomy,
-  listAllTaxonomy,
-  getTaxonomyByKey,
-  createTaxonomyRow,
-  updateTaxonomyRow,
-  deactivateTaxonomyRow,
-} from "../repositories/folder-taxonomy-repository";
-import {
   listActiveRequirements,
   listAllRequirements,
-  getRequirementById,
   createRequirement,
   updateRequirement,
   deactivateRequirement,
@@ -60,17 +51,11 @@ import {
 import * as sp from "../services/sharepoint-document-service";
 import { discoverSites } from "../sharepoint-list";
 import {
-  insertFolderTaxonomySchema,
   insertDocumentApprovalRequirementSchema,
 } from "@shared/schema/documents";
 
-const internalKeyParam = z.string().min(1).max(128).regex(/^[a-z0-9_/]+$/, {
-  message: "internalKey must be lowercase letters, numbers, underscores, or '/'.",
-});
-
 const requirementIdParam = z.coerce.number().int().positive();
 
-const taxonomyUpdateBodySchema = insertFolderTaxonomySchema.partial();
 const requirementUpdateBodySchema = insertDocumentApprovalRequirementSchema.partial();
 const companyRootKindParam = z.string().min(1).max(64).regex(/^[a-z0-9_]+$/);
 const companyRootTestBodySchema = z.object({
@@ -111,143 +96,12 @@ function toApiError(err: unknown, fallback = "Request failed"): ApiError {
 
 export function registerDocumentManagementAdminRoutes(app: Express): void {
   // ====================================================================
-  // Public read — any authenticated user. Drives discipline panels +
-  // future taxonomy-aware browser.
+  // PHASE 5 DECOMMISSION: the folder_taxonomy public-read + admin CRUD
+  // endpoints were removed along with the folder_taxonomy table. Project
+  // document folders are bound via browse-and-bind
+  // (project-discipline-folders.routes). Approval requirements (below)
+  // remain, now on the discipline basis.
   // ====================================================================
-
-  app.get(
-    "/api/folder-taxonomy",
-    requireAuth,
-    requirePermission("documents", "view"),
-    async (_req: Request, res: Response) => {
-      try {
-        const taxonomy = await listActiveTaxonomy();
-        res.json({ taxonomy });
-      } catch (err) {
-        if (err instanceof ApiError) throw err;
-        console.error("[doc-mgmt-admin] list taxonomy error:", err);
-        throw serverError("Failed to load folder taxonomy");
-      }
-    },
-  );
-
-  app.get(
-    "/api/folder-taxonomy/:internalKey",
-    requireAuth,
-    requirePermission("documents", "view"),
-    async (req: Request, res: Response) => {
-      const parsed = internalKeyParam.safeParse(req.params.internalKey);
-      if (!parsed.success) throw badRequest("Invalid internalKey");
-      try {
-        const row = await getTaxonomyByKey(parsed.data);
-        if (!row) throw notFound(`Taxonomy key '${parsed.data}' not found`);
-        res.json({ row });
-      } catch (err) {
-        if (err instanceof ApiError) throw err;
-        console.error("[doc-mgmt-admin] get taxonomy error:", err);
-        throw serverError("Failed to load taxonomy entry");
-      }
-    },
-  );
-
-  // ====================================================================
-  // Admin — folder_taxonomy CRUD (documents_admin:edit)
-  // ====================================================================
-
-  app.get(
-    "/api/admin/folder-taxonomy",
-    requireAuth,
-    requirePermission("documents_admin", "view"),
-    async (_req: Request, res: Response) => {
-      try {
-        const taxonomy = await listAllTaxonomy();
-        res.json({ taxonomy });
-      } catch (err) {
-        if (err instanceof ApiError) throw err;
-        console.error("[doc-mgmt-admin] admin list taxonomy error:", err);
-        throw serverError("Failed to load folder taxonomy");
-      }
-    },
-  );
-
-  app.post(
-    "/api/admin/folder-taxonomy",
-    requireAuth,
-    requirePermission("documents_admin", "create"),
-    async (req: Request, res: Response) => {
-      const parsed = insertFolderTaxonomySchema.safeParse(req.body);
-      if (!parsed.success) {
-        throw badRequest("Invalid taxonomy payload", {
-          issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
-        });
-      }
-      try {
-        const row = await createTaxonomyRow(parsed.data);
-        logAuditFromReq(req, {
-          entityType: "folder_taxonomy",
-          entityId: row.internalKey,
-          action: "create",
-          changesJson: { row },
-        });
-        res.status(201).json({ row });
-      } catch (err) {
-        console.error("[doc-mgmt-admin] create taxonomy error:", err);
-        throw toApiError(err, "Failed to create taxonomy row");
-      }
-    },
-  );
-
-  app.patch(
-    "/api/admin/folder-taxonomy/:internalKey",
-    requireAuth,
-    requirePermission("documents_admin", "edit"),
-    async (req: Request, res: Response) => {
-      const parsedKey = internalKeyParam.safeParse(req.params.internalKey);
-      if (!parsedKey.success) throw badRequest("Invalid internalKey");
-      const parsedBody = taxonomyUpdateBodySchema.safeParse(req.body);
-      if (!parsedBody.success) {
-        throw badRequest("Invalid taxonomy update", {
-          issues: parsedBody.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
-        });
-      }
-      try {
-        const row = await updateTaxonomyRow(parsedKey.data, parsedBody.data);
-        logAuditFromReq(req, {
-          entityType: "folder_taxonomy",
-          entityId: row.internalKey,
-          action: "update",
-          changesJson: { patch: parsedBody.data },
-        });
-        res.json({ row });
-      } catch (err) {
-        console.error("[doc-mgmt-admin] update taxonomy error:", err);
-        throw toApiError(err, "Failed to update taxonomy row");
-      }
-    },
-  );
-
-  app.delete(
-    "/api/admin/folder-taxonomy/:internalKey",
-    requireAuth,
-    requirePermission("documents_admin", "delete"),
-    async (req: Request, res: Response) => {
-      const parsedKey = internalKeyParam.safeParse(req.params.internalKey);
-      if (!parsedKey.success) throw badRequest("Invalid internalKey");
-      try {
-        const row = await deactivateTaxonomyRow(parsedKey.data);
-        logAuditFromReq(req, {
-          entityType: "folder_taxonomy",
-          entityId: row.internalKey,
-          action: "deactivate",
-          changesJson: { active: false },
-        });
-        res.json({ row });
-      } catch (err) {
-        console.error("[doc-mgmt-admin] deactivate taxonomy error:", err);
-        throw toApiError(err, "Failed to deactivate taxonomy row");
-      }
-    },
-  );
 
   // ====================================================================
   // Public read — approval requirements (drives upload-time approval
@@ -301,10 +155,6 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
           issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
         });
       }
-      // Verify the referenced taxonomy key exists before insert — the FK
-      // catches it but a 400 here gives a friendlier error message.
-      const parent = await getTaxonomyByKey(parsed.data.taxonomyKey);
-      if (!parent) throw badRequest(`Taxonomy key '${parsed.data.taxonomyKey}' does not exist`);
       try {
         const row = await createRequirement(parsed.data);
         logAuditFromReq(req, {
@@ -333,11 +183,6 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
         throw badRequest("Invalid requirement update", {
           issues: parsedBody.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
         });
-      }
-      // If taxonomyKey changed, verify the new key exists.
-      if (parsedBody.data.taxonomyKey !== undefined) {
-        const parent = await getTaxonomyByKey(parsedBody.data.taxonomyKey);
-        if (!parent) throw badRequest(`Taxonomy key '${parsedBody.data.taxonomyKey}' does not exist`);
       }
       try {
         const row = await updateRequirement(parsedId.data, parsedBody.data);

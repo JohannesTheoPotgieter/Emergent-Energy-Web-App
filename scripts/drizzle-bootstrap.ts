@@ -159,16 +159,16 @@ const MODERN_MIGRATION_PROBES: Record<
   // actively-queried tables (+ a representative column) so a partial apply
   // replays rather than being presumed complete.
   "0089_missing_tables_drift_repair": async (c) =>
-    (await tableExists(c, "folder_taxonomy")) &&
-    (await tableExists(c, "project_folders")) &&
     (await tableExists(c, "document_approval_requirements")) &&
     (await tableExists(c, "qb_link_proposed_cascade_history")) &&
     (await tableExists(c, "project_hold_metadata")) &&
     (await tableExists(c, "project_stage_exception_history")) &&
     // 0089's original tail artifact (vat_period_locks + its FK) was dropped in
-    // 0100; the six tables above + this column remain a robust multi-artifact
-    // canary that 0089 ran to (near) completion.
-    (await columnExists(c, "folder_taxonomy", "lifecycle_mode")),
+    // 0100, and its folder_taxonomy / project_folders tables were dropped in
+    // 0114 (Phase 5) — so neither can serve as a canary any more. The four
+    // tables above + this column remain a robust multi-artifact canary that
+    // 0089 ran to (near) completion.
+    (await columnExists(c, "document_approval_requirements", "display_name")),
   // 0090 adds fiscal_period_id (+ FK) to four finance manual/budget tables.
   // Probe the migration's final statement (the tracker_monthly_manual FK) so a
   // partial apply replays rather than being presumed complete.

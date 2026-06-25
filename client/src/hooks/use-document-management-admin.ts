@@ -1,41 +1,22 @@
 /**
- * D6 admin hooks — folder taxonomy + approval requirements.
+ * D6 admin hooks — approval requirements + company SharePoint roots.
  *
- * Backed by /api/admin/folder-taxonomy and
- * /api/admin/document-approval-requirements (see
+ * Backed by /api/admin/document-approval-requirements and
+ * /api/admin/company-sharepoint-roots (see
  * server/routes/document-management-admin.routes.ts).
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getQueryFn } from "@/lib/queryClient";
-import type {
-  FolderTaxonomy,
-  DocumentApprovalRequirement,
-  FolderLifecycleMode,
-} from "@shared/schema";
+import type { DocumentApprovalRequirement } from "@shared/schema";
 
-const TAXONOMY_KEY = ["/api/admin/folder-taxonomy"] as const;
 const REQUIREMENTS_KEY = ["/api/admin/document-approval-requirements"] as const;
 
-const PUBLIC_TAXONOMY_KEY = ["/api/folder-taxonomy"] as const;
 const PUBLIC_REQUIREMENTS_KEY = ["/api/document-approval-requirements"] as const;
 
 // =========================================================================
 // Public reads — any authenticated user with documents:view
 // =========================================================================
-
-interface PublicTaxonomyResponse {
-  taxonomy: FolderTaxonomy[];
-}
-
-export function usePublicFolderTaxonomy(enabled = true) {
-  return useQuery<PublicTaxonomyResponse>({
-    queryKey: PUBLIC_TAXONOMY_KEY,
-    queryFn: getQueryFn({ on401: "throw" }),
-    enabled,
-    staleTime: 60_000,
-  });
-}
 
 interface PublicRequirementsResponse {
   requirements: DocumentApprovalRequirement[];
@@ -47,89 +28,6 @@ export function usePublicApprovalRequirements(enabled = true) {
     queryFn: getQueryFn({ on401: "throw" }),
     enabled,
     staleTime: 60_000,
-  });
-}
-
-// =========================================================================
-// Folder taxonomy
-// =========================================================================
-
-interface TaxonomyResponse {
-  taxonomy: FolderTaxonomy[];
-}
-
-export function useFolderTaxonomy(enabled = true) {
-  return useQuery<TaxonomyResponse>({
-    queryKey: TAXONOMY_KEY,
-    queryFn: getQueryFn({ on401: "throw" }),
-    enabled,
-  });
-}
-
-export interface CreateTaxonomyPayload {
-  internalKey: string;
-  displayName: string;
-  parentKey?: string | null;
-  lifecycleMode: FolderLifecycleMode;
-  stageCode?: string | null;
-  disciplines: string[];
-  description?: string | null;
-  sortOrder?: number;
-  active?: boolean;
-}
-
-export function useCreateTaxonomyRow() {
-  const qc = useQueryClient();
-  return useMutation<{ row: FolderTaxonomy }, Error, CreateTaxonomyPayload>({
-    mutationFn: async (payload) => {
-      const res = await apiRequest("POST", "/api/admin/folder-taxonomy", payload);
-      return res.json();
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: TAXONOMY_KEY });
-      qc.invalidateQueries({ queryKey: ["/api/folder-taxonomy"] });
-    },
-  });
-}
-
-export type UpdateTaxonomyPayload = Partial<CreateTaxonomyPayload>;
-
-export function useUpdateTaxonomyRow() {
-  const qc = useQueryClient();
-  return useMutation<
-    { row: FolderTaxonomy },
-    Error,
-    { internalKey: string; patch: UpdateTaxonomyPayload }
-  >({
-    mutationFn: async ({ internalKey, patch }) => {
-      const res = await apiRequest(
-        "PATCH",
-        `/api/admin/folder-taxonomy/${encodeURIComponent(internalKey)}`,
-        patch,
-      );
-      return res.json();
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: TAXONOMY_KEY });
-      qc.invalidateQueries({ queryKey: ["/api/folder-taxonomy"] });
-    },
-  });
-}
-
-export function useDeactivateTaxonomyRow() {
-  const qc = useQueryClient();
-  return useMutation<{ row: FolderTaxonomy }, Error, string>({
-    mutationFn: async (internalKey) => {
-      const res = await apiRequest(
-        "DELETE",
-        `/api/admin/folder-taxonomy/${encodeURIComponent(internalKey)}`,
-      );
-      return res.json();
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: TAXONOMY_KEY });
-      qc.invalidateQueries({ queryKey: ["/api/folder-taxonomy"] });
-    },
   });
 }
 
@@ -150,7 +48,12 @@ export function useApprovalRequirements(enabled = true) {
 }
 
 export interface CreateRequirementPayload {
-  taxonomyKey: string;
+  /** Legacy basis. Provide this OR `discipline`. */
+  taxonomyKey?: string | null;
+  /** Browse-and-bind basis: a LIFECYCLE_DEPARTMENTS code. Provide this OR `taxonomyKey`. */
+  discipline?: string | null;
+  /** Optional regex on the path under the bound folder (discipline basis). */
+  subfolderPattern?: string | null;
   fileNamePattern?: string | null;
   displayName: string;
   description?: string | null;
@@ -209,95 +112,6 @@ export function useDeactivateRequirement() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: REQUIREMENTS_KEY });
       qc.invalidateQueries({ queryKey: ["/api/document-approval-requirements"] });
-    },
-  });
-}
-
-// =========================================================================
-// Provisioning (Phase 3)
-// =========================================================================
-
-export interface ProvisionRowReport {
-  taxonomyKey: string;
-  displayName: string;
-  status: "created" | "already_present" | "linked_existing" | "skipped" | "error";
-  driveId?: string | null;
-  itemId?: string | null;
-  sharepointPath?: string | null;
-  webUrl?: string | null;
-  error?: string;
-}
-
-export interface ProvisionResult {
-  projectId: number;
-  projectName: string;
-  projectFolderPath: string;
-  rootKind: string;
-  lifecycleMode: "pre_construction" | "full_lifecycle" | "both";
-  rows: ProvisionRowReport[];
-  summary: {
-    created: number;
-    alreadyPresent: number;
-    linkedExisting: number;
-    skipped: number;
-    errors: number;
-  };
-}
-
-export function useProvisionProjectFolders() {
-  const qc = useQueryClient();
-  return useMutation<
-    ProvisionResult,
-    Error,
-    { projectId: number; lifecycleMode: ProvisionResult["lifecycleMode"] }
-  >({
-    mutationFn: async ({ projectId, lifecycleMode }) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/projects/${projectId}/provision-folders`,
-        { lifecycleMode },
-      );
-      return res.json();
-    },
-    onSuccess: (_data, { projectId }) => {
-      qc.invalidateQueries({ queryKey: [`/api/projects/${projectId}/folders`] });
-    },
-  });
-}
-
-interface ProjectFoldersResponse {
-  projectId: number;
-  folders: Array<{
-    id: number;
-    projectId: number;
-    taxonomyKey: string;
-    driveId: string | null;
-    itemId: string | null;
-    sharepointPath: string | null;
-    webUrl: string | null;
-    provisionedAt: string | null;
-    lastVerifiedAt: string | null;
-    verifyError: string | null;
-  }>;
-}
-
-export function useProjectFolders(projectId: number | null) {
-  return useQuery<ProjectFoldersResponse>({
-    queryKey: projectId ? [`/api/projects/${projectId}/folders`] : ["/api/projects/0/folders"],
-    queryFn: getQueryFn({ on401: "throw" }),
-    enabled: typeof projectId === "number" && projectId > 0,
-  });
-}
-
-export function useVerifyProjectFolders() {
-  const qc = useQueryClient();
-  return useMutation<{ projectId: number; verified: number; missing: number }, Error, number>({
-    mutationFn: async (projectId) => {
-      const res = await apiRequest("POST", `/api/projects/${projectId}/verify-folders`);
-      return res.json();
-    },
-    onSuccess: (_data, projectId) => {
-      qc.invalidateQueries({ queryKey: [`/api/projects/${projectId}/folders`] });
     },
   });
 }

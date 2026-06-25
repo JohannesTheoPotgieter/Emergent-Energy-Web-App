@@ -2,11 +2,20 @@
  * Document Management v2 (D6) — schema, validation, and migration shape.
  *
  * Pure unit tests — no DB. Validates that:
- *   1. The new schema tables export the expected types.
- *   2. Insert schemas reject invalid disciplines / approver roles / regexes.
- *   3. The permission registry has the new documents entities wired up.
- *   4. Migration 0038 contains the FK constraints we declared.
- *   5. The migration journal has every SQL file in /migrations referenced.
+ *   1. The surviving schema tables export the expected types.
+ *   2. The approval-requirement insert schema validates approver roles /
+ *      regexes and accepts both bases (legacy taxonomyKey OR discipline).
+ *   3. The permission registry has the documents entities wired up.
+ *   4. The Phase 5 migrations declare the browse-and-bind discipline surface
+ *      and drop the legacy folder-taxonomy / parent_folder_id surface.
+ *   5. The migration journal references every SQL file in /migrations.
+ *
+ * PHASE 5 DECOMMISSION: the legacy `folder_taxonomy` + `project_folders`
+ * tables, `managed_documents.parent_folder_id`, the
+ * `folder_lifecycle_mode_enum`, and their exports/schemas were removed. The
+ * sole project document surface is now browse-and-bind discipline folders
+ * (`project_discipline_folders` + `managed_documents.discipline_folder_id` +
+ * discipline-based `document_approval_requirements`).
  */
 
 import { describe, expect, it } from "vitest";
@@ -14,90 +23,55 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
-  folderTaxonomy,
-  projectFolders,
+  projectDisciplineFolders,
   documentApprovalRequirements,
   managedDocuments,
-  insertFolderTaxonomySchema,
   insertDocumentApprovalRequirementSchema,
-  FOLDER_LIFECYCLE_MODES,
 } from "@shared/schema/documents";
 import { ENTITY_REGISTRY } from "@shared/permissions/registry";
-import { LIFECYCLE_DEPARTMENTS } from "@shared/schema/stage-lifecycle";
 import { COMPANY_ROLES } from "@shared/schema/users";
 
 const repoRoot = path.resolve(__dirname, "..", "..", "..");
-// Phase 1 hand-authored migration was consolidated into a drizzle-kit
-// generated migration after the merge with main (which had its own
-// 0038/0039) — see commit "merge main into D6".
-const migrationPath = path.join(repoRoot, "migrations", "0044_document_management_v2.sql");
 const journalPath = path.join(repoRoot, "migrations", "meta", "_journal.json");
 
-describe("D6 schema — table shapes", () => {
-  it("exports the four canonical tables", () => {
-    expect(folderTaxonomy).toBeDefined();
-    expect(projectFolders).toBeDefined();
-    expect(documentApprovalRequirements).toBeDefined();
+describe("D6 schema — table shapes (post Phase 5)", () => {
+  it("exports the surviving canonical tables", () => {
     expect(managedDocuments).toBeDefined();
+    expect(documentApprovalRequirements).toBeDefined();
+    expect(projectDisciplineFolders).toBeDefined();
   });
 
-  it("exposes lifecycle modes that match the migration enum", () => {
-    expect(FOLDER_LIFECYCLE_MODES).toEqual(["pre_construction", "full_lifecycle", "both"]);
-  });
-});
-
-describe("D6 schema — insertFolderTaxonomySchema validation", () => {
-  const baseValid = {
-    internalKey: "07_construction",
-    displayName: "07_Construction",
-    parentKey: null,
-    lifecycleMode: "full_lifecycle" as const,
-    stageCode: "S06_CONSTRUCTION",
-    disciplines: ["ENGINEERING", "CONSTRUCTION", "QUALITY"],
-    description: null,
-    sortOrder: 70,
-    active: true,
-  };
-
-  it("accepts a well-formed row", () => {
-    const result = insertFolderTaxonomySchema.safeParse(baseValid);
-    expect(result.success).toBe(true);
+  it("managed_documents carries discipline_folder_id and NOT parent_folder_id", () => {
+    const cols = Object.keys(managedDocuments);
+    expect(cols).toContain("disciplineFolderId");
+    expect(cols).not.toContain("parentFolderId");
   });
 
-  it("rejects an internalKey with disallowed characters", () => {
-    const result = insertFolderTaxonomySchema.safeParse({
-      ...baseValid,
-      internalKey: "07 Construction!",
-    });
-    expect(result.success).toBe(false);
+  it("document_approval_requirements keeps taxonomyKey (dormant) and adds discipline", () => {
+    const cols = Object.keys(documentApprovalRequirements);
+    expect(cols).toContain("taxonomyKey");
+    expect(cols).toContain("discipline");
   });
 
-  it("rejects disciplines values that aren't in LIFECYCLE_DEPARTMENTS", () => {
-    const result = insertFolderTaxonomySchema.safeParse({
-      ...baseValid,
-      disciplines: ["ENGINEERING", "NOT_A_REAL_DEPARTMENT"],
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("accepts every actual LIFECYCLE_DEPARTMENT value", () => {
-    const result = insertFolderTaxonomySchema.safeParse({
-      ...baseValid,
-      disciplines: [...LIFECYCLE_DEPARTMENTS],
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("requires lifecycleMode", () => {
-    const { lifecycleMode: _omit, ...withoutMode } = baseValid;
-    const result = insertFolderTaxonomySchema.safeParse(withoutMode);
-    expect(result.success).toBe(false);
+  it("the retired folder-taxonomy exports are gone from the documents schema barrel", async () => {
+    const mod = (await import("@shared/schema/documents")) as Record<string, unknown>;
+    for (const sym of [
+      "folderTaxonomy",
+      "projectFolders",
+      "insertFolderTaxonomySchema",
+      "FOLDER_LIFECYCLE_MODES",
+      "folderLifecycleModeEnum",
+    ]) {
+      expect(mod[sym]).toBeUndefined();
+    }
   });
 });
 
 describe("D6 schema — insertDocumentApprovalRequirementSchema validation", () => {
+  // Browse-and-bind basis: a discipline + filename pattern.
   const baseValid = {
-    taxonomyKey: "pre_cost_proposal/cp_costing",
+    discipline: "FINANCE" as const,
+    subfolderPattern: "^cost",
     fileNamePattern: "^costing.*\\.xlsx$",
     displayName: "Costing Excel",
     description: null,
@@ -108,9 +82,26 @@ describe("D6 schema — insertDocumentApprovalRequirementSchema validation", () 
     sortOrder: 0,
   };
 
-  it("accepts a well-formed row", () => {
+  it("accepts a well-formed discipline-based row", () => {
     const result = insertDocumentApprovalRequirementSchema.safeParse(baseValid);
     expect(result.success).toBe(true);
+  });
+
+  it("accepts a legacy taxonomyKey-based row (retained for dormant rows)", () => {
+    const { discipline: _omit, ...rest } = baseValid;
+    const result = insertDocumentApprovalRequirementSchema.safeParse({
+      ...rest,
+      taxonomyKey: "pre_cost_proposal/cp_costing",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a discipline value that isn't a LIFECYCLE_DEPARTMENT", () => {
+    const result = insertDocumentApprovalRequirementSchema.safeParse({
+      ...baseValid,
+      discipline: "NOT_A_REAL_DEPARTMENT",
+    });
+    expect(result.success).toBe(false);
   });
 
   it("rejects empty approverRoles", () => {
@@ -176,61 +167,52 @@ describe("D6 permissions — registry entries", () => {
   });
 });
 
-describe("D6 migration 0044 — SQL shape", () => {
-  const sql = fs.readFileSync(migrationPath, "utf8");
+describe("D6 Phase 5 — browse-and-bind migration shape", () => {
+  const disciplineFolders = fs.readFileSync(
+    path.join(repoRoot, "migrations", "0112_project_discipline_folders.sql"),
+    "utf8",
+  );
+  const approvalBasis = fs.readFileSync(
+    path.join(repoRoot, "migrations", "0113_discipline_approval_basis.sql"),
+    "utf8",
+  );
+  const phase5Drop = fs.readFileSync(
+    path.join(repoRoot, "migrations", "0114_phase5_drop_folder_taxonomy.sql"),
+    "utf8",
+  );
 
-  it("creates folder_taxonomy with a unique constraint on internal_key", () => {
-    expect(sql).toMatch(/CREATE TABLE "folder_taxonomy"/);
-    expect(sql).toMatch(/folder_taxonomy_internal_key_unique/);
-  });
-
-  it("creates the folder_lifecycle_mode_enum type with the right values", () => {
-    expect(sql).toMatch(/CREATE TYPE "public"\."folder_lifecycle_mode_enum"/);
-    expect(sql).toMatch(/'pre_construction'.*'full_lifecycle'.*'both'/s);
-  });
-
-  it("declares a self-referential FK on folder_taxonomy.parent_key (ON DELETE set null)", () => {
-    expect(sql).toMatch(
-      /folder_taxonomy_parent_key_folder_taxonomy_internal_key_fk[\s\S]*FOREIGN KEY \("parent_key"\)[\s\S]*REFERENCES "public"\."folder_taxonomy"\("internal_key"\) ON DELETE set null/,
+  it("creates project_discipline_folders with the (project_id, discipline) unique index", () => {
+    expect(disciplineFolders).toMatch(/CREATE TABLE "project_discipline_folders"/);
+    expect(disciplineFolders).toMatch(
+      /CREATE UNIQUE INDEX "project_discipline_folders_project_discipline_uq"/,
     );
   });
 
-  it("declares an FK from folder_taxonomy.stage_code to stage_definitions.stage_code", () => {
-    expect(sql).toMatch(
-      /folder_taxonomy_stage_code_stage_definitions_stage_code_fk[\s\S]*REFERENCES "public"\."stage_definitions"\("stage_code"\) ON DELETE set null/,
+  it("declares the project_discipline_folders FK to project_info (CASCADE)", () => {
+    expect(disciplineFolders).toMatch(
+      /project_discipline_folders_project_id_project_info_id_fk[\s\S]*REFERENCES "public"\."project_info"\("id"\) ON DELETE cascade/,
     );
   });
 
-  it("declares an FK from project_folders.project_id to project_info.id (CASCADE)", () => {
-    expect(sql).toMatch(
-      /project_folders_project_id_project_info_id_fk[\s\S]*REFERENCES "public"\."project_info"\("id"\) ON DELETE cascade/,
+  it("adds discipline_folder_id to managed_documents with an FK to project_discipline_folders (SET NULL)", () => {
+    expect(approvalBasis).toMatch(/ALTER TABLE "managed_documents" ADD COLUMN "discipline_folder_id" integer/);
+    expect(approvalBasis).toMatch(
+      /managed_documents_discipline_folder_id_project_discipline_folders_id_fk[\s\S]*REFERENCES "public"\."project_discipline_folders"\("id"\) ON DELETE set null/,
     );
   });
 
-  it("declares an FK from project_folders.taxonomy_key to folder_taxonomy.internal_key", () => {
-    expect(sql).toMatch(
-      /project_folders_taxonomy_key_folder_taxonomy_internal_key_fk[\s\S]*REFERENCES "public"\."folder_taxonomy"\("internal_key"\)/,
-    );
+  it("adds the discipline basis to document_approval_requirements (discipline + subfolder pattern)", () => {
+    expect(approvalBasis).toMatch(/ALTER TABLE "document_approval_requirements" ADD COLUMN "discipline" text/);
+    expect(approvalBasis).toMatch(/ALTER TABLE "document_approval_requirements" ADD COLUMN "subfolder_pattern" text/);
+    // taxonomy_key is retained as a plain nullable column (dormant legacy rows).
+    expect(approvalBasis).toMatch(/ALTER TABLE "document_approval_requirements" ALTER COLUMN "taxonomy_key" DROP NOT NULL/);
   });
 
-  it("declares the project_folders unique index on (project_id, taxonomy_key)", () => {
-    expect(sql).toMatch(
-      /CREATE UNIQUE INDEX "project_folders_project_taxonomy_uq"/,
-    );
-  });
-
-  it("declares the FK from managed_documents.parent_folder_id to project_folders.id (SET NULL)", () => {
-    expect(sql).toMatch(
-      /managed_documents_parent_folder_id_project_folders_id_fk[\s\S]*REFERENCES "public"\."project_folders"\("id"\) ON DELETE set null/,
-    );
-  });
-
-  it("adds the parent_folder_id column to managed_documents", () => {
-    expect(sql).toMatch(/ALTER TABLE "managed_documents" ADD COLUMN "parent_folder_id" integer/);
-  });
-
-  it("adds the web_url column to project_folders (Phase 3.1 deep-link affordance)", () => {
-    expect(sql).toMatch(/"web_url" text/);
+  it("Phase 5 drop removes parent_folder_id + the folder-taxonomy surface", () => {
+    expect(phase5Drop).toMatch(/ALTER TABLE "managed_documents" DROP COLUMN IF EXISTS "parent_folder_id"/);
+    expect(phase5Drop).toMatch(/DROP TABLE IF EXISTS "project_folders" CASCADE/);
+    expect(phase5Drop).toMatch(/DROP TABLE IF EXISTS "folder_taxonomy" CASCADE/);
+    expect(phase5Drop).toMatch(/DROP TYPE IF EXISTS "public"\."folder_lifecycle_mode_enum"/);
   });
 });
 
@@ -247,11 +229,13 @@ describe("D6 — migration journal integrity", () => {
     expect(untracked).toEqual([]);
   });
 
-  it("includes a journal entry for migration 0044_document_management_v2", () => {
+  it("includes the Phase 5 browse-and-bind + drop journal entries", () => {
     const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as {
       entries: Array<{ tag?: string }>;
     };
     const tags = journal.entries.map((e) => e.tag);
-    expect(tags).toContain("0044_document_management_v2");
+    expect(tags).toContain("0112_project_discipline_folders");
+    expect(tags).toContain("0113_discipline_approval_basis");
+    expect(tags).toContain("0114_phase5_drop_folder_taxonomy");
   });
 });

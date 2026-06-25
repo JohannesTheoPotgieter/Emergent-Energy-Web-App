@@ -1,93 +1,77 @@
 /**
  * Shared app-level ACL anchoring for project-scope managed documents.
  *
- * Stage 3 of the project_sharepoint_roots → project_folders migration: the
- * project-scope `assertDocumentAcl` checks in document-management.routes.ts and
- * document-comments.routes.ts used to resolve a project's SharePoint root (the
- * deprecated project_sharepoint_roots table) purely to strip the root drive
- * path off a document's path and isolate the top-level folder segment that
- * `resolveFolderAcl` keys off. This module re-derives that anchor from the
- * canonical project_folders surface instead, so the deprecated repository can
- * be deleted.
+ * The project-scope `assertDocumentAcl` checks in document-management.routes.ts
+ * and document-comments.routes.ts strip a document down to the top-level folder
+ * segment that `resolveFolderAcl` (document-folder-rbac.ts) keys off.
  *
- * NOTE: server/routes/document-files.routes.ts (Stage 1) carries a parallel
- * inline `folderAclAnchor` for its folder-keyed endpoints. The canonical
- * implementation lives here; that one can adopt this in a later cleanup.
+ * PHASE 5 DECOMMISSION: the old anchoring chain (project_sharepoint_roots →
+ * project_folders → folder_taxonomy, resolved via `parentFolderId`) was removed
+ * with those tables. The anchor is now derived from the document's bound
+ * discipline folder (`project_discipline_folders`, via `disciplineFolderId`),
+ * falling back to the document path's first segment. Unknown anchors resolve to
+ * READ_ONLY_FALLBACK in `resolveFolderAcl` — fail safe, never widens access.
  */
 
-import type { ProjectFolder } from "@shared/schema/documents";
-import { listFoldersForProject } from "../repositories/project-folders-repository";
-import { getTaxonomyByKey } from "../repositories/folder-taxonomy-repository";
+import { getDisciplineFolderById } from "../repositories/project-discipline-folders-repository";
 
 /**
- * The ACL anchor for a provisioned folder = its TOP-LEVEL taxonomy display
- * name (e.g. "Engineering", "Contracts"). `resolveFolderAcl` matches on the
- * first path segment, so the whole subtree under a top-level folder shares a
- * single ACL — mirroring how the retired root-keyed browser behaved.
+ * Maps a browse-and-bind discipline code (LIFECYCLE_DEPARTMENTS) to the
+ * top-level DOCUMENT_FOLDER_ACL prefix (document-folder-rbac.ts) that governs
+ * its documents.
+ *
+ * SECURITY NOTE (Phase 5): this mapping mirrors the intent of the retired
+ * taxonomy-folder ACL — each discipline is placed on the existing folder ACL
+ * whose write-set already included that discipline's manager role. Disciplines
+ * with no clear home are intentionally omitted so they fall through to
+ * READ_ONLY_FALLBACK (everyone reads, only super-users write). Confirm/adjust
+ * the mapping with operations before relying on it for production writes.
  */
-export async function folderAclAnchor(folder: ProjectFolder): Promise<string> {
-  let entry = await getTaxonomyByKey(folder.taxonomyKey);
-  // Walk up to the top-level taxonomy folder (guard against cycles).
-  let guard = 0;
-  while (entry?.parentKey && guard < 16) {
-    entry = await getTaxonomyByKey(entry.parentKey);
-    guard += 1;
-  }
-  return entry?.displayName ?? folder.taxonomyKey.split("/")[0];
-}
+const DISCIPLINE_ACL_PREFIX: Record<string, string> = {
+  ENGINEERING: "engineering",
+  CONSTRUCTION: "engineering",
+  QUALITY: "internal docs",
+  HSE: "photos",
+  FINANCE: "contracts",
+  PROCUREMENT: "contracts",
+  COMPLIANCE: "contracts",
+  PD: "client docs",
+  KAM: "client docs",
+  PM: "internal docs",
+  OM: "internal docs",
+  EXCO: "internal docs",
+};
 
 function normalizePath(p: string | null | undefined): string {
   return (p ?? "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").toLowerCase();
 }
 
 /**
- * Resolves the project-scope ACL anchor (a top-level folder display name) for a
- * tracked managed document, keyed on project_folders — no dependency on the
- * deprecated project_sharepoint_roots table.
+ * Resolves the project-scope ACL anchor (a top-level folder prefix) for a
+ * tracked managed document, keyed on its bound discipline folder.
  *
  * Resolution order:
- *   1. `parentFolderId` — the canonical taxonomy linkage set when the file
- *      lives inside a provisioned folder → that folder's top-level anchor.
- *   2. Fallback — the longest provisioned-folder `sharepointPath` that is a
- *      prefix of the document path (covers untracked manual subfolders sitting
- *      under a known top-level folder).
- *   3. No match → "" → `resolveFolderAcl` returns READ_ONLY_FALLBACK (everyone
- *      reads, only super-users write): fail safe, never widens access.
+ *   1. `disciplineFolderId` — the file is tagged with a bound discipline
+ *      folder → map the binding's discipline to its ACL prefix.
+ *   2. Fallback — the document path's first segment (mirrors the retired
+ *      root-keyed behaviour; unknown segments fail safe to READ_ONLY_FALLBACK
+ *      in `resolveFolderAcl`).
  */
 export async function resolveProjectDocAnchor(doc: {
   projectId: number;
-  parentFolderId: number | null;
+  disciplineFolderId: number | null;
   path: string;
 }): Promise<string> {
-  const folders = await listFoldersForProject(doc.projectId);
-
-  // 1. Canonical taxonomy linkage.
-  if (doc.parentFolderId != null) {
-    const folder = folders.find((f) => f.id === doc.parentFolderId);
-    if (folder) return folderAclAnchor(folder);
-  }
-
-  // 2. Longest provisioned-folder path that prefixes the document path.
-  const docPath = normalizePath(doc.path);
-  let best: ProjectFolder | null = null;
-  let bestLen = -1;
-  for (const folder of folders) {
-    const base = normalizePath(folder.sharepointPath);
-    if (!base) continue;
-    if (docPath === base || docPath.startsWith(`${base}/`)) {
-      if (base.length > bestLen) {
-        best = folder;
-        bestLen = base.length;
-      }
+  // 1. Browse-and-bind discipline linkage. Resolve by id (not the active-only
+  //    list) so a soft-unbound folder still anchors the files that live in it.
+  if (doc.disciplineFolderId != null) {
+    const binding = await getDisciplineFolderById(doc.disciplineFolderId);
+    if (binding?.discipline) {
+      const prefix = DISCIPLINE_ACL_PREFIX[binding.discipline];
+      if (prefix) return prefix;
     }
   }
-  if (best) return folderAclAnchor(best);
 
-  // 3. Fallback: the document path's first segment. Mirrors the retired
-  //    root-keyed behaviour — in mock/dev the project root item sits at "", so
-  //    the first path segment was the ACL anchor, keeping e.g. a "Contracts"
-  //    doc on the restricted contracts ACL even with no provisioned folder.
-  //    Real-taxonomy production paths (e.g. "Projects/.../03_Engineering/…")
-  //    fall through to READ_ONLY_FALLBACK in resolveFolderAcl exactly as before.
-  return docPath.split("/")[0] ?? "";
+  // 2. Fallback: the document path's first segment.
+  return normalizePath(doc.path).split("/")[0] ?? "";
 }

@@ -1,17 +1,9 @@
 /** Shared UI-facing shapes for the /documents browser. */
 
-export type DocumentRootScope = "project" | "company";
-
 export interface RootSummary {
   id: number;
   rootPath: string;
   hasDrive: boolean;
-}
-
-export interface ProjectRootSummary extends RootSummary {
-  projectId: number;
-  name: string;
-  projectCode: string | null;
 }
 
 export interface CompanyRootSummary extends RootSummary {

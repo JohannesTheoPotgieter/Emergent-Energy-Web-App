@@ -1,6 +1,6 @@
 {
-  "id": "9027e8f3-7736-4409-8d3d-5470722d080f",
-  "prevId": "219335af-3564-49c4-8387-8800d8914bad",
+  "id": "8c963429-58e4-4409-9d3e-11d92676c6fc",
+  "prevId": "1fc5f64d-b31b-4658-ae6e-67b21d4c6fc8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -43900,7 +43900,19 @@
           "name": "taxonomy_key",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "discipline": {
+          "name": "discipline",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subfolder_pattern": {
+          "name": "subfolder_pattern",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "file_name_pattern": {
           "name": "file_name_pattern",
@@ -43985,6 +43997,21 @@
           "method": "btree",
           "with": {}
         },
+        "doc_approval_req_discipline_idx": {
+          "name": "doc_approval_req_discipline_idx",
+          "columns": [
+            {
+              "expression": "discipline",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "doc_approval_req_active_idx": {
           "name": "doc_approval_req_active_idx",
           "columns": [
@@ -44001,21 +44028,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "document_approval_requirements_taxonomy_key_folder_taxonomy_internal_key_fk": {
-          "name": "document_approval_requirements_taxonomy_key_folder_taxonomy_internal_key_fk",
-          "tableFrom": "document_approval_requirements",
-          "tableTo": "folder_taxonomy",
-          "columnsFrom": [
-            "taxonomy_key"
-          ],
-          "columnsTo": [
-            "internal_key"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -44479,193 +44492,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.folder_taxonomy": {
-      "name": "folder_taxonomy",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "internal_key": {
-          "name": "internal_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "display_name": {
-          "name": "display_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "parent_key": {
-          "name": "parent_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lifecycle_mode": {
-          "name": "lifecycle_mode",
-          "type": "folder_lifecycle_mode_enum",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "stage_code": {
-          "name": "stage_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "disciplines": {
-          "name": "disciplines",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sort_order": {
-          "name": "sort_order",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "active": {
-          "name": "active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "folder_taxonomy_internal_key_idx": {
-          "name": "folder_taxonomy_internal_key_idx",
-          "columns": [
-            {
-              "expression": "internal_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "folder_taxonomy_parent_idx": {
-          "name": "folder_taxonomy_parent_idx",
-          "columns": [
-            {
-              "expression": "parent_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "folder_taxonomy_lifecycle_idx": {
-          "name": "folder_taxonomy_lifecycle_idx",
-          "columns": [
-            {
-              "expression": "lifecycle_mode",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "folder_taxonomy_stage_idx": {
-          "name": "folder_taxonomy_stage_idx",
-          "columns": [
-            {
-              "expression": "stage_code",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "folder_taxonomy_parent_key_folder_taxonomy_internal_key_fk": {
-          "name": "folder_taxonomy_parent_key_folder_taxonomy_internal_key_fk",
-          "tableFrom": "folder_taxonomy",
-          "tableTo": "folder_taxonomy",
-          "columnsFrom": [
-            "parent_key"
-          ],
-          "columnsTo": [
-            "internal_key"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "folder_taxonomy_stage_code_stage_definitions_stage_code_fk": {
-          "name": "folder_taxonomy_stage_code_stage_definitions_stage_code_fk",
-          "tableFrom": "folder_taxonomy",
-          "tableTo": "stage_definitions",
-          "columnsFrom": [
-            "stage_code"
-          ],
-          "columnsTo": [
-            "stage_code"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "folder_taxonomy_internal_key_unique": {
-          "name": "folder_taxonomy_internal_key_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "internal_key"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.managed_documents": {
       "name": "managed_documents",
       "schema": "",
@@ -44695,8 +44521,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "parent_folder_id": {
-          "name": "parent_folder_id",
+        "discipline_folder_id": {
+          "name": "discipline_folder_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
@@ -44839,11 +44665,11 @@
           "method": "btree",
           "with": {}
         },
-        "managed_documents_parent_folder_idx": {
-          "name": "managed_documents_parent_folder_idx",
+        "managed_documents_discipline_folder_idx": {
+          "name": "managed_documents_discipline_folder_idx",
           "columns": [
             {
-              "expression": "parent_folder_id",
+              "expression": "discipline_folder_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -44882,12 +44708,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "managed_documents_parent_folder_id_project_folders_id_fk": {
-          "name": "managed_documents_parent_folder_id_project_folders_id_fk",
+        "managed_documents_discipline_folder_id_project_discipline_folders_id_fk": {
+          "name": "managed_documents_discipline_folder_id_project_discipline_folders_id_fk",
           "tableFrom": "managed_documents",
-          "tableTo": "project_folders",
+          "tableTo": "project_discipline_folders",
           "columnsFrom": [
-            "parent_folder_id"
+            "discipline_folder_id"
           ],
           "columnsTo": [
             "id"
@@ -45511,191 +45337,6 @@
           "tableTo": "users",
           "columnsFrom": [
             "updated_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.project_folders": {
-      "name": "project_folders",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "taxonomy_key": {
-          "name": "taxonomy_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "drive_id": {
-          "name": "drive_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "item_id": {
-          "name": "item_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sharepoint_path": {
-          "name": "sharepoint_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "web_url": {
-          "name": "web_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provisioned_at": {
-          "name": "provisioned_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provisioned_by_user_id": {
-          "name": "provisioned_by_user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_verified_at": {
-          "name": "last_verified_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verify_error": {
-          "name": "verify_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "project_folders_project_taxonomy_uq": {
-          "name": "project_folders_project_taxonomy_uq",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "taxonomy_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "project_folders_project_idx": {
-          "name": "project_folders_project_idx",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "project_folders_taxonomy_idx": {
-          "name": "project_folders_taxonomy_idx",
-          "columns": [
-            {
-              "expression": "taxonomy_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "project_folders_project_id_project_info_id_fk": {
-          "name": "project_folders_project_id_project_info_id_fk",
-          "tableFrom": "project_folders",
-          "tableTo": "project_info",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_folders_taxonomy_key_folder_taxonomy_internal_key_fk": {
-          "name": "project_folders_taxonomy_key_folder_taxonomy_internal_key_fk",
-          "tableFrom": "project_folders",
-          "tableTo": "folder_taxonomy",
-          "columnsFrom": [
-            "taxonomy_key"
-          ],
-          "columnsTo": [
-            "internal_key"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "project_folders_provisioned_by_user_id_users_id_fk": {
-          "name": "project_folders_provisioned_by_user_id_users_id_fk",
-          "tableFrom": "project_folders",
-          "tableTo": "users",
-          "columnsFrom": [
-            "provisioned_by_user_id"
           ],
           "columnsTo": [
             "id"
@@ -47601,15 +47242,6 @@
       "values": [
         "project",
         "company"
-      ]
-    },
-    "public.folder_lifecycle_mode_enum": {
-      "name": "folder_lifecycle_mode_enum",
-      "schema": "public",
-      "values": [
-        "pre_construction",
-        "full_lifecycle",
-        "both"
       ]
     },
     "public.managed_document_state_enum": {
