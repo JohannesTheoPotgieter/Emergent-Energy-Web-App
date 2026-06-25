@@ -580,10 +580,13 @@ function deliveryTaskRows(
   projectName: string,
   tasks: PlanTask[],
   today: Date,
+  managedWorkItemIds: Set<number> = new Set(),
 ): DeliveryProgramRow[] {
   const rows: DeliveryProgramRow[] = [];
   for (const t of tasks) {
     if (!t.taskName?.toLowerCase().includes("delivery")) continue;
+    // Already promoted to a managed order → that order row represents it instead.
+    if (t.id != null && managedWorkItemIds.has(t.id)) continue;
     const complete = (pctTo100(t.pctComplete) ?? 0) >= 100;
     const raw = t.endDate ?? t.actualEndDate ?? t.startDate ?? t.actualStartDate ?? null;
     const d = parsePlanDate(raw);
@@ -596,6 +599,12 @@ function deliveryTaskRows(
       source: "task",
       overdue: !complete && d != null && diffDays(d, today) < 0,
       complete,
+      // Promotable: editing creates a managed order linked to this work item, so
+      // it can capture lead time + order date. No procurement id yet → create mode.
+      editable: t.id != null,
+      linkedWorkItemId: t.id ?? null,
+      taskNo: t.taskNo,
+      neededBy: raw,
     });
   }
   rows.sort((a, b) => (parsePlanDate(a.date)?.getTime() ?? Infinity) - (parsePlanDate(b.date)?.getTime() ?? Infinity));
@@ -661,9 +670,12 @@ export async function getDeliveriesProgram(now: Date = new Date()): Promise<Deli
     });
   }
   // Plan tasks whose name mentions "delivery" — the imported tracker's delivery
-  // lines (where most projects actually track deliveries).
+  // lines (where most projects actually track deliveries). Skip any already
+  // promoted to a managed order (deduped by the linked work item).
+  const managedWorkItemIds = new Set<number>();
+  for (const p of procurement) if (p.linkedWorkItemId != null) managedWorkItemIds.add(p.linkedWorkItemId);
   for (const [projectId, tasks] of tasksByProject) {
-    out.push(...deliveryTaskRows(projectId, nameById.get(projectId) ?? "", tasks, today));
+    out.push(...deliveryTaskRows(projectId, nameById.get(projectId) ?? "", tasks, today, managedWorkItemIds));
   }
   out.sort((a, b) => (parsePlanDate(a.date)?.getTime() ?? Infinity) - (parsePlanDate(b.date)?.getTime() ?? Infinity));
   return out;

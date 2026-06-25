@@ -56,6 +56,9 @@ function DeliveryDialog({ projects, row, open, onOpenChange, onSaved }: {
   onSaved: () => void;
 }) {
   const isEdit = Boolean(row?.id);
+  // Promote: an existing plan-task delivery (no order yet) being turned into a
+  // managed order — project + task are fixed, we just capture the planning.
+  const isPromote = !isEdit && row?.linkedWorkItemId != null;
   const [projectId, setProjectId] = useState<string>("");
   const [title, setTitle] = useState("");
   const [workItemId, setWorkItemId] = useState<string>("");
@@ -113,9 +116,12 @@ function DeliveryDialog({ projects, row, open, onOpenChange, onSaved }: {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>{isEdit ? "Edit delivery" : "New delivery / order"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{isEdit ? "Edit delivery" : isPromote ? "Plan delivery" : "New delivery / order"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          {!isEdit && (
+          {isPromote && (
+            <p className="text-xs text-muted-foreground">Planning <span className="font-medium text-foreground">{row?.label}</span> on {row?.projectName} — capture its lead time and order date to track if it'll make it on site.</p>
+          )}
+          {!isEdit && !isPromote && (
             <label className="text-sm block">
               <span className="text-muted-foreground">Project</span>
               <Select value={projectId} onValueChange={(v) => { setProjectId(v); setWorkItemId(""); }}>
