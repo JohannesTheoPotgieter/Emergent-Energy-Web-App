@@ -640,13 +640,15 @@ function SortHeader({ col, children, align, sortCol, sortDir, onToggle }: {
   );
 }
 
-export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange, onBulkStatusChange, onBulkPriorityChange }: {
+export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange, onBulkStatusChange, onBulkPriorityChange, onBulkOwnerChange, owners }: {
   tasks: Task[];
   onCardClick: (task: Task) => void;
   onStatusChange: (id: number, status: string) => void;
   onPriorityChange: (id: number, priority: string) => void;
   onBulkStatusChange?: (taskIds: number[], status: string) => void;
   onBulkPriorityChange?: (taskIds: number[], priority: string) => void;
+  onBulkOwnerChange?: (taskIds: number[], ownerUserId: number | null) => void;
+  owners?: { id: number; name: string }[];
 }) {
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -691,17 +693,24 @@ export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityC
   return (
     <Card>
       <CardContent className="p-0">
-        {selectedIds.size > 0 && onBulkStatusChange && (
+        {selectedIds.size > 0 && (onBulkStatusChange || onBulkOwnerChange) && (
           <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border-b border-blue-200" data-testid="list-bulk-bar">
             <span className="text-xs font-semibold text-blue-800">{selectedIds.size} selected</span>
             <div className="h-4 w-px bg-blue-200" />
-            <SearchableSelect value="" onValueChange={(s) => { onBulkStatusChange(Array.from(selectedIds), s); setSelectedIds(new Set()); }}
-              placeholder="Set status..." triggerClassName="h-7 text-[10px] min-w-[100px]"
-              options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))} />
+            {onBulkStatusChange && (
+              <SearchableSelect value="" onValueChange={(s) => { onBulkStatusChange(Array.from(selectedIds), s); setSelectedIds(new Set()); }}
+                placeholder="Set status..." triggerClassName="h-7 text-[10px] min-w-[100px]"
+                options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))} />
+            )}
             {onBulkPriorityChange && (
               <SearchableSelect value="" onValueChange={(p) => { onBulkPriorityChange(Array.from(selectedIds), p); setSelectedIds(new Set()); }}
                 placeholder="Set priority..." triggerClassName="h-7 text-[10px] min-w-[90px]"
                 options={PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] }))} />
+            )}
+            {onBulkOwnerChange && owners && (
+              <SearchableSelect value="" onValueChange={(v) => { onBulkOwnerChange(Array.from(selectedIds), v === "__unassign__" ? null : Number(v)); setSelectedIds(new Set()); }}
+                placeholder="Reassign owner..." triggerClassName="h-7 text-[10px] min-w-[120px]" data-testid="bulk-reassign-owner"
+                options={[{ value: "__unassign__", label: "Unassign" }, ...owners.map(u => ({ value: String(u.id), label: u.name }))]} />
             )}
             <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground" onClick={() => setSelectedIds(new Set())}>
               <X className="h-3 w-3 mr-1" /> Clear

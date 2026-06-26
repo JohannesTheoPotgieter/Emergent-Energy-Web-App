@@ -234,6 +234,54 @@ export async function transitionEngineeringTaskStatus(
   return updated;
 }
 
+/**
+ * Reassign a task's owner. Updates `work_items.ownerUserId`, swaps the OWNER
+ * assignment row, records an audit event, and notifies the new owner. Pass
+ * `ownerUserId = null` to unassign. Returns null when the task isn't found.
+ */
+export async function reassignEngineeringTaskOwner(
+  taskId: number,
+  ownerUserId: number | null,
+  actorId: number,
+): Promise<WorkItemRow | null> {
+  const current = await getEngineeringTask(taskId);
+  if (!current) return null;
+  if (current.ownerUserId === ownerUserId) return current;
+
+  const [updated] = await db
+    .update(workItems)
+    .set({ ownerUserId, updatedAt: new Date() })
+    .where(eq(workItems.id, taskId))
+    .returning();
+
+  // Swap the OWNER assignment row so the assignment table stays consistent.
+  await db
+    .delete(workItemAssignments)
+    .where(and(eq(workItemAssignments.workItemId, taskId), eq(workItemAssignments.role, "OWNER")));
+  if (ownerUserId != null) await assignOwner(taskId, ownerUserId);
+
+  await recordAudit({
+    userId: actorId,
+    entityType: "work_item",
+    entityId: String(taskId),
+    action: "engineering.task.owner_change",
+    changesJson: { from: current.ownerUserId ?? null, to: ownerUserId },
+  });
+  if (ownerUserId != null && ownerUserId !== actorId) {
+    await createNotification({
+      recipientUserId: ownerUserId,
+      eventType: "engineering.task.assigned",
+      title: `Assigned to you: ${updated.title}`,
+      body: `You are now the owner of "${updated.title}".`,
+      projectId: updated.projectId ?? undefined,
+      linkedTaskId: updated.id,
+      relatedEntityType: "work_item",
+      relatedEntityId: updated.id,
+    });
+  }
+  return updated;
+}
+
 // ── Document links ────────────────────────────────────────────────────────
 
 export async function listTaskDocumentLinks(taskId: number): Promise<WorkItemDocumentLinkRow[]> {

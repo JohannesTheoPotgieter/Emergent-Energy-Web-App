@@ -260,6 +260,27 @@ export function isTerminalPhase(code: string | null | undefined): boolean {
   return PHASE_BY_CODE[code]?.isTerminal ?? false;
 }
 
+/**
+ * True if a project (given its phase stage-code or label) is in the active
+ * execution window: from Financial Close (`S03_SIGNATURE_FINANCIAL_CLOSE`,
+ * displayNumber 3) onward, INCLUDING `S_HOLD` (resumable, still live work),
+ * but EXCLUDING `S_DONE` and the two pre-Financial-Close stages
+ * (First Assessment, Cost Proposal & Design). Unrecognised / empty input
+ * returns false.
+ *
+ * Accepts canonical codes, canonical labels, or tolerated aliases (anything
+ * `resolveCanonicalPhase` understands). Used to scope project pickers to
+ * live delivery work.
+ */
+export function isInActiveExecutionWindow(stageOrLabel: string | null | undefined): boolean {
+  const phase = resolveCanonicalPhase(stageOrLabel);
+  if (!phase) return false;
+  if (phase.code === 'S_DONE') return false;
+  if (phase.code === 'S_HOLD') return true;
+  // Sequential phases: in-window from Financial Close (displayNumber 3) onward.
+  return phase.isSequential && phase.displayNumber != null && phase.displayNumber >= 3;
+}
+
 // ===================== PROJECT STATUS =====================
 // Hold / Internal / Closed / TBC remain on project_info.project_status as
 // an orthogonal dimension (kept for backward compatibility — Hold and

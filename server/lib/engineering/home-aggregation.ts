@@ -12,7 +12,7 @@
  */
 
 import { isTaskComplete } from "@shared/task-status";
-import { resolveCanonicalPhase } from "@shared/phases";
+import { resolveCanonicalPhase, isInActiveExecutionWindow } from "@shared/phases";
 
 export interface EngHomeTaskInput {
   id: number;
@@ -21,6 +21,8 @@ export interface EngHomeTaskInput {
   /** `work_items.end_date` — ISO `YYYY-MM-DD` or null. */
   endDate: string | null;
   ownerUserId: number | null;
+  /** Display name of the task owner (joined from `users.name`), or null. */
+  ownerName: string | null;
   title: string;
   priority: string | null;
 }
@@ -32,6 +34,19 @@ export interface EngHomeProjectInput {
   phaseCode: string | null;
 }
 
+export interface EngineeringHomeFilters {
+  /** Scope metrics + portfolio to these project ids. Empty/omitted = all. */
+  projectIds?: readonly number[];
+  /** Scope metrics + portfolio + My Work to this engineer. Omitted = everyone. */
+  ownerUserId?: number;
+  /**
+   * When false (default), hide completed tasks from every count and list AND
+   * drop projects whose phase is outside the active execution window (Done /
+   * pre-Financial-Close) from the portfolio.
+   */
+  includeCompleted?: boolean;
+}
+
 export interface EngineeringHomeInput {
   tasks: EngHomeTaskInput[];
   projects: EngHomeProjectInput[];
@@ -39,6 +54,8 @@ export interface EngineeringHomeInput {
   myAssignedTaskIds: ReadonlySet<number>;
   /** ISO `YYYY-MM-DD` for "today" so the function is deterministic in tests. */
   today: string;
+  /** Optional slicing — site (project), engineer (owner), hide-completed. */
+  filters?: EngineeringHomeFilters;
 }
 
 export type DueBucket = "overdue" | "today" | "this_week" | "later" | "none";
@@ -71,10 +88,19 @@ export interface EngineeringHomeMyWorkRow {
   due: DueBucket;
 }
 
+export interface EngineeringHomeOwner {
+  id: number;
+  name: string;
+}
+
 export interface EngineeringHomeSummary {
   metrics: EngineeringHomeMetrics;
   portfolio: EngineeringHomePortfolioRow[];
   myWork: EngineeringHomeMyWorkRow[];
+  /** Distinct engineers that own ENG tasks, alphabetical — drives the
+   *  client's Engineer filter. Computed BEFORE the owner filter is applied
+   *  so the dropdown always offers every engineer. */
+  owners: EngineeringHomeOwner[];
 }
 
 /** Add `n` days to an ISO `YYYY-MM-DD` string (UTC, no time component). */
@@ -93,10 +119,6 @@ export function dueBucket(endDate: string | null, today: string): DueBucket {
   return "later";
 }
 
-function isOpen(status: string): boolean {
-  return !isTaskComplete(status);
-}
-
 const DUE_ORDER: Record<DueBucket, number> = {
   overdue: 0,
   today: 1,
@@ -110,8 +132,25 @@ const DUE_ORDER: Record<DueBucket, number> = {
  * "where are we", and the caller's open work) from spine rows.
  */
 export function summarizeEngineeringHome(input: EngineeringHomeInput): EngineeringHomeSummary {
-  const { tasks, projects, myUserId, myAssignedTaskIds, today } = input;
+  const { tasks, projects, myUserId, myAssignedTaskIds, today, filters } = input;
   const projectById = new Map(projects.map((p) => [p.id, p]));
+
+  const includeCompleted = filters?.includeCompleted ?? false;
+  const ownerUserId = filters?.ownerUserId;
+  const projectIdFilter =
+    filters?.projectIds && filters.projectIds.length > 0 ? new Set(filters.projectIds) : null;
+
+  // Owners dropdown is computed from the UNFILTERED task set so it always
+  // offers every engineer with ENG work — independent of the active slice.
+  const ownerNameById = new Map<number, string>();
+  for (const t of tasks) {
+    if (t.ownerUserId != null && !ownerNameById.has(t.ownerUserId)) {
+      ownerNameById.set(t.ownerUserId, t.ownerName ?? `User ${t.ownerUserId}`);
+    }
+  }
+  const owners: EngineeringHomeOwner[] = [...ownerNameById.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   let openTasks = 0;
   let dueThisWeek = 0;
@@ -131,7 +170,16 @@ export function summarizeEngineeringHome(input: EngineeringHomeInput): Engineeri
   const myWork: EngineeringHomeMyWorkRow[] = [];
 
   for (const t of tasks) {
-    const open = isOpen(t.status);
+    // --- Apply the requested slice ---------------------------------------
+    if (projectIdFilter && (t.projectId == null || !projectIdFilter.has(t.projectId))) continue;
+    if (ownerUserId != null && t.ownerUserId !== ownerUserId) continue;
+
+    const complete = isTaskComplete(t.status);
+    // Hide-completed: completed tasks drop out of every count, list and
+    // per-project tally when includeCompleted is false.
+    if (complete && !includeCompleted) continue;
+
+    const open = !complete;
     const bucket = dueBucket(t.endDate, today);
 
     if (t.projectId != null) {
@@ -172,6 +220,9 @@ export function summarizeEngineeringHome(input: EngineeringHomeInput): Engineeri
     const proj = projectById.get(pid);
     if (!proj) continue;
     const phase = resolveCanonicalPhase(proj.phaseCode);
+    // When hiding completed work, drop Done / pre-Financial-Close projects
+    // (outside the active execution window) from the portfolio entirely.
+    if (!includeCompleted && !isInActiveExecutionWindow(proj.phaseCode)) continue;
     portfolio.push({
       projectId: pid,
       projectName: proj.projectName,
@@ -199,5 +250,6 @@ export function summarizeEngineeringHome(input: EngineeringHomeInput): Engineeri
     },
     portfolio,
     myWork,
+    owners,
   };
 }

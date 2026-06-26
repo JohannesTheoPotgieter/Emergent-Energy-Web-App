@@ -9,8 +9,16 @@
  */
 
 import { getDisciplineFolder } from "../repositories/project-discipline-folders-repository";
-import { listChildren } from "../services/sharepoint-document-service";
-import { listManagedDocumentsByProject, setDisciplineFolderId } from "../repositories/managed-documents-repository";
+import { listChildren, getItem, type GraphItem } from "../services/sharepoint-document-service";
+import {
+  listManagedDocumentsByProject,
+  setDisciplineFolderId,
+  getManagedDocumentByDriveItem,
+  upsertManagedDocumentFromGraph,
+} from "../repositories/managed-documents-repository";
+import { getLock } from "../repositories/document-locks-repository";
+import { notFound } from "../lib/api-error";
+import type { ManagedDocument, ProjectDisciplineFolder } from "@shared/schema/documents";
 
 export interface BoundFolderItem {
   itemId: string;
@@ -90,5 +98,134 @@ export async function listBoundFolderDocuments(
     bound: true,
     folder: { discipline, sharepointPath: binding.sharepointPath, webUrl: binding.webUrl },
     items,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Workspace browsing (drill-in + item detail)
+//
+// These power the full discipline document workspace. Unlike
+// `listBoundFolderDocuments` (which returns the UI-overlay `BoundFolderItem`
+// shape for the bound folder's direct children only), the workspace endpoints
+// browse INTO subfolders and return the raw Graph `GraphItem` shape so the
+// generic /documents browser components (FileListTable, DocumentDetailDrawer)
+// work unchanged against a discipline target.
+// ---------------------------------------------------------------------------
+
+/** A bound discipline folder with a resolved, usable SharePoint reference. */
+export interface ResolvedBoundFolder {
+  binding: ProjectDisciplineFolder;
+  driveId: string;
+  rootItemId: string;
+}
+
+/**
+ * Resolve the bound discipline folder for a project, asserting it points at a
+ * usable SharePoint reference. Throws 404 when nothing is bound (or the
+ * binding was soft-unbound / never resolved a drive item).
+ */
+export async function resolveBoundFolder(
+  projectId: number,
+  discipline: string,
+): Promise<ResolvedBoundFolder> {
+  const binding = await getDisciplineFolder(projectId, discipline);
+  if (!binding || binding.deletedAt || !binding.driveId || !binding.itemId) {
+    throw notFound("Discipline folder binding");
+  }
+  return { binding, driveId: binding.driveId, rootItemId: binding.itemId };
+}
+
+/**
+ * List the children of `parentItemId` (defaulting to the bound folder root)
+ * under a project's bound discipline folder. Returns raw Graph items so the
+ * shape matches the generic company-scope `children` response.
+ *
+ * Side-effect: overlays/backfills the `disciplineFolderId` tag on any tracked
+ * managed_documents that live directly under the bound folder root, mirroring
+ * `listBoundFolderDocuments` so the approval engine can resolve discipline
+ * rules. Best-effort — a tagging failure must never break the listing.
+ */
+export async function listBoundFolderChildren(
+  resolved: ResolvedBoundFolder,
+  parentItemId: string | null,
+): Promise<GraphItem[]> {
+  const effectiveParent = parentItemId && parentItemId.length > 0 ? parentItemId : resolved.rootItemId;
+  const children = await listChildren(resolved.driveId, effectiveParent);
+
+  // Backfill disciplineFolderId only for tracked files at the bound root,
+  // mirroring listBoundFolderDocuments (the reliable association point).
+  if (effectiveParent === resolved.rootItemId) {
+    try {
+      const tracked = await listManagedDocumentsByProject(resolved.binding.projectId);
+      const byItem = new Map(tracked.map((d) => [d.driveItemId, d]));
+      await Promise.all(
+        children
+          .filter((c) => !c.isFolder)
+          .map((c) => byItem.get(c.id))
+          .filter((d): d is NonNullable<typeof d> => !!d && d.disciplineFolderId !== resolved.binding.id)
+          .map((d) => setDisciplineFolderId(d.id, resolved.binding.id)),
+      );
+    } catch (err) {
+      console.error("[discipline-folder-documents] disciplineFolderId backfill failed:", err);
+    }
+  }
+
+  return children;
+}
+
+export interface BoundFolderItemDetail {
+  item: GraphItem;
+  managedDocument: ManagedDocument | null;
+  lock: { lockedByUserId: number; lockedAt: Date } | null;
+}
+
+/**
+ * Fetch a single item under a project's bound discipline folder with its
+ * tracked-document + lock overlay. Mirrors the company-scope item handler:
+ * for a file we ensure a managed_documents tracking row exists (so revisions /
+ * comments / checkout / request-approval can attach), tagging it with the
+ * bound discipline folder id. Folders are returned untracked.
+ */
+export async function getBoundFolderItem(
+  resolved: ResolvedBoundFolder,
+  itemId: string,
+  userId: number,
+): Promise<BoundFolderItemDetail> {
+  const item = await getItem(resolved.driveId, itemId);
+  if (!item) throw notFound("Item");
+
+  if (item.isFolder) {
+    return { item, managedDocument: null, lock: null };
+  }
+
+  // Ensure a tracking row exists for this file (project scope), tagged with the
+  // bound discipline folder so the approval engine resolves the discipline ACL.
+  let tracked = await getManagedDocumentByDriveItem(resolved.driveId, itemId);
+  if (!tracked) {
+    tracked = await upsertManagedDocumentFromGraph({
+      rootScope: "project",
+      projectId: resolved.binding.projectId,
+      companyRootId: null,
+      driveId: resolved.driveId,
+      driveItemId: item.id,
+      name: item.name,
+      path: item.path,
+      createdByUserId: userId,
+    });
+  }
+  if (tracked && tracked.disciplineFolderId !== resolved.binding.id) {
+    try {
+      await setDisciplineFolderId(tracked.id, resolved.binding.id);
+      tracked = { ...tracked, disciplineFolderId: resolved.binding.id };
+    } catch (err) {
+      console.error("[discipline-folder-documents] disciplineFolderId tag-on-detail failed:", err);
+    }
+  }
+
+  const lock = tracked ? await getLock(tracked.id) : null;
+  return {
+    item,
+    managedDocument: tracked ?? null,
+    lock: lock ? { lockedByUserId: lock.lockedByUserId, lockedAt: lock.lockedAt } : null,
   };
 }
