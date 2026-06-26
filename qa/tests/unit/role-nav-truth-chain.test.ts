@@ -7,7 +7,8 @@
  * docs/roles-permissions-navigation-audit-2026-05-05.md §3:
  *
  *   - For every CompanyRole, exactly which of the 7 top-nav items render.
- *   - Admin is visible iff the role is in ADMIN_ROLES.
+ *   - Admin/Settings is visible for ADMIN_ROLES (full) and for
+ *     PROGRAM_FINANCE_MANAGER (scoped to read-only Integration Statuses).
  *   - Every visible top-nav primary path passes evaluatePathAccess for a
  *     role that's supposed to see it (no "shown but immediately denied").
  *   - validateNavigationPermissionModel() reports zero outstanding issues.
@@ -44,7 +45,8 @@ type TopNavLabel = "Home" | "Execution" | "Finance" | "Engineering" | "Quality M
  *
  * Hidden tabs (Projects/Portfolio, Gates, Project Development, HSE, Reports,
  * the legacy Admin grid) sit behind Functionality Control and don't render
- * in the top bar regardless of the role. Settings is COO/CEO only.
+ * in the top bar regardless of the role. Settings is COO/CEO (full) plus
+ * PROGRAM_FINANCE_MANAGER (read-only Integration Statuses only).
  */
 const EXPECTED_VISIBILITY: Record<CompanyRole, TopNavLabel[]> = {
   COO_ADMIN:               ["Home", "Execution", "Engineering", "Finance", "Quality Management", "Settings"],
@@ -52,7 +54,7 @@ const EXPECTED_VISIBILITY: Record<CompanyRole, TopNavLabel[]> = {
   CCO:                     ["Home", "Finance"],
   KEY_ACCOUNTS_MANAGER:    ["Home", "Finance"],
   PROGRAM_MANAGER:         ["Home", "Execution", "Finance", "Quality Management"],
-  PROGRAM_FINANCE_MANAGER: ["Home", "Execution", "Finance"],
+  PROGRAM_FINANCE_MANAGER: ["Home", "Execution", "Finance", "Settings"],
   PROJECT_MANAGER_SITE:    ["Home", "Execution", "Finance", "Quality Management"],
   CONSTRUCTION_MANAGER:    ["Home", "Execution", "Finance", "Quality Management"],
   ENGINEERING_MANAGER:     ["Home", "Execution", "Engineering", "Quality Management"],
@@ -95,13 +97,35 @@ describe("role × top-nav visibility matrix matches the audit doc", () => {
   });
 });
 
-describe("Settings visibility ⇔ ADMIN_ROLES membership", () => {
-  it("Settings top-nav is shown for exactly COO_ADMIN and CEO_ADMIN", () => {
-    const adminRoles = new Set<string>(ADMIN_ROLES);
+describe("Settings visibility ⇔ ADMIN_ROLES (+ PFM read-only Integration Statuses)", () => {
+  // COO/CEO get the full Settings section. PROGRAM_FINANCE_MANAGER is granted the
+  // Settings *section shell* too, but item-level permission gating limits them to
+  // Integration Statuses (read-only) — see the dedicated scoping test below and
+  // permission-snapshot-no-drift.test.ts.
+  const SETTINGS_SECTION_ROLES = new Set<string>([...ADMIN_ROLES, "PROGRAM_FINANCE_MANAGER"]);
+
+  it("Settings top-nav is shown for exactly COO_ADMIN, CEO_ADMIN and PROGRAM_FINANCE_MANAGER", () => {
     for (const role of Object.keys(ROLE_VISIBLE_SECTIONS) as CompanyRole[]) {
       const sees = visibleLabelsFor(role).includes("Settings");
-      expect(sees, `${role} Settings visibility`).toBe(adminRoles.has(role));
+      expect(sees, `${role} Settings visibility`).toBe(SETTINGS_SECTION_ROLES.has(role));
     }
+  });
+
+  it("PROGRAM_FINANCE_MANAGER reaches ONLY Integration Statuses inside Settings", () => {
+    const reach = (path: string) =>
+      evaluatePathAccess({
+        role: "PROGRAM_FINANCE_MANAGER",
+        path,
+        snapshot: {
+          sections: ROLE_VISIBLE_SECTIONS.PROGRAM_FINANCE_MANAGER as unknown as string[],
+          entityPermissions: null,
+          userOverrides: null,
+        },
+        failOpenForUnknown: false,
+      }).allowed;
+    expect(reach("/admin/integrations"), "Integration Statuses must be reachable").toBe(true);
+    expect(reach("/admin/roles"), "Roles & Permissions must stay hidden").toBe(false);
+    expect(reach("/admin/activity-log"), "Audit Log must stay hidden").toBe(false);
   });
 });
 

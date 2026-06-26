@@ -5025,7 +5025,7 @@
       "edit": false
     },
     "integration_health": {
-      "view": false,
+      "view": true,
       "edit": false
     },
     "invoice_patterns": {
