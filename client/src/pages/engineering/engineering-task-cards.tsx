@@ -63,6 +63,7 @@ import {
 } from "@shared/task-priorities";
 import { engFetch } from "@/lib/eng-fetch";
 import { PRIORITIES } from "./task-filter-config";
+import { SubtaskChip } from "./spine/task-list-affordances";
 
 export function QuickStatusSelect({ task, onStatusChange }: { task: Task; onStatusChange: (id: number, status: string) => void }) {
   return (
@@ -293,6 +294,7 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
         </div>
         <div className="flex items-center gap-1 mt-0.5">
           <span className="text-[9px] text-muted-foreground/60 truncate flex-1">{projectDisplay}</span>
+          <SubtaskChip total={task.subtaskTotal ?? 0} done={task.subtaskDone ?? 0} />
           {task.dueDate && <span className={`text-[9px] ${overdue ? "text-red-600 font-bold" : "text-muted-foreground"}`}>{label || formatDateShort(task.dueDate)}</span>}
         </div>
         {task.parentTaskTitle && (
@@ -413,6 +415,7 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
         {task.percentComplete > 0 && task.percentComplete < 100 && (
           <span className="text-[9px] text-muted-foreground font-medium">{Math.round(task.percentComplete)}%</span>
         )}
+        <SubtaskChip total={task.subtaskTotal ?? 0} done={task.subtaskDone ?? 0} />
       </div>
 
       {contextBadges.length > 0 && (

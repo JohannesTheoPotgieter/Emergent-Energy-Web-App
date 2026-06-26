@@ -40,6 +40,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
+import { isApiError } from "@/lib/api-error";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
@@ -55,7 +56,13 @@ import {
 } from "@shared/engineering/delivery-task-catalog";
 import { TASK_STATUSES, getTaskStatusLabel } from "@shared/task-status";
 import { isTaskComplete } from "@/lib/task-status";
-import type { Task } from "@/components/tasks/types";
+import type { Task, TeamMember } from "@/components/tasks/types";
+import { SpineSubtasksSection } from "./spine/SpineSubtasksSection";
+import { SpineChecklistsSection } from "./spine/SpineChecklistsSection";
+import { SpineCommentsSection } from "./spine/SpineCommentsSection";
+import { SpineAssigneesSection } from "./spine/SpineAssigneesSection";
+import { SpineDependenciesSection } from "./spine/SpineDependenciesSection";
+import { SpineSignOffSection } from "./spine/SpineSignOffSection";
 import {
   useEngineeringTaskFilters,
   type EngineeringDueDateFilter,
@@ -92,6 +99,11 @@ interface TaskListItem {
   ownerUserId: number | null;
   ownerName: string | null;
   documentCount: number;
+  // Native task-management list affordances (spine list response).
+  subtaskTotal?: number;
+  subtaskDone?: number;
+  assigneeNames?: string[];
+  isBlocked?: boolean;
 }
 
 interface DocLink {
@@ -132,6 +144,13 @@ function typeLabel(tag: string | null): string {
  */
 function toTask(t: TaskListItem): Task {
   const ownerName = t.ownerName ?? null;
+  // Prefer the spine assignee roster (owner first), falling back to just the
+  // owner name. De-dupe so the owner isn't double-counted in the avatar stack.
+  const assigneeNames = t.assigneeNames && t.assigneeNames.length > 0
+    ? Array.from(new Set([...(ownerName ? [ownerName] : []), ...t.assigneeNames]))
+    : ownerName
+      ? [ownerName]
+      : [];
   return {
     id: t.id,
     projectId: t.projectId,
@@ -160,13 +179,16 @@ function toTask(t: TaskListItem): Task {
     linkedPlanItemId: null,
     linkedDeliverableId: null,
     linkedQualityItemInstanceId: null,
-    assignees: ownerName ? [ownerName] : [],
+    assignees: assigneeNames,
     watchers: [],
     tags: [],
     createdAt: "",
     updatedAt: "",
     isUnassigned: t.ownerUserId == null,
+    isBlocked: t.isBlocked ?? false,
     projectLinkedDeliverableCount: t.documentCount,
+    subtaskTotal: t.subtaskTotal ?? 0,
+    subtaskDone: t.subtaskDone ?? 0,
   };
 }
 
@@ -251,8 +273,10 @@ export default function EngineeringTaskManagerPage() {
       refresh();
     },
     onError: (e: unknown) =>
+      // The server's complete-guard returns 409 with a message listing the
+      // open blocking tasks — surface it as a "Blocked" toast.
       toast({
-        title: "Couldn't update status",
+        title: isApiError(e) && e.status === 409 ? "Blocked by dependencies" : "Couldn't update status",
         description: e instanceof Error ? e.message : undefined,
         variant: "destructive",
       }),
@@ -850,6 +874,14 @@ function TaskDrawer({
 }) {
   const open = task != null;
   const taskId = task?.id ?? 0;
+
+  // Mention roster for the comments input — reuse the page's options users
+  // (the only field the picker needs is fullName; role is shown if present).
+  const teamMembers: TeamMember[] = useMemo(
+    () => (options?.users ?? []).map((u) => ({ id: u.id, fullName: u.name, role: "" })),
+    [options?.users],
+  );
+
   const docsQuery = useQuery<{ links: DocLink[] }>({
     queryKey: ["/api/engineering/tasks", taskId, "documents"],
     enabled: open,
@@ -883,7 +915,7 @@ function TaskDrawer({
     },
     onError: (e: unknown) =>
       toast({
-        title: "Couldn't update status",
+        title: isApiError(e) && e.status === 409 ? "Blocked by dependencies" : "Couldn't update status",
         description: e instanceof Error ? e.message : undefined,
         variant: "destructive",
       }),
@@ -1029,6 +1061,36 @@ function TaskDrawer({
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Assignees */}
+              <SpineAssigneesSection
+                taskId={taskId}
+                open={open}
+                toast={toast}
+                users={options?.users ?? []}
+                onChanged={onChanged}
+              />
+
+              {/* Subtasks */}
+              <SpineSubtasksSection taskId={taskId} open={open} toast={toast} onChanged={onChanged} />
+
+              {/* Checklists */}
+              <SpineChecklistsSection taskId={taskId} open={open} toast={toast} />
+
+              {/* Dependencies */}
+              <SpineDependenciesSection taskId={taskId} open={open} toast={toast} />
+
+              {/* Sign-off */}
+              <SpineSignOffSection
+                taskId={taskId}
+                status={task.status}
+                open={open}
+                toast={toast}
+                onChanged={onChanged}
+              />
+
+              {/* Comments */}
+              <SpineCommentsSection taskId={taskId} open={open} toast={toast} teamMembers={teamMembers} />
 
               {/* Documents */}
               <div className="space-y-2">

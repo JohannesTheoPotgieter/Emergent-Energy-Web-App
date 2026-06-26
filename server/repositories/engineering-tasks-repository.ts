@@ -8,7 +8,7 @@
  * notifications use the canonical spine tables/services.
  */
 
-import { and, eq, isNull, desc, lte, inArray, count } from "drizzle-orm";
+import { and, eq, ne, or, isNull, asc, desc, lte, inArray, count } from "drizzle-orm";
 import { db } from "../db";
 import {
   workItems,
@@ -16,6 +16,11 @@ import {
   workItemStatusHistory,
   workItemDependencies,
   workItemDocumentLinks,
+  taskComments,
+  taskCommentMentions,
+  taskChecklists,
+  taskChecklistItems,
+  approvals,
   projectInfo,
   users,
 } from "@shared/schema";
@@ -37,6 +42,7 @@ import { recordAudit } from "../api/v2/services/audit-service";
 import { createNotification } from "../services/notification-service";
 import { listManagedDocumentsByProject } from "./managed-documents-repository";
 import { isTaskComplete } from "@shared/task-status";
+import { conflict, notFound, badRequest } from "../lib/api-error";
 
 export type WorkItemRow = typeof workItems.$inferSelect;
 export type WorkItemDocumentLinkRow = typeof workItemDocumentLinks.$inferSelect;
@@ -63,6 +69,8 @@ export interface EngineeringTaskListItem {
   ownerUserId: number | null;
   ownerName: string | null;
   documentCount: number;
+  subtaskTotal: number;
+  subtaskDone: number;
 }
 
 export async function listEngineeringTasks(filters: EngineeringTaskFilters = {}): Promise<EngineeringTaskListItem[]> {
@@ -94,6 +102,8 @@ export async function listEngineeringTasks(filters: EngineeringTaskFilters = {})
 
   const ids = rows.map((r: (typeof rows)[number]) => r.id);
   const docCounts = new Map<number, number>();
+  const subtaskTotals = new Map<number, number>();
+  const subtaskDone = new Map<number, number>();
   if (ids.length > 0) {
     const counts = await db
       .select({ workItemId: workItemDocumentLinks.workItemId, c: count() })
@@ -101,6 +111,20 @@ export async function listEngineeringTasks(filters: EngineeringTaskFilters = {})
       .where(inArray(workItemDocumentLinks.workItemId, ids))
       .groupBy(workItemDocumentLinks.workItemId);
     for (const row of counts) docCounts.set(row.workItemId, Number(row.c));
+
+    // Cheap subtask progress aggregate: one pass over the children of every
+    // listed task. `parentId` is indexed (work_items_parent_id_idx).
+    const subtaskRows = await db
+      .select({ parentId: workItems.parentId, status: workItems.status })
+      .from(workItems)
+      .where(and(inArray(workItems.parentId, ids), isNull(workItems.deletedAt)));
+    for (const sub of subtaskRows) {
+      if (sub.parentId == null) continue;
+      subtaskTotals.set(sub.parentId, (subtaskTotals.get(sub.parentId) ?? 0) + 1);
+      if (isTaskComplete(sub.status)) {
+        subtaskDone.set(sub.parentId, (subtaskDone.get(sub.parentId) ?? 0) + 1);
+      }
+    }
   }
 
   return rows.map((r: (typeof rows)[number]) => ({
@@ -115,6 +139,8 @@ export async function listEngineeringTasks(filters: EngineeringTaskFilters = {})
     ownerUserId: r.ownerUserId ?? null,
     ownerName: r.ownerName ?? null,
     documentCount: docCounts.get(r.id) ?? 0,
+    subtaskTotal: subtaskTotals.get(r.id) ?? 0,
+    subtaskDone: subtaskDone.get(r.id) ?? 0,
   }));
 }
 
@@ -200,6 +226,17 @@ export async function transitionEngineeringTaskStatus(
 ): Promise<WorkItemRow | null> {
   const current = await getEngineeringTask(taskId);
   if (!current) return null;
+
+  // Dependency complete-guard: cannot reach a complete state while any
+  // blocked-by (predecessor) task is still open. Reuses work_item_dependencies.
+  if (isTaskComplete(newStatus)) {
+    const blockers = await getIncompleteBlockers(taskId);
+    if (blockers.length > 0) {
+      throw conflict(
+        `Cannot complete: blocked by ${blockers.length} incomplete task(s): ${blockers.map((b) => b.title).join(", ")}.`,
+      );
+    }
+  }
 
   const context = await buildTaskWorkflowContext(taskId, current.status);
   assertTaskWorkflowTransition(context, newStatus, opts.source ?? "status_update");
@@ -396,4 +433,715 @@ export async function createSeamHandoff(
     changesJson: { seamType: input.seamType, fromTaskId: input.fromTaskId ?? null, toOwnerUserId: input.toOwnerUserId },
   });
   return row;
+}
+
+// ── Subtasks (reuse work_items.parentId) ─────────────────────────────────────
+
+export interface SubtaskListItem {
+  id: number;
+  title: string;
+  status: string;
+  ownerUserId: number | null;
+  ownerName: string | null;
+  endDate: string | null;
+}
+
+export async function listSubtasks(parentId: number): Promise<SubtaskListItem[]> {
+  const rows = await db
+    .select({
+      id: workItems.id,
+      title: workItems.title,
+      status: workItems.status,
+      ownerUserId: workItems.ownerUserId,
+      ownerName: users.name,
+      endDate: workItems.endDate,
+    })
+    .from(workItems)
+    .leftJoin(users, eq(users.id, workItems.ownerUserId))
+    .where(and(eq(workItems.parentId, parentId), isNull(workItems.deletedAt)))
+    .orderBy(asc(workItems.sortOrder), asc(workItems.id));
+  return rows.map((r: (typeof rows)[number]) => ({
+    id: r.id,
+    title: r.title,
+    status: r.status,
+    ownerUserId: r.ownerUserId ?? null,
+    ownerName: r.ownerName ?? null,
+    endDate: r.endDate ?? null,
+  }));
+}
+
+/**
+ * Create a child ENG work item under `parentId` (subtask). Inherits projectId
+ * from the parent; status defaults to 'not_started'. Returns the new id.
+ */
+export async function createSubtask(parentId: number, title: string, actorId: number): Promise<{ id: number }> {
+  const parent = await getEngineeringTask(parentId);
+  if (!parent) throw notFound("Task");
+  const [row] = await db
+    .insert(workItems)
+    .values({
+      workstream: "ENG",
+      source: "UI",
+      title: title.trim(),
+      status: "not_started",
+      projectId: parent.projectId ?? null,
+      parentId,
+      createdBy: actorId,
+    })
+    .returning({ id: workItems.id });
+  await db.insert(workItemStatusHistory).values(buildStatusHistoryInsert(row.id, null, "not_started", actorId, "subtask created"));
+  await recordAudit({
+    userId: actorId,
+    entityType: "work_item",
+    entityId: String(row.id),
+    action: "engineering.task.subtask_create",
+    changesJson: { parentId },
+  });
+  return { id: row.id };
+}
+
+// ── Checklists (reuse task_checklists + task_checklist_items) ─────────────────
+
+export interface ChecklistItemOut {
+  id: number;
+  content: string;
+  isDone: boolean;
+  sortOrder: number;
+}
+export interface ChecklistOut {
+  id: number;
+  title: string;
+  sortOrder: number;
+  items: ChecklistItemOut[];
+}
+
+export async function listChecklists(taskId: number): Promise<ChecklistOut[]> {
+  const lists = await db
+    .select()
+    .from(taskChecklists)
+    .where(eq(taskChecklists.workItemId, taskId))
+    .orderBy(asc(taskChecklists.sortOrder), asc(taskChecklists.id));
+  if (lists.length === 0) return [];
+  const listIds = lists.map((l: (typeof lists)[number]) => l.id);
+  const items = await db
+    .select()
+    .from(taskChecklistItems)
+    .where(inArray(taskChecklistItems.checklistId, listIds))
+    .orderBy(asc(taskChecklistItems.sortOrder), asc(taskChecklistItems.id));
+  const byList = new Map<number, ChecklistItemOut[]>();
+  for (const it of items) {
+    const arr = byList.get(it.checklistId) ?? [];
+    arr.push({ id: it.id, content: it.content, isDone: it.isDone, sortOrder: it.sortOrder });
+    byList.set(it.checklistId, arr);
+  }
+  return lists.map((l: (typeof lists)[number]) => ({
+    id: l.id,
+    title: l.title,
+    sortOrder: l.sortOrder,
+    items: byList.get(l.id) ?? [],
+  }));
+}
+
+export async function createChecklist(taskId: number, title: string): Promise<{ id: number }> {
+  const [maxRow] = await db
+    .select({ m: count() })
+    .from(taskChecklists)
+    .where(eq(taskChecklists.workItemId, taskId));
+  const [row] = await db
+    .insert(taskChecklists)
+    .values({ workItemId: taskId, title: title.trim(), sortOrder: Number(maxRow?.m ?? 0) })
+    .returning({ id: taskChecklists.id });
+  return { id: row.id };
+}
+
+/** Confirm a checklist belongs to the given task (404 otherwise). */
+async function assertChecklistOnTask(taskId: number, checklistId: number): Promise<void> {
+  const [row] = await db
+    .select({ id: taskChecklists.id })
+    .from(taskChecklists)
+    .where(and(eq(taskChecklists.id, checklistId), eq(taskChecklists.workItemId, taskId)))
+    .limit(1);
+  if (!row) throw notFound("Checklist");
+}
+
+export async function deleteChecklist(taskId: number, checklistId: number): Promise<void> {
+  await assertChecklistOnTask(taskId, checklistId);
+  // task_checklist_items cascades on checklist delete.
+  await db.delete(taskChecklists).where(eq(taskChecklists.id, checklistId));
+}
+
+export async function addChecklistItem(taskId: number, checklistId: number, content: string): Promise<{ id: number }> {
+  await assertChecklistOnTask(taskId, checklistId);
+  const [maxRow] = await db
+    .select({ m: count() })
+    .from(taskChecklistItems)
+    .where(eq(taskChecklistItems.checklistId, checklistId));
+  const [row] = await db
+    .insert(taskChecklistItems)
+    .values({ checklistId, content: content.trim(), sortOrder: Number(maxRow?.m ?? 0) })
+    .returning({ id: taskChecklistItems.id });
+  return { id: row.id };
+}
+
+/** Confirm a checklist item hangs off a checklist that belongs to the task. */
+async function assertChecklistItemOnTask(taskId: number, itemId: number): Promise<void> {
+  const [row] = await db
+    .select({ id: taskChecklistItems.id })
+    .from(taskChecklistItems)
+    .innerJoin(taskChecklists, eq(taskChecklists.id, taskChecklistItems.checklistId))
+    .where(and(eq(taskChecklistItems.id, itemId), eq(taskChecklists.workItemId, taskId)))
+    .limit(1);
+  if (!row) throw notFound("Checklist item");
+}
+
+export async function updateChecklistItem(
+  taskId: number,
+  itemId: number,
+  patch: { isDone?: boolean; content?: string },
+): Promise<void> {
+  await assertChecklistItemOnTask(taskId, itemId);
+  const set: { isDone?: boolean; content?: string } = {};
+  if (patch.isDone !== undefined) set.isDone = patch.isDone;
+  if (patch.content !== undefined) set.content = patch.content.trim();
+  if (Object.keys(set).length === 0) return;
+  await db.update(taskChecklistItems).set(set).where(eq(taskChecklistItems.id, itemId));
+}
+
+export async function deleteChecklistItem(taskId: number, itemId: number): Promise<void> {
+  await assertChecklistItemOnTask(taskId, itemId);
+  await db.delete(taskChecklistItems).where(eq(taskChecklistItems.id, itemId));
+}
+
+// ── Comments + @mentions (reuse task_comments + task_comment_mentions) ────────
+
+export interface CommentOut {
+  id: number;
+  body: string;
+  authorId: number | null;
+  authorName: string | null;
+  createdAt: Date;
+  mentions: { userId: number; name: string | null }[];
+}
+
+export async function listComments(taskId: number): Promise<CommentOut[]> {
+  const rows = await db
+    .select({
+      id: taskComments.id,
+      body: taskComments.body,
+      authorId: taskComments.authorId,
+      authorName: users.name,
+      createdAt: taskComments.createdAt,
+    })
+    .from(taskComments)
+    .leftJoin(users, eq(users.id, taskComments.authorId))
+    .where(eq(taskComments.workItemId, taskId))
+    .orderBy(asc(taskComments.createdAt));
+  if (rows.length === 0) return [];
+
+  const commentIds = rows.map((r: (typeof rows)[number]) => r.id);
+  const mentionRows = await db
+    .select({
+      commentId: taskCommentMentions.commentId,
+      userId: taskCommentMentions.mentionedUserId,
+      name: users.name,
+    })
+    .from(taskCommentMentions)
+    .leftJoin(users, eq(users.id, taskCommentMentions.mentionedUserId))
+    .where(inArray(taskCommentMentions.commentId, commentIds));
+  const byComment = new Map<number, { userId: number; name: string | null }[]>();
+  for (const m of mentionRows) {
+    const arr = byComment.get(m.commentId) ?? [];
+    arr.push({ userId: m.userId, name: m.name ?? null });
+    byComment.set(m.commentId, arr);
+  }
+
+  return rows.map((r: (typeof rows)[number]) => ({
+    id: r.id,
+    body: r.body,
+    authorId: r.authorId ?? null,
+    authorName: r.authorName ?? null,
+    createdAt: r.createdAt,
+    mentions: byComment.get(r.id) ?? [],
+  }));
+}
+
+/**
+ * Insert a comment, persist @mention rows, and notify each mentioned user
+ * (other than the author) through the canonical notification service.
+ */
+export async function createComment(
+  taskId: number,
+  body: string,
+  mentionedUserIds: number[],
+  actorId: number,
+): Promise<{ id: number }> {
+  const task = await getEngineeringTask(taskId);
+  if (!task) throw notFound("Task");
+
+  const [comment] = await db
+    .insert(taskComments)
+    .values({ workItemId: taskId, authorId: actorId, body: body.trim() })
+    .returning({ id: taskComments.id });
+
+  // De-dupe, drop the author, and keep only real users on this row's mentions.
+  const uniqueMentions = Array.from(new Set(mentionedUserIds)).filter((uid) => uid > 0);
+  if (uniqueMentions.length > 0) {
+    await db
+      .insert(taskCommentMentions)
+      .values(uniqueMentions.map((uid) => ({ commentId: comment.id, mentionedUserId: uid })))
+      .onConflictDoNothing();
+    for (const uid of uniqueMentions) {
+      if (uid === actorId) continue;
+      await createNotification({
+        recipientUserId: uid,
+        eventType: "engineering.task.comment_mention",
+        title: `You were mentioned on: ${task.title}`,
+        body: body.trim().slice(0, 280),
+        projectId: task.projectId ?? undefined,
+        linkedTaskId: task.id,
+        relatedEntityType: "work_item",
+        relatedEntityId: task.id,
+      });
+    }
+  }
+
+  await recordAudit({
+    userId: actorId,
+    entityType: "work_item",
+    entityId: String(taskId),
+    action: "engineering.task.comment_create",
+    changesJson: { commentId: comment.id, mentions: uniqueMentions },
+  });
+  return { id: comment.id };
+}
+
+// ── Assignees (reuse work_item_assignments; OWNER stays work_items.ownerUserId)
+
+export interface AssigneeOut {
+  userId: number;
+  name: string | null;
+  role: string;
+}
+
+export async function listAssignees(taskId: number): Promise<AssigneeOut[]> {
+  const rows = await db
+    .select({ userId: workItemAssignments.userId, name: users.name, role: workItemAssignments.role })
+    .from(workItemAssignments)
+    .leftJoin(users, eq(users.id, workItemAssignments.userId))
+    .where(eq(workItemAssignments.workItemId, taskId))
+    .orderBy(asc(workItemAssignments.id));
+  return rows.map((r: (typeof rows)[number]) => ({ userId: r.userId, name: r.name ?? null, role: r.role }));
+}
+
+export async function addAssignee(
+  taskId: number,
+  userId: number,
+  role: "ASSIGNEE" | "REVIEWER" | "VIEWER",
+  actorId: number,
+): Promise<void> {
+  const task = await getEngineeringTask(taskId);
+  if (!task) throw notFound("Task");
+  await db
+    .insert(workItemAssignments)
+    .values({ workItemId: taskId, userId, role })
+    .onConflictDoNothing();
+  await recordAudit({
+    userId: actorId,
+    entityType: "work_item",
+    entityId: String(taskId),
+    action: "engineering.task.assignee_add",
+    changesJson: { userId, role },
+  });
+  if (userId !== actorId) {
+    await createNotification({
+      recipientUserId: userId,
+      eventType: "engineering.task.assigned",
+      title: `Added to task: ${task.title}`,
+      body: `You were added to "${task.title}" as ${role}.`,
+      projectId: task.projectId ?? undefined,
+      linkedTaskId: task.id,
+      relatedEntityType: "work_item",
+      relatedEntityId: task.id,
+    });
+  }
+}
+
+/** Remove a non-owner assignment. The OWNER row is managed via the owner PATCH. */
+export async function removeAssignee(taskId: number, userId: number, actorId: number): Promise<boolean> {
+  const deleted = await db
+    .delete(workItemAssignments)
+    .where(
+      and(
+        eq(workItemAssignments.workItemId, taskId),
+        eq(workItemAssignments.userId, userId),
+        ne(workItemAssignments.role, "OWNER"),
+      ),
+    )
+    .returning({ id: workItemAssignments.id });
+  if (deleted.length > 0) {
+    await recordAudit({
+      userId: actorId,
+      entityType: "work_item",
+      entityId: String(taskId),
+      action: "engineering.task.assignee_remove",
+      changesJson: { userId },
+    });
+  }
+  return deleted.length > 0;
+}
+
+// ── Dependencies (reuse work_item_dependencies; FS only; same project) ────────
+
+export interface DependencyOut {
+  depId: number;
+  taskId: number;
+  title: string;
+  status: string;
+  kind: "task" | "plan";
+}
+
+/** A work_items row reads as a "plan" line when it's a milestone, links to a
+ *  plan item, or sits in the PM workstream; otherwise it's a "task". */
+function classifyKind(row: { isMilestone: boolean | null; linkedPlanItemId: number | null; workstream: string }): "task" | "plan" {
+  if (row.isMilestone || row.linkedPlanItemId != null || row.workstream === "PM") return "plan";
+  return "task";
+}
+
+export async function listDependencies(taskId: number): Promise<{ blockedBy: DependencyOut[]; blocks: DependencyOut[] }> {
+  const rows = await db
+    .select({
+      depId: workItemDependencies.id,
+      predecessorId: workItemDependencies.predecessorId,
+      successorId: workItemDependencies.successorId,
+    })
+    .from(workItemDependencies)
+    .where(
+      and(
+        isNull(workItemDependencies.deletedAt),
+        or(eq(workItemDependencies.successorId, taskId), eq(workItemDependencies.predecessorId, taskId)),
+      ),
+    );
+  if (rows.length === 0) return { blockedBy: [], blocks: [] };
+
+  const otherIds = Array.from(
+    new Set<number>(rows.map((r: (typeof rows)[number]) => (r.successorId === taskId ? r.predecessorId : r.successorId))),
+  );
+  const itemRows = await db
+    .select({
+      id: workItems.id,
+      title: workItems.title,
+      status: workItems.status,
+      isMilestone: workItems.isMilestone,
+      linkedPlanItemId: workItems.linkedPlanItemId,
+      workstream: workItems.workstream,
+    })
+    .from(workItems)
+    .where(inArray(workItems.id, otherIds));
+  const itemMap = new Map<number, (typeof itemRows)[number]>();
+  for (const it of itemRows) itemMap.set(it.id, it);
+
+  const blockedBy: DependencyOut[] = [];
+  const blocks: DependencyOut[] = [];
+  for (const r of rows) {
+    const otherId = r.successorId === taskId ? r.predecessorId : r.successorId;
+    const item = itemMap.get(otherId);
+    if (!item) continue;
+    const dep: DependencyOut = {
+      depId: r.depId,
+      taskId: item.id,
+      title: item.title,
+      status: item.status,
+      kind: classifyKind(item),
+    };
+    if (r.successorId === taskId) blockedBy.push(dep);
+    else blocks.push(dep);
+  }
+  return { blockedBy, blocks };
+}
+
+export interface DependencyCandidate {
+  id: number;
+  title: string;
+  kind: "task" | "plan";
+  status: string;
+}
+
+/**
+ * Other Engineering/plan work_items on the same project that this task may
+ * depend on. Excludes self, the parent, this task's subtasks, already-linked
+ * rows, and rows that would form an immediate cycle (already a successor).
+ */
+export async function listDependencyCandidates(taskId: number): Promise<DependencyCandidate[]> {
+  const task = await getEngineeringTask(taskId);
+  if (!task || task.projectId == null) return [];
+
+  // Rows already linked in either direction (active links only).
+  const links = await db
+    .select({ predecessorId: workItemDependencies.predecessorId, successorId: workItemDependencies.successorId })
+    .from(workItemDependencies)
+    .where(
+      and(
+        isNull(workItemDependencies.deletedAt),
+        or(eq(workItemDependencies.successorId, taskId), eq(workItemDependencies.predecessorId, taskId)),
+      ),
+    );
+  const linked = new Set<number>();
+  for (const l of links) {
+    linked.add(l.predecessorId === taskId ? l.successorId : l.predecessorId);
+  }
+
+  // Subtasks of this task (children) — excluded.
+  const children = await db
+    .select({ id: workItems.id })
+    .from(workItems)
+    .where(and(eq(workItems.parentId, taskId), isNull(workItems.deletedAt)));
+  const excluded = new Set<number>([taskId, ...linked, ...children.map((c: (typeof children)[number]) => c.id)]);
+  if (task.parentId != null) excluded.add(task.parentId);
+
+  const rows = await db
+    .select({
+      id: workItems.id,
+      title: workItems.title,
+      status: workItems.status,
+      isMilestone: workItems.isMilestone,
+      linkedPlanItemId: workItems.linkedPlanItemId,
+      workstream: workItems.workstream,
+    })
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.projectId, task.projectId),
+        isNull(workItems.deletedAt),
+        inArray(workItems.workstream, ["ENG", "PM"]),
+      ),
+    )
+    .orderBy(asc(workItems.title));
+
+  return rows
+    .filter((r: (typeof rows)[number]) => !excluded.has(r.id))
+    .map((r: (typeof rows)[number]) => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      kind: classifyKind(r),
+    }));
+}
+
+/** Tasks that block `taskId` (its blockedBy predecessors) that are not yet
+ *  complete — drives the complete-guard. */
+async function getIncompleteBlockers(taskId: number): Promise<{ id: number; title: string }[]> {
+  const rows = await db
+    .select({ id: workItems.id, title: workItems.title, status: workItems.status })
+    .from(workItemDependencies)
+    .innerJoin(workItems, eq(workItems.id, workItemDependencies.predecessorId))
+    .where(
+      and(
+        eq(workItemDependencies.successorId, taskId),
+        isNull(workItemDependencies.deletedAt),
+        isNull(workItems.deletedAt),
+      ),
+    );
+  return rows
+    .filter((r: (typeof rows)[number]) => !isTaskComplete(r.status))
+    .map((r: (typeof rows)[number]) => ({ id: r.id, title: r.title }));
+}
+
+/**
+ * Create a 'FS' dependency: `dependsOnTaskId` (predecessor) blocks `taskId`
+ * (successor). Rejects self-links, duplicates, and a direct cycle (the
+ * dependency already exists in the opposite direction).
+ */
+export async function addDependency(taskId: number, dependsOnTaskId: number, actorId: number): Promise<{ id: number }> {
+  if (taskId === dependsOnTaskId) throw badRequest("A task can't depend on itself.");
+  const task = await getEngineeringTask(taskId);
+  if (!task) throw notFound("Task");
+  const [dependsOn] = await db
+    .select({ id: workItems.id, projectId: workItems.projectId })
+    .from(workItems)
+    .where(and(eq(workItems.id, dependsOnTaskId), isNull(workItems.deletedAt)))
+    .limit(1);
+  if (!dependsOn) throw notFound("Dependency task");
+  if (task.projectId != null && dependsOn.projectId !== task.projectId) {
+    throw badRequest("Dependencies must be on the same project.");
+  }
+
+  const existing = await db
+    .select({ predecessorId: workItemDependencies.predecessorId, successorId: workItemDependencies.successorId })
+    .from(workItemDependencies)
+    .where(
+      and(
+        isNull(workItemDependencies.deletedAt),
+        or(
+          and(eq(workItemDependencies.predecessorId, dependsOnTaskId), eq(workItemDependencies.successorId, taskId)),
+          and(eq(workItemDependencies.predecessorId, taskId), eq(workItemDependencies.successorId, dependsOnTaskId)),
+        ),
+      ),
+    );
+  for (const e of existing) {
+    if (e.predecessorId === dependsOnTaskId && e.successorId === taskId) {
+      throw badRequest("That dependency already exists.");
+    }
+    // Opposite direction already linked → adding this would create a direct cycle.
+    throw badRequest("That would create a circular dependency.");
+  }
+
+  const [row] = await db
+    .insert(workItemDependencies)
+    .values({ predecessorId: dependsOnTaskId, successorId: taskId, depType: "FS", source: "MANUAL" })
+    .returning({ id: workItemDependencies.id });
+  await recordAudit({
+    userId: actorId,
+    entityType: "work_item",
+    entityId: String(taskId),
+    action: "engineering.task.dependency_add",
+    changesJson: { dependsOnTaskId, depId: row.id },
+  });
+  return { id: row.id };
+}
+
+export async function removeDependency(taskId: number, depId: number, actorId: number): Promise<boolean> {
+  // Soft-delete (the table carries deletedAt). Only allow removing a row that
+  // touches this task in either direction.
+  const updated = await db
+    .update(workItemDependencies)
+    .set({ deletedAt: new Date(), deletedBy: actorId })
+    .where(
+      and(
+        eq(workItemDependencies.id, depId),
+        isNull(workItemDependencies.deletedAt),
+        or(eq(workItemDependencies.successorId, taskId), eq(workItemDependencies.predecessorId, taskId)),
+      ),
+    )
+    .returning({ id: workItemDependencies.id });
+  if (updated.length > 0) {
+    await recordAudit({
+      userId: actorId,
+      entityType: "work_item",
+      entityId: String(taskId),
+      action: "engineering.task.dependency_remove",
+      changesJson: { depId },
+    });
+  }
+  return updated.length > 0;
+}
+
+// ── Sign-off (reuse approvals; durable approver + timestamp) ──────────────────
+
+export interface SignOffOut {
+  id: number;
+  kind: string;
+  decision: string;
+  decidedByName: string | null;
+  decidedAt: Date | null;
+  note: string | null;
+}
+
+const SIGN_OFF_PREFIX = "engineering_task_";
+const SIGN_OFF_SUFFIX = "_sign_off";
+
+export async function listSignOffs(taskId: number): Promise<SignOffOut[]> {
+  const rows = await db
+    .select({
+      id: approvals.id,
+      approvalType: approvals.approvalType,
+      status: approvals.status,
+      decidedByName: users.name,
+      decidedAt: approvals.decidedAt,
+      decisionNote: approvals.decisionNote,
+    })
+    .from(approvals)
+    .leftJoin(users, eq(users.id, approvals.decidedBy))
+    .where(
+      and(
+        eq(approvals.relatedEntityType, "work_item"),
+        eq(approvals.relatedEntityId, taskId),
+        isNull(approvals.deletedAt),
+      ),
+    )
+    .orderBy(desc(approvals.id));
+  return rows
+    .filter(
+      (r: (typeof rows)[number]) =>
+        r.approvalType != null && r.approvalType.startsWith(SIGN_OFF_PREFIX) && r.approvalType.endsWith(SIGN_OFF_SUFFIX),
+    )
+    .map((r: (typeof rows)[number]) => ({
+      id: r.id,
+      kind: r.approvalType!.slice(SIGN_OFF_PREFIX.length, r.approvalType!.length - SIGN_OFF_SUFFIX.length),
+      decision: r.status,
+      decidedByName: r.decidedByName ?? null,
+      decidedAt: r.decidedAt ?? null,
+      note: r.decisionNote ?? null,
+    }));
+}
+
+/**
+ * Record a sign-off decision against the `approvals` table, transition the
+ * task status per the contract, and post a summary comment. An operational
+ * approval drives the task to 'complete' through the workflow chokepoint
+ * (source 'approval_action'), so the dependency complete-guard still applies.
+ */
+export async function recordSignOff(
+  taskId: number,
+  decision: "approved" | "rejected",
+  kind: "qc" | "operational",
+  note: string | undefined,
+  actorId: number,
+): Promise<{ id: number }> {
+  const task = await getEngineeringTask(taskId);
+  if (!task) throw notFound("Task");
+  if (task.projectId == null) throw badRequest("Sign-off requires the task to belong to a project.");
+
+  const now = new Date();
+  const approvalType = `${SIGN_OFF_PREFIX}${kind}${SIGN_OFF_SUFFIX}`;
+  const [row] = await db
+    .insert(approvals)
+    .values({
+      type: approvalType,
+      title: `Engineering ${kind} sign-off: ${task.title}`,
+      status: decision,
+      requestedBy: actorId,
+      decidedBy: actorId,
+      decidedAt: now,
+      decisionNote: note ?? null,
+      relatedEntityType: "work_item",
+      relatedEntityId: taskId,
+      approvalType,
+      projectId: task.projectId,
+    })
+    .returning({ id: approvals.id });
+
+  // Status transition per the contract.
+  let targetStatus: string | null = null;
+  if (decision === "rejected") {
+    targetStatus = "provide_feedback";
+  } else if (kind === "qc") {
+    targetStatus = "qc_approved";
+  } else {
+    targetStatus = "complete";
+  }
+  if (targetStatus && targetStatus !== task.status) {
+    // Operational approval reaching 'complete' uses the approval_action source
+    // so the workflow guard's approval branch is satisfied; the dependency
+    // complete-guard inside transitionEngineeringTaskStatus still fires.
+    await transitionEngineeringTaskStatus(taskId, targetStatus, actorId, {
+      source: kind === "operational" && decision === "approved" ? "approval_action" : "status_update",
+      reason: `${kind} sign-off ${decision}`,
+    });
+  }
+
+  // Summary comment (reuse the comment surface — no mentions/notifications).
+  await db.insert(taskComments).values({
+    workItemId: taskId,
+    authorId: actorId,
+    body: `${kind === "qc" ? "QC" : "Operational"} sign-off: ${decision}${note ? ` — ${note}` : ""}.`,
+  });
+
+  await recordAudit({
+    userId: actorId,
+    entityType: "work_item",
+    entityId: String(taskId),
+    action: "engineering.task.sign_off",
+    changesJson: { kind, decision, approvalId: row.id, targetStatus },
+  });
+  return { id: row.id };
 }

@@ -81,6 +81,10 @@ export interface Task {
   hasMicrosoftContext?: boolean;
   microsoftActionRequiredCount?: number;
   relatedMicrosoftItems?: TaskMicrosoftContextItem[] | null;
+  // Native subtask roll-up counts (engineering spine list response). Optional so
+  // surfaces that don't compute subtasks simply omit them.
+  subtaskTotal?: number;
+  subtaskDone?: number;
 }
 
 export interface Comment {
