@@ -33,7 +33,7 @@ export default function EngineeringDocumentsPage() {
         description="Drawings, specs, NCR evidence and calibration certificates. Approvals waiting on you appear first; pick a project to see its engineering folders and SharePoint connection."
       />
       <ManagedDocumentApprovalQueue title="Engineering approvals waiting on me" />
-      <DisciplineProjectDocuments discipline="ENGINEERING" />
+      <DisciplineProjectDocuments discipline="ENGINEERING" projectScope="active-window" />
     </PageShell>
   );
 }
