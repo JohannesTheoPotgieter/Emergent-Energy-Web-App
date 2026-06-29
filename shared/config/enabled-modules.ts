@@ -275,13 +275,19 @@ export const ACTIVE_MODULE_CONFIG: ModuleRegistryConfig = LIVE_READY_MODULE_CONF
 
 /** Where allowed users land / where disabled routes redirect to. */
 export const LIVE_READY_LANDING_PATH = "/finance";
+/** Engineering-delivery roles land on the Engineering module rather than
+ *  Finance (which their RBAC does not grant). */
+export const LIVE_READY_ENGINEERING_LANDING_PATH = "/engineering";
 /** Where disallowed roles are sent (the branded no-access landing). */
 export const LIVE_READY_NO_ACCESS_PATH = "/no-access";
 
 /**
- * ROLE ALLOWLIST (locked) — management + finance roles that may enter the
- * finance module. Every entry is a real value in COMPANY_ROLES
- * (shared/schema/users.ts), enforced by the live-ready unit test.
+ * ROLE ALLOWLIST (locked) — roles that may enter the app while it runs in
+ * live-ready mode. Finance + management roles for the Finance / Execution
+ * modules, plus the Engineering delivery roles (Engineering Manager + Engineer)
+ * now that the Engineering module is Live-Ready (released 2026-06-29). Every
+ * entry is a real value in COMPANY_ROLES (shared/schema/users.ts), enforced by
+ * the live-ready unit test.
  */
 export const LIVE_READY_ROLE_ALLOWLIST: readonly CompanyRole[] = [
   "COO_ADMIN",
@@ -291,6 +297,15 @@ export const LIVE_READY_ROLE_ALLOWLIST: readonly CompanyRole[] = [
   "ACCOUNTANT",
   "PROGRAM_MANAGER",
   "CONSTRUCTION_MANAGER",
+  // Engineering delivery module (Home · Task Manager · Document Manager).
+  "ENGINEERING_MANAGER",
+  "ENGINEER",
+];
+
+/** Roles whose live-ready landing is the Engineering module, not Finance. */
+export const LIVE_READY_ENGINEERING_ROLES: readonly CompanyRole[] = [
+  "ENGINEERING_MANAGER",
+  "ENGINEER",
 ];
 
 // ---------------------------------------------------------------------------
@@ -354,9 +369,11 @@ export function isRoleAllowedInLiveReady(role?: string | null): boolean {
  */
 export function resolveLiveReadyLanding(role?: string | null): string | null {
   if (!isLiveReadyEnforced()) return null;
-  return isRoleAllowedInLiveReady(role)
-    ? LIVE_READY_LANDING_PATH
-    : LIVE_READY_NO_ACCESS_PATH;
+  if (!isRoleAllowedInLiveReady(role)) return LIVE_READY_NO_ACCESS_PATH;
+  if (role && (LIVE_READY_ENGINEERING_ROLES as readonly string[]).includes(role)) {
+    return LIVE_READY_ENGINEERING_LANDING_PATH;
+  }
+  return LIVE_READY_LANDING_PATH;
 }
 
 // ---------------------------------------------------------------------------
