@@ -1034,7 +1034,10 @@ export function MyTasksView({
         hold.push(t);
       } else if (canonical === "in_progress") {
         inProgress.push(t);
-      } else if (!isTaskComplete(t.status)) {
+      } else {
+        // Completed tasks land here so they stay visible when the user has
+        // turned "Hide completed" off (scope=all). When it is on, completed
+        // tasks are filtered upstream and never reach this bucket.
         rest.push(t);
       }
     }
