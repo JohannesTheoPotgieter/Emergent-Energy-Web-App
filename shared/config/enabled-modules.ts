@@ -118,6 +118,22 @@ export const ENABLED_ENGINEERING_PAGE_IDS = [
 ] as const;
 
 /**
+ * Quality delivery pages inside the QUALITY nav-group that are Live-Ready. The
+ * Quality function is restored for delivery scope (Dashboard · Task Manager ·
+ * Document Manager), ring-fenced exactly like Engineering. The work-item-driven
+ * Task Board surfaces work items flagged as quality tasks against each project.
+ * The commissioning dashboard and the NCR deep-link aliases stay OUT of the
+ * Live-Ready set (NCR links redirect to /quality; commissioning is not promoted).
+ *
+ * Page IDs match `PageRegistryEntry.id` in client/src/config/page-registry.ts.
+ */
+export const ENABLED_QUALITY_PAGE_IDS = [
+  "quality",           // /quality — Quality Dashboard (delivery landing)
+  "qualityTasks",      // /quality/tasks — Quality Task Board
+  "qualityDocuments",  // /quality/documents — Quality Document Management
+] as const;
+
+/**
  * THE registry. Re-enabling a module = change its entry to `{ mode: "full" }`
  * (or `{ mode: "partial", pageIds: [...] }` to ring-fence specific pages).
  */
@@ -135,6 +151,10 @@ export const LIVE_READY_MODULE_CONFIG: ModuleRegistryConfig = {
     // they are rebuilt). Surfaces the "Engineering" top tab between Execution
     // and Finance. Added 2026-06-22.
     ENGINEERING: { mode: "partial", pageIds: ENABLED_ENGINEERING_PAGE_IDS },
+    // Quality (delivery scope) — fourth Live-Ready module, ring-fenced to its
+    // delivery pages (Dashboard · Task Manager · Document Manager). Surfaces the
+    // "Quality Management" top tab. Restored 2026-06-29.
+    QUALITY: { mode: "partial", pageIds: ENABLED_QUALITY_PAGE_IDS },
     // ── Disabled (re-enable by flipping to { mode: "full" }) ──────────────
     MY_WORK: { mode: "disabled" },
     PORTFOLIO: { mode: "disabled" },
@@ -142,7 +162,6 @@ export const LIVE_READY_MODULE_CONFIG: ModuleRegistryConfig = {
     PROJECT_DEVELOPMENT: { mode: "disabled" },
     PROJECTS: { mode: "disabled" },
     GATES: { mode: "disabled" },
-    QUALITY: { mode: "disabled" },
     HSE: { mode: "disabled" },
     REPORTS: { mode: "disabled" },
     KNOWLEDGE: { mode: "disabled" },
@@ -278,6 +297,9 @@ export const LIVE_READY_LANDING_PATH = "/finance";
 /** Engineering-delivery roles land on the Engineering module rather than
  *  Finance (which their RBAC does not grant). */
 export const LIVE_READY_ENGINEERING_LANDING_PATH = "/engineering";
+/** Quality roles land on the Quality module rather than Finance (which their
+ *  RBAC does not grant). */
+export const LIVE_READY_QUALITY_LANDING_PATH = "/quality";
 /** Where disallowed roles are sent (the branded no-access landing). */
 export const LIVE_READY_NO_ACCESS_PATH = "/no-access";
 
@@ -300,12 +322,22 @@ export const LIVE_READY_ROLE_ALLOWLIST: readonly CompanyRole[] = [
   // Engineering delivery module (Home · Task Manager · Document Manager).
   "ENGINEERING_MANAGER",
   "ENGINEER",
+  // Quality delivery module (Dashboard · Task Manager · Document Manager).
+  // Restored 2026-06-29. QUALITY_MANAGER is the canonical owner of /quality
+  // (its roleLandingEligibility). Front-line quality roles (PROJECT_MANAGER_SITE,
+  // SSEG_MANAGER) can be added here later without further code changes.
+  "QUALITY_MANAGER",
 ];
 
 /** Roles whose live-ready landing is the Engineering module, not Finance. */
 export const LIVE_READY_ENGINEERING_ROLES: readonly CompanyRole[] = [
   "ENGINEERING_MANAGER",
   "ENGINEER",
+];
+
+/** Roles whose live-ready landing is the Quality module, not Finance. */
+export const LIVE_READY_QUALITY_ROLES: readonly CompanyRole[] = [
+  "QUALITY_MANAGER",
 ];
 
 // ---------------------------------------------------------------------------
@@ -372,6 +404,9 @@ export function resolveLiveReadyLanding(role?: string | null): string | null {
   if (!isRoleAllowedInLiveReady(role)) return LIVE_READY_NO_ACCESS_PATH;
   if (role && (LIVE_READY_ENGINEERING_ROLES as readonly string[]).includes(role)) {
     return LIVE_READY_ENGINEERING_LANDING_PATH;
+  }
+  if (role && (LIVE_READY_QUALITY_ROLES as readonly string[]).includes(role)) {
+    return LIVE_READY_QUALITY_LANDING_PATH;
   }
   return LIVE_READY_LANDING_PATH;
 }
