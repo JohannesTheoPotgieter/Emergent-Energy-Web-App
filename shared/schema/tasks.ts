@@ -53,6 +53,19 @@ export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({ i
 export type InsertTaskComment = z.infer<typeof insertTaskCommentSchema>;
 export type TaskComment = typeof taskComments.$inferSelect;
 
+// @-mention join for task comments — mirrors document_comment_mentions.
+// Lets us notify tagged users and render structured mentions instead of
+// embedding raw "@Name" text in the comment body.
+export const taskCommentMentions = pgTable("task_comment_mentions", {
+  commentId: integer("comment_id").notNull().references(() => taskComments.id, { onDelete: "cascade" }),
+  mentionedUserId: integer("mentioned_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: uniqueIndex("task_comment_mentions_pk").on(t.commentId, t.mentionedUserId),
+  userIdx: index("task_comment_mentions_user_idx").on(t.mentionedUserId),
+}));
+
+export type TaskCommentMention = typeof taskCommentMentions.$inferSelect;
+
 export const taskChecklists = pgTable("task_checklists", {
   id: serial("id").primaryKey(),
   workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),

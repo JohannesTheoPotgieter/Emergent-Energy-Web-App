@@ -4,6 +4,11 @@
  * Three useState slots (commentText, showMentions, mentionQuery) used to live
  * on the parent drawer, so every keystroke re-rendered every other block in
  * the drawer. Here they are local: only this small subtree re-renders on input.
+ *
+ * `onSubmit` receives `(body, mentionedUserIds)` — the IDs are the team members
+ * that were inserted via the @-mention popover AND whose name still appears in
+ * the final text. Callers that only care about the body can ignore the second
+ * argument (the legacy drawer does), so the extension stays backward-safe.
  */
 import { useState, type KeyboardEvent } from "react";
 import { Input } from "@/components/ui/input";
@@ -14,7 +19,7 @@ import type { TeamMember } from "@/components/tasks/types";
 
 export interface CommentInputWithMentionsProps {
   teamMembers: TeamMember[];
-  onSubmit: (body: string) => void;
+  onSubmit: (body: string, mentionedUserIds: number[]) => void;
   submitting: boolean;
 }
 
@@ -22,6 +27,9 @@ export function CommentInputWithMentions({ teamMembers, onSubmit, submitting }: 
   const [text, setText] = useState<string>("");
   const [showMentions, setShowMentions] = useState<boolean>(false);
   const [mentionQuery, setMentionQuery] = useState<string>("");
+  // Members the user explicitly picked from the popover. Resolved against the
+  // final text on submit so deleting a mention from the body drops the ID too.
+  const [picked, setPicked] = useState<TeamMember[]>([]);
 
   function handleChange(next: string) {
     setText(next);
@@ -47,8 +55,20 @@ export function CommentInputWithMentions({ teamMembers, onSubmit, submitting }: 
   function submit() {
     const body = text.trim();
     if (!body) return;
-    onSubmit(body);
+    // Only keep picked members whose @Name token still survives in the body,
+    // de-duplicated by id.
+    const seen = new Set<number>();
+    const mentionedUserIds: number[] = [];
+    for (const m of picked) {
+      if (seen.has(m.id)) continue;
+      if (body.includes(`@${m.fullName}`)) {
+        seen.add(m.id);
+        mentionedUserIds.push(m.id);
+      }
+    }
+    onSubmit(body, mentionedUserIds);
     setText("");
+    setPicked([]);
   }
 
   const filteredMembers = teamMembers.filter(m => !mentionQuery || m.fullName.toLowerCase().includes(mentionQuery));
@@ -76,6 +96,7 @@ export function CommentInputWithMentions({ teamMembers, onSubmit, submitting }: 
                 onClick={() => {
                   const atIdx = text.lastIndexOf("@");
                   setText(text.substring(0, atIdx) + `@${m.fullName} `);
+                  setPicked((prev) => (prev.some((p) => p.id === m.id) ? prev : [...prev, m]));
                   setShowMentions(false);
                 }}
               >

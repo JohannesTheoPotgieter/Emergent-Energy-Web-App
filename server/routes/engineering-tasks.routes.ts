@@ -79,6 +79,47 @@ const seamSchema = z.object({
   dueDate: z.string().max(32).optional(),
 });
 
+const subtaskSchema = z.object({
+  title: z.string().min(1).max(500),
+});
+
+const checklistSchema = z.object({
+  title: z.string().min(1).max(500),
+});
+
+const checklistItemSchema = z.object({
+  content: z.string().min(1).max(2000),
+});
+
+const checklistItemPatchSchema = z
+  .object({
+    isDone: z.boolean().optional(),
+    content: z.string().min(1).max(2000).optional(),
+  })
+  .refine((d) => d.isDone !== undefined || d.content !== undefined, {
+    message: "Provide isDone or content.",
+  });
+
+const commentSchema = z.object({
+  body: z.string().min(1).max(5000),
+  mentionedUserIds: z.array(z.number().int().positive()).max(50).optional(),
+});
+
+const assigneeSchema = z.object({
+  userId: z.number().int().positive(),
+  role: z.enum(["ASSIGNEE", "REVIEWER", "VIEWER"]).optional(),
+});
+
+const dependencySchema = z.object({
+  dependsOnTaskId: z.number().int().positive(),
+});
+
+const signOffSchema = z.object({
+  decision: z.enum(["approved", "rejected"]),
+  kind: z.enum(["qc", "operational"]),
+  note: z.string().max(5000).optional(),
+});
+
 function actorId(req: Request): number {
   const user = getEffectiveUser(req);
   if (!user) throw unauthorized();
@@ -295,6 +336,356 @@ export function registerEngineeringTasksRoutes(app: Express): void {
         res.status(201).json({ task });
       } catch (err) {
         handleError("seam", err);
+      }
+    },
+  );
+
+  // ── Subtasks ───────────────────────────────────────────────────────────────
+
+  app.get(
+    "/api/engineering/tasks/:id/subtasks",
+    requireAuth,
+    requirePermission("eng_tasks", "view"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      try {
+        res.json({ subtasks: await tasksRepo.listSubtasks(parsedId.data) });
+      } catch (err) {
+        handleError("list-subtasks", err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/engineering/tasks/:id/subtasks",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    validateBody(subtaskSchema),
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      const body = req.body as z.infer<typeof subtaskSchema>;
+      try {
+        res.status(201).json(await tasksRepo.createSubtask(parsedId.data, body.title, actorId(req)));
+      } catch (err) {
+        handleError("create-subtask", err);
+      }
+    },
+  );
+
+  // ── Checklists ───────────────────────────────────────────────────────────────
+
+  app.get(
+    "/api/engineering/tasks/:id/checklists",
+    requireAuth,
+    requirePermission("eng_tasks", "view"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      try {
+        res.json({ checklists: await tasksRepo.listChecklists(parsedId.data) });
+      } catch (err) {
+        handleError("list-checklists", err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/engineering/tasks/:id/checklists",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    validateBody(checklistSchema),
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      const body = req.body as z.infer<typeof checklistSchema>;
+      try {
+        res.status(201).json(await tasksRepo.createChecklist(parsedId.data, body.title));
+      } catch (err) {
+        handleError("create-checklist", err);
+      }
+    },
+  );
+
+  app.delete(
+    "/api/engineering/tasks/:id/checklists/:checklistId",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      const parsedChecklistId = idParam.safeParse(req.params.checklistId);
+      if (!parsedId.success || !parsedChecklistId.success) throw badRequest("Invalid id");
+      try {
+        await tasksRepo.deleteChecklist(parsedId.data, parsedChecklistId.data);
+        res.json({ ok: true });
+      } catch (err) {
+        handleError("delete-checklist", err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/engineering/tasks/:id/checklists/:checklistId/items",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    validateBody(checklistItemSchema),
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      const parsedChecklistId = idParam.safeParse(req.params.checklistId);
+      if (!parsedId.success || !parsedChecklistId.success) throw badRequest("Invalid id");
+      const body = req.body as z.infer<typeof checklistItemSchema>;
+      try {
+        res.status(201).json(await tasksRepo.addChecklistItem(parsedId.data, parsedChecklistId.data, body.content));
+      } catch (err) {
+        handleError("add-checklist-item", err);
+      }
+    },
+  );
+
+  app.patch(
+    "/api/engineering/tasks/:id/checklist-items/:itemId",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    validateBody(checklistItemPatchSchema),
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      const parsedItemId = idParam.safeParse(req.params.itemId);
+      if (!parsedId.success || !parsedItemId.success) throw badRequest("Invalid id");
+      const body = req.body as z.infer<typeof checklistItemPatchSchema>;
+      try {
+        await tasksRepo.updateChecklistItem(parsedId.data, parsedItemId.data, body);
+        res.json({ ok: true });
+      } catch (err) {
+        handleError("update-checklist-item", err);
+      }
+    },
+  );
+
+  app.delete(
+    "/api/engineering/tasks/:id/checklist-items/:itemId",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      const parsedItemId = idParam.safeParse(req.params.itemId);
+      if (!parsedId.success || !parsedItemId.success) throw badRequest("Invalid id");
+      try {
+        await tasksRepo.deleteChecklistItem(parsedId.data, parsedItemId.data);
+        res.json({ ok: true });
+      } catch (err) {
+        handleError("delete-checklist-item", err);
+      }
+    },
+  );
+
+  // ── Comments + @mentions ──────────────────────────────────────────────────
+
+  app.get(
+    "/api/engineering/tasks/:id/comments",
+    requireAuth,
+    requirePermission("eng_tasks", "view"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      try {
+        res.json({ comments: await tasksRepo.listComments(parsedId.data) });
+      } catch (err) {
+        handleError("list-comments", err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/engineering/tasks/:id/comments",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    validateBody(commentSchema),
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      const body = req.body as z.infer<typeof commentSchema>;
+      try {
+        res.status(201).json(
+          await tasksRepo.createComment(parsedId.data, body.body, body.mentionedUserIds ?? [], actorId(req)),
+        );
+      } catch (err) {
+        handleError("create-comment", err);
+      }
+    },
+  );
+
+  // ── Assignees ──────────────────────────────────────────────────────────────
+
+  app.get(
+    "/api/engineering/tasks/:id/assignees",
+    requireAuth,
+    requirePermission("eng_tasks", "view"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      try {
+        res.json({ assignees: await tasksRepo.listAssignees(parsedId.data) });
+      } catch (err) {
+        handleError("list-assignees", err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/engineering/tasks/:id/assignees",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    validateBody(assigneeSchema),
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      const body = req.body as z.infer<typeof assigneeSchema>;
+      try {
+        await tasksRepo.addAssignee(parsedId.data, body.userId, body.role ?? "ASSIGNEE", actorId(req));
+        res.status(201).json({ ok: true });
+      } catch (err) {
+        handleError("add-assignee", err);
+      }
+    },
+  );
+
+  app.delete(
+    "/api/engineering/tasks/:id/assignees/:userId",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      const parsedUserId = idParam.safeParse(req.params.userId);
+      if (!parsedId.success || !parsedUserId.success) throw badRequest("Invalid id");
+      try {
+        const removed = await tasksRepo.removeAssignee(parsedId.data, parsedUserId.data, actorId(req));
+        if (!removed) throw notFound("Assignee");
+        res.json({ ok: true });
+      } catch (err) {
+        handleError("remove-assignee", err);
+      }
+    },
+  );
+
+  // ── Dependencies ─────────────────────────────────────────────────────────────
+
+  app.get(
+    "/api/engineering/tasks/:id/dependencies",
+    requireAuth,
+    requirePermission("eng_tasks", "view"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      try {
+        res.json(await tasksRepo.listDependencies(parsedId.data));
+      } catch (err) {
+        handleError("list-dependencies", err);
+      }
+    },
+  );
+
+  app.get(
+    "/api/engineering/tasks/:id/dependency-candidates",
+    requireAuth,
+    requirePermission("eng_tasks", "view"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      try {
+        res.json({ candidates: await tasksRepo.listDependencyCandidates(parsedId.data) });
+      } catch (err) {
+        handleError("dependency-candidates", err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/engineering/tasks/:id/dependencies",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    validateBody(dependencySchema),
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      const body = req.body as z.infer<typeof dependencySchema>;
+      try {
+        res.status(201).json(await tasksRepo.addDependency(parsedId.data, body.dependsOnTaskId, actorId(req)));
+      } catch (err) {
+        handleError("add-dependency", err);
+      }
+    },
+  );
+
+  app.delete(
+    "/api/engineering/tasks/:id/dependencies/:depId",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      const parsedDepId = idParam.safeParse(req.params.depId);
+      if (!parsedId.success || !parsedDepId.success) throw badRequest("Invalid id");
+      try {
+        const removed = await tasksRepo.removeDependency(parsedId.data, parsedDepId.data, actorId(req));
+        if (!removed) throw notFound("Dependency");
+        res.json({ ok: true });
+      } catch (err) {
+        handleError("remove-dependency", err);
+      }
+    },
+  );
+
+  // ── Sign-off ─────────────────────────────────────────────────────────────────
+
+  app.get(
+    "/api/engineering/tasks/:id/sign-offs",
+    requireAuth,
+    requirePermission("eng_tasks", "view"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      try {
+        res.json({ signOffs: await tasksRepo.listSignOffs(parsedId.data) });
+      } catch (err) {
+        handleError("list-sign-offs", err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/engineering/tasks/:id/sign-off",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    validateBody(signOffSchema),
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      const body = req.body as z.infer<typeof signOffSchema>;
+      try {
+        res.status(201).json(
+          await tasksRepo.recordSignOff(parsedId.data, body.decision, body.kind, body.note, actorId(req)),
+        );
+      } catch (err) {
+        handleError("sign-off", err);
       }
     },
   );

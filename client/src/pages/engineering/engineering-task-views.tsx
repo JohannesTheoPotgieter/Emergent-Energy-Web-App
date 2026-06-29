@@ -61,6 +61,7 @@ import {
 } from "@shared/task-priorities";
 import { PRIORITIES } from "./task-filter-config";
 import { getTaskContextBadges } from "./engineering-task-cards";
+import { AssigneeStack, SubtaskChip } from "./spine/task-list-affordances";
 
 export interface ProjectGroup {
   projectName: string;
@@ -786,22 +787,23 @@ export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityC
                         data-testid={`inline-priority-${task.id}`}
                       />
                     </td>
-                    <td className="p-2 text-xs text-muted-foreground truncate max-w-[120px]">
-                      {assigneeNames[0] || "—"}
+                    <td className="p-2 max-w-[120px]">
+                      <AssigneeStack names={assigneeNames} />
                     </td>
                     <td className="p-2">
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap items-center gap-1">
                         {task.isUnassigned && (
                           <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-slate-50 text-slate-700 border-slate-200">
                             Unassigned
                           </Badge>
                         )}
+                        <SubtaskChip total={task.subtaskTotal ?? 0} done={task.subtaskDone ?? 0} />
                         {contextBadges.length > 0 ? contextBadges.map((badge) => (
                           <Badge key={badge.label} variant="outline" className={`text-[9px] px-1.5 py-0 ${badge.className}`}>
                             {badge.label}
                           </Badge>
                         )) : (
-                          <span className="text-[10px] text-muted-foreground">Stable</span>
+                          (task.subtaskTotal ?? 0) === 0 && <span className="text-[10px] text-muted-foreground">Stable</span>
                         )}
                       </div>
                     </td>
