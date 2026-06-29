@@ -1,45 +1,44 @@
 /**
- * DisciplineFolderBinder — browse-and-bind a project's SharePoint folder for a
- * discipline. Shows the currently-bound folder (if any) and, for users with
- * documents_provision rights, a Bind/Change control that opens the existing
- * SharePoint browser (SharepointRootPicker). Reusable across disciplines.
+ * Discipline folder connect controls (browse-and-bind, reworked UX).
+ *
+ * The old prominent "binder card + duplicate file list" is gone. What remains
+ * are two quiet, plumbing-hiding affordances that reuse the same bind/unbind
+ * mutations + SharepointRootPicker:
+ *
+ *  - <DisciplineConnectEmptyState>  — centered empty state shown in the CENTER
+ *    pane when no folder is bound for this discipline. Admin-gated
+ *    (documents_provision); non-admins just see an explanatory message.
+ *  - <DisciplineFolderMenu>         — compact "⋯" menu (Change folder /
+ *    Disconnect) tucked in the left rail when a folder IS bound. Admin-gated.
+ *
+ * Both share the picker dialog via the internal usePicker hook. SharePoint
+ * stays the source of truth — we only persist Graph references (driveId /
+ * itemId / path / webUrl), never file bytes.
  */
 
 import { useMemo, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  AlertTriangle, ExternalLink, File, Folder, FolderSymlink, FolderTree, Link2, Loader2, Unlink,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { EmptyState } from "@/components/ui/empty-state";
+import {
+  ExternalLink, FolderSymlink, MoreHorizontal, Plug, Unlink,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { SharepointRootPicker, type PickedRoot } from "@/components/admin/SharepointRootPicker";
 import { usePermission } from "@/hooks/use-permissions";
 import { toast } from "@/hooks/use-toast";
 import {
-  useDisciplineFolders, useDisciplineFolderDocuments,
+  useDisciplineFolders,
   useBindDisciplineFolder, useUnbindDisciplineFolder,
 } from "@/hooks/use-discipline-folders";
 
-export function DisciplineFolderBinder({
-  projectId,
-  discipline,
-}: {
-  projectId: number;
-  discipline: string;
-}) {
-  const { allowed: canBind } = usePermission("documents_provision", "edit");
-  const { allowed: canUnbind } = usePermission("documents_provision", "edit");
-  const foldersQuery = useDisciplineFolders(projectId);
+/** Shared bind/unbind + picker wiring for the connect affordances. */
+function useDisciplineConnect(projectId: number, discipline: string) {
   const bind = useBindDisciplineFolder();
   const unbind = useUnbindDisciplineFolder();
   const [pickerOpen, setPickerOpen] = useState(false);
-
-  const current = useMemo(
-    () => (foldersQuery.data?.folders ?? []).find((f) => f.discipline === discipline) ?? null,
-    [foldersQuery.data, discipline],
-  );
-
-  const docsQuery = useDisciplineFolderDocuments(projectId, discipline, !!current);
 
   function handlePicked(picked: PickedRoot) {
     if (!picked.rootItemId) {
@@ -65,119 +64,123 @@ export function DisciplineFolderBinder({
     unbind.mutate({ projectId, discipline });
   }
 
-  // No binding and no rights to create one → render nothing (keep the page clean).
-  if (!canBind && !current) return null;
+  return { bind, unbind, pickerOpen, setPickerOpen, handlePicked, handleUnbind };
+}
+
+/**
+ * Centered empty state for an unbound discipline. Admin (documents_provision)
+ * sees a Connect action that opens the SharePoint picker; everyone else sees a
+ * plain "ask an admin" message.
+ */
+export function DisciplineConnectEmptyState({
+  projectId,
+  discipline,
+}: {
+  projectId: number;
+  discipline: string;
+}) {
+  const { allowed: canProvision } = usePermission("documents_provision", "edit");
+  const { bind, pickerOpen, setPickerOpen, handlePicked } = useDisciplineConnect(projectId, discipline);
+  const label = discipline.toLowerCase();
 
   return (
-    <Card data-testid={`discipline-folder-binder-${discipline}`}>
-      <CardContent className="flex flex-wrap items-center gap-3 py-3">
-        <FolderTree className="h-4 w-4 shrink-0 text-emerald-600" />
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium">{discipline} document folder</div>
-          {foldersQuery.isLoading ? (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" /> Loading…
-            </div>
-          ) : current ? (
-            <div
-              className="truncate font-mono text-xs text-muted-foreground"
-              title={current.sharepointPath ?? undefined}
-            >
-              {current.sharepointPath || "(folder bound)"}
-            </div>
-          ) : (
-            <div className="flex items-center gap-1 text-xs text-amber-700">
-              <AlertTriangle className="h-3 w-3" /> No folder bound yet.
-            </div>
-          )}
-        </div>
+    <div
+      className="flex flex-1 items-center justify-center p-8"
+      data-testid={`discipline-connect-empty-${discipline}`}
+    >
+      <div className="w-full max-w-md">
+        <EmptyState
+          icon={Plug}
+          title="Connect this discipline's SharePoint folder"
+          description={
+            canProvision
+              ? `Bind the SharePoint folder that holds this project's ${label} documents. SharePoint stays the source of truth — files are never copied here.`
+              : `No SharePoint folder is connected for ${label} documents yet. Ask a document administrator to connect one.`
+          }
+          action={
+            canProvision
+              ? {
+                  label: bind.isPending ? "Connecting…" : "Connect SharePoint folder",
+                  onClick: () => setPickerOpen(true),
+                }
+              : undefined
+          }
+        />
+      </div>
+      {canProvision && (
+        <SharepointRootPicker open={pickerOpen} onOpenChange={setPickerOpen} onSelect={handlePicked} />
+      )}
+    </div>
+  );
+}
 
-        {current?.webUrl ? (
-          <a
-            href={current.webUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-emerald-700 hover:underline"
-          >
-            <ExternalLink className="h-3.5 w-3.5" /> Open
-          </a>
-        ) : null}
+/**
+ * Compact rail control for a bound discipline: "⋯" menu with Open in SharePoint,
+ * Change folder, and Disconnect. Admin-gated; renders nothing for non-admins.
+ */
+export function DisciplineFolderMenu({
+  projectId,
+  discipline,
+}: {
+  projectId: number;
+  discipline: string;
+}) {
+  const { allowed: canProvision } = usePermission("documents_provision", "edit");
+  const foldersQuery = useDisciplineFolders(projectId);
+  const { bind, unbind, pickerOpen, setPickerOpen, handlePicked, handleUnbind } =
+    useDisciplineConnect(projectId, discipline);
 
-        {canBind && (
+  const current = useMemo(
+    () => (foldersQuery.data?.folders ?? []).find((f) => f.discipline === discipline) ?? null,
+    [foldersQuery.data, discipline],
+  );
+
+  if (!canProvision || !current) return null;
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button
-            size="sm"
-            variant="outline"
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6"
+            aria-label="Folder connection settings"
+            disabled={bind.isPending || unbind.isPending}
+            data-testid={`discipline-folder-menu-${discipline}`}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {current.webUrl && (
+            <DropdownMenuItem asChild>
+              <a href={current.webUrl} target="_blank" rel="noreferrer">
+                <ExternalLink className="mr-2 h-3.5 w-3.5" />
+                Open in SharePoint
+              </a>
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
             onClick={() => setPickerOpen(true)}
-            disabled={bind.isPending}
             data-testid={`bind-${discipline}-folder`}
           >
-            {current ? (
-              <><FolderSymlink className="mr-1.5 h-3.5 w-3.5" /> Change folder</>
-            ) : (
-              <><Link2 className="mr-1.5 h-3.5 w-3.5" /> Bind folder</>
-            )}
-          </Button>
-        )}
-
-        {current && canUnbind && (
-          <Button
-            size="sm"
-            variant="ghost"
+            <FolderSymlink className="mr-2 h-3.5 w-3.5" />
+            Change folder
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
             onClick={handleUnbind}
-            disabled={unbind.isPending}
             data-testid={`unbind-${discipline}-folder`}
           >
-            <Unlink className="mr-1.5 h-3.5 w-3.5" /> Unbind
-          </Button>
-        )}
-      </CardContent>
-
-      {current ? (
-        <div className="border-t">
-          {docsQuery.isLoading ? (
-            <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" /> Loading folder contents…
-            </div>
-          ) : docsQuery.isError ? (
-            <div className="px-4 py-3 text-xs text-destructive">Couldn’t load this folder’s contents.</div>
-          ) : (docsQuery.data?.items ?? []).length === 0 ? (
-            <div className="px-4 py-3 text-xs text-muted-foreground">This folder is empty.</div>
-          ) : (
-            <ul className="divide-y" data-testid={`folder-contents-${discipline}`}>
-              {(docsQuery.data?.items ?? []).map((item) => (
-                <li key={item.itemId} className="flex items-center gap-2 px-4 py-2 text-sm">
-                  {item.isFolder ? (
-                    <Folder className="h-4 w-4 shrink-0 text-amber-500" />
-                  ) : (
-                    <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  )}
-                  <span className="flex-1 truncate" title={item.name}>{item.name}</span>
-                  {item.state ? (
-                    <Badge variant="outline" className="text-[10px] capitalize">
-                      {item.state.replace(/_/g, " ")}
-                    </Badge>
-                  ) : !item.isFolder ? (
-                    <Badge variant="outline" className="text-[10px] text-muted-foreground">untracked</Badge>
-                  ) : null}
-                  {item.webUrl ? (
-                    <a
-                      href={item.webUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-muted-foreground hover:text-emerald-700"
-                      title="Open in SharePoint"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ) : null}
+            <Unlink className="mr-2 h-3.5 w-3.5" />
+            Disconnect
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <SharepointRootPicker open={pickerOpen} onOpenChange={setPickerOpen} onSelect={handlePicked} />
-    </Card>
+    </>
   );
 }
