@@ -73,7 +73,7 @@ import {
   WORKLOAD_STATE_OPTIONS,
   SAVED_FILTERS,
 } from "./task-filter-config";
-import { InlineListView, ProjectKanbanView, MyTasksView, PersonalKpiStrip } from "./engineering-task-views";
+import { InlineListView, StatusKanbanView, MyTasksView, PersonalKpiStrip } from "./engineering-task-views";
 
 /**
  * Engineering Task Manager — work-tracking rebuild.
@@ -259,6 +259,16 @@ export default function EngineeringTaskManagerPage() {
 
   const selected = rawTasks.find((t) => t.id === selectedId) ?? null;
   const myName = (user?.name || "").split(/\s+/)[0] || user?.name || "";
+
+  // Scope the My Tasks KPI strip the same way MyTasksView does (assignee-name
+  // match) so the headline figures and the list below always agree.
+  const myAssignedTasks = useMemo(() => {
+    const nameLower = myName.toLowerCase();
+    if (!nameLower) return [];
+    return filtered.filter((t) =>
+      (t.assignees || []).some((a) => a && a.toLowerCase().startsWith(nameLower)),
+    );
+  }, [filtered, myName]);
 
   function refresh() {
     qc.invalidateQueries({ queryKey: ["/api/engineering/tasks"] });
@@ -626,23 +636,22 @@ export default function EngineeringTaskManagerPage() {
             owners={optionsQuery.data?.users ?? []}
           />
         ) : view === "kanban" ? (
-          <ProjectKanbanView
+          <StatusKanbanView
             tasks={filtered}
             onCardClick={onCardClick}
             onDrop={handleStatusChange}
             onStatusChange={handleStatusChange}
-            searchTerm={search}
+            onPriorityChange={handlePriorityChange}
           />
         ) : (
-          <div className="space-y-4">
-            <PersonalKpiStrip tasks={filtered} myTasks={filtered.filter((t) => t.ownerUserId === user?.id)} />
+          <div className="space-y-3">
+            <PersonalKpiStrip tasks={filtered} myTasks={myAssignedTasks} />
             <MyTasksView
               tasks={filtered}
               myName={myName}
               onCardClick={onCardClick}
               onStatusChange={handleStatusChange}
               onPriorityChange={handlePriorityChange}
-              filterStatuses={[...TASK_STATUSES]}
             />
           </div>
         )}

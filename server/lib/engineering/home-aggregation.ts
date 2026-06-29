@@ -11,7 +11,7 @@
  * canonical label via `shared/phases.ts`; we never write it.
  */
 
-import { isTaskComplete } from "@shared/task-status";
+import { isTaskComplete, getTaskStatusLabel, getTaskStatusBarClass } from "@shared/task-status";
 import { resolveCanonicalPhase, isInActiveExecutionWindow } from "@shared/phases";
 
 export interface EngHomeTaskInput {
@@ -93,6 +93,26 @@ export interface EngineeringHomeOwner {
   name: string;
 }
 
+/** Open-task count for a single workflow status — drives the "Tasks by status"
+ *  distribution widget. Computed over the in-scope OPEN tasks only. */
+export interface EngineeringHomeStatusBucket {
+  status: string;
+  /** Canonical human label (e.g. "In Progress"). */
+  label: string;
+  count: number;
+  /** Tailwind bar colour class from the canonical status metadata. */
+  barClass: string;
+}
+
+/** Open / overdue load for a single engineer — drives the "Workload by
+ *  engineer" widget. Tasks with no owner are bucketed under `userId: null`. */
+export interface EngineeringHomeEngineerLoad {
+  userId: number | null;
+  name: string;
+  open: number;
+  overdue: number;
+}
+
 export interface EngineeringHomeSummary {
   metrics: EngineeringHomeMetrics;
   portfolio: EngineeringHomePortfolioRow[];
@@ -101,7 +121,31 @@ export interface EngineeringHomeSummary {
    *  client's Engineer filter. Computed BEFORE the owner filter is applied
    *  so the dropdown always offers every engineer. */
   owners: EngineeringHomeOwner[];
+  /** Open-task distribution across workflow statuses, in canonical workflow
+   *  order, filter-aware (respects site / engineer / hide-completed). Only
+   *  statuses with at least one open task are returned. */
+  tasksByStatus: EngineeringHomeStatusBucket[];
+  /** Open + overdue load per engineer, filter-aware, ranked by open desc.
+   *  Lets the lead see who is most loaded. */
+  byEngineer: EngineeringHomeEngineerLoad[];
 }
+
+/** Canonical workflow order for the status-distribution widget — matches the
+ *  Task Manager workflow ordering. `complete` is intentionally last (only shown
+ *  when includeCompleted surfaces open tasks in that bucket, which it never
+ *  does — kept for ordering stability). */
+const STATUS_ORDER: readonly string[] = [
+  "not_started",
+  "to_do",
+  "in_progress",
+  "hold",
+  "projects_assistance",
+  "needs_approval",
+  "qc_approved",
+  "provide_feedback",
+  "operational_approval",
+  "complete",
+];
 
 /** Add `n` days to an ISO `YYYY-MM-DD` string (UTC, no time component). */
 export function addDaysIso(iso: string, n: number): string {
@@ -169,6 +213,12 @@ export function summarizeEngineeringHome(input: EngineeringHomeInput): Engineeri
 
   const myWork: EngineeringHomeMyWorkRow[] = [];
 
+  // Open-task distribution by workflow status (in-scope open tasks only).
+  const statusCounts = new Map<string, number>();
+  // Per-engineer open / overdue load (in-scope). Unowned tasks bucket to -1.
+  const UNOWNED = -1;
+  const engineerLoad = new Map<number, { name: string; open: number; overdue: number }>();
+
   for (const t of tasks) {
     // --- Apply the requested slice ---------------------------------------
     if (projectIdFilter && (t.projectId == null || !projectIdFilter.has(t.projectId))) continue;
@@ -198,6 +248,25 @@ export function summarizeEngineeringHome(input: EngineeringHomeInput): Engineeri
       openTasks += 1;
       if (bucket === "overdue") overdue += 1;
       if (bucket === "today" || bucket === "this_week") dueThisWeek += 1;
+
+      // Status distribution + engineer load are open-work views.
+      statusCounts.set(t.status, (statusCounts.get(t.status) ?? 0) + 1);
+
+      const loadKey = t.ownerUserId ?? UNOWNED;
+      let load = engineerLoad.get(loadKey);
+      if (!load) {
+        load = {
+          name:
+            t.ownerUserId != null
+              ? (t.ownerName ?? `User ${t.ownerUserId}`)
+              : "Unassigned",
+          open: 0,
+          overdue: 0,
+        };
+        engineerLoad.set(loadKey, load);
+      }
+      load.open += 1;
+      if (bucket === "overdue") load.overdue += 1;
     }
 
     const mine = t.ownerUserId === myUserId || myAssignedTaskIds.has(t.id);
@@ -241,6 +310,36 @@ export function summarizeEngineeringHome(input: EngineeringHomeInput): Engineeri
     (a, b) => DUE_ORDER[a.due] - DUE_ORDER[b.due] || (a.endDate ?? "9999-99-99").localeCompare(b.endDate ?? "9999-99-99"),
   );
 
+  // Status distribution — canonical workflow order, only non-empty buckets.
+  const tasksByStatus: EngineeringHomeStatusBucket[] = [...statusCounts.entries()]
+    .map(([status, count]) => ({
+      status,
+      label: getTaskStatusLabel(status),
+      count,
+      barClass: getTaskStatusBarClass(status),
+    }))
+    .sort((a, b) => {
+      const ai = STATUS_ORDER.indexOf(a.status);
+      const bi = STATUS_ORDER.indexOf(b.status);
+      // Unknown statuses sort after known ones, then alphabetically.
+      const ar = ai === -1 ? STATUS_ORDER.length : ai;
+      const br = bi === -1 ? STATUS_ORDER.length : bi;
+      return ar - br || a.label.localeCompare(b.label);
+    });
+
+  // Engineer workload — most loaded first; unassigned bucket sinks to the end.
+  const byEngineer: EngineeringHomeEngineerLoad[] = [...engineerLoad.entries()]
+    .map(([key, load]) => ({
+      userId: key === UNOWNED ? null : key,
+      name: load.name,
+      open: load.open,
+      overdue: load.overdue,
+    }))
+    .sort((a, b) => {
+      if ((a.userId === null) !== (b.userId === null)) return a.userId === null ? 1 : -1;
+      return b.open - a.open || b.overdue - a.overdue || a.name.localeCompare(b.name);
+    });
+
   return {
     metrics: {
       activeProjects: activeProjectIds.size,
@@ -251,5 +350,7 @@ export function summarizeEngineeringHome(input: EngineeringHomeInput): Engineeri
     portfolio,
     myWork,
     owners,
+    tasksByStatus,
+    byEngineer,
   };
 }

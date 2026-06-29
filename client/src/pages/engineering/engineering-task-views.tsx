@@ -3,7 +3,8 @@
  * EngineeringTasksPage (UI/UX audit module split). Behaviour-preserving
  * mechanical move.
  *
- * Contains: ProjectGroup, ProjectKanbanView, PersonalKpiStrip, TimelineView,
+ * Contains: ProjectGroup, ProjectKanbanView (legacy phase roll-up),
+ * StatusKanbanView (true per-status board), PersonalKpiStrip, TimelineView,
  * InlineListView, MyTasksView. All are self-contained, prop-driven views with
  * no dependency on the orchestrator's local closures.
  */
@@ -18,7 +19,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import {
   ListTodo,
   Zap,
-  Search,
   X,
   Calendar,
   User,
@@ -60,7 +60,7 @@ import {
   taskPrioritySortOrder,
 } from "@shared/task-priorities";
 import { PRIORITIES } from "./task-filter-config";
-import { getTaskContextBadges } from "./engineering-task-cards";
+import { getTaskContextBadges, KanbanColumn } from "./engineering-task-cards";
 import { AssigneeStack, SubtaskChip } from "./spine/task-list-affordances";
 
 export interface ProjectGroup {
@@ -74,6 +74,11 @@ export interface ProjectGroup {
   overdueTasks: number;
 }
 
+/**
+ * Phase-grouped project roll-up (LEGACY "Projects" view used by
+ * EngineeringTasksPage). Kept intact for that page; the Engineering Task
+ * Manager's Kanban tab uses `StatusKanbanView` (below) instead.
+ */
 export function ProjectKanbanView({
   tasks,
   onCardClick,
@@ -364,7 +369,88 @@ export function ProjectKanbanView({
   );
 }
 
+/**
+ * TRUE Kanban board — ONE COLUMN PER WORKFLOW STATUS.
+ *
+ * Columns are the canonical `TASK_STATUSES` (not_started … complete) in order.
+ * The spine `tasks` prop already carries `status`, so grouping is purely
+ * client-side — no `/api/eng/dashboard/projects` call, no phase grouping.
+ *
+ * Each column reuses the shared `KanbanColumn` (which renders `TaskCard`s with
+ * HTML5 drag-and-drop via `onDrop` and the `MoveCardMenu` / `QuickStatusSelect`
+ * non-drag fallback). Moving a card calls `onStatusChange(id, newStatus)` —
+ * already workflow-guarded upstream (illegal moves toast the block reason).
+ *
+ * "Hide completed" is handled by the page (it passes an already-filtered
+ * `tasks` set); we simply render what we receive. The `complete` column is
+ * always shown for spatial stability, faint when empty.
+ */
+export function StatusKanbanView({
+  tasks,
+  onCardClick,
+  onDrop,
+  onStatusChange,
+  onPriorityChange,
+}: {
+  tasks: Task[];
+  onCardClick: (task: Task) => void;
+  onDrop: (taskId: number, newStatus: string) => void;
+  onStatusChange: (id: number, status: string) => void;
+  onPriorityChange?: (id: number, priority: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  // Group the spine tasks by their (canonicalized) workflow status so legacy
+  // status spellings still land in the right column.
+  const byStatus = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const status of TASK_STATUSES) map.set(status, []);
+    for (const t of tasks) {
+      const canonical = canonicalizeTaskStatus(t.status);
+      const bucket = map.has(canonical) ? canonical : "not_started";
+      map.get(bucket)!.push(t);
+    }
+    return map;
+  }, [tasks]);
+
+  const toggleCollapse = (status: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(status)) next.delete(status); else next.add(status);
+      return next;
+    });
+  };
+
+  return (
+    <div className="overflow-x-auto pb-2" data-testid="status-kanban-view">
+      <div className="flex gap-3 items-start min-h-[60vh]">
+        {TASK_STATUSES.map(status => (
+          <KanbanColumn
+            key={status}
+            status={status}
+            tasks={byStatus.get(status) ?? []}
+            totalTasks={tasks.length}
+            onDrop={onDrop}
+            onCardClick={onCardClick}
+            onStatusChange={onStatusChange}
+            onPriorityChange={onPriorityChange}
+            collapsed={collapsed.has(status)}
+            onToggleCollapse={() => toggleCollapse(status)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Compact, single-row stat strip for the My Tasks tab. Replaces the previous
+ * 5-card grid with inline chips — tighter and professional, with emerald as the
+ * primary accent. The `tasks` prop is accepted for call-site parity but the
+ * figures are scoped to `myTasks`.
+ */
 export function PersonalKpiStrip({ tasks, myTasks }: { tasks: Task[]; myTasks: Task[] }) {
+  void tasks;
   const myActive = myTasks.filter(t => !isTaskComplete(t.status)).length;
   const myOverdue = myTasks.filter(t => isOverdue(t.dueDate, t.status)).length;
   const myDueThisWeek = myTasks.filter(t => isDueThisWeek(t.dueDate, t.status)).length;
@@ -372,23 +458,30 @@ export function PersonalKpiStrip({ tasks, myTasks }: { tasks: Task[]; myTasks: T
   const myInProgress = myTasks.filter(t => canonicalizeTaskStatus(t.status) === "in_progress").length;
 
   const stats = [
-    { label: "My Active", value: myActive, icon: <ListTodo className="w-3.5 h-3.5" />, color: "text-blue-600", bg: "bg-blue-50" },
-    { label: "In Progress", value: myInProgress, icon: <ArrowRight className="w-3.5 h-3.5" />, color: "text-blue-600", bg: "bg-blue-50" },
-    { label: "Due This Week", value: myDueThisWeek, icon: <Timer className="w-3.5 h-3.5" />, color: "text-indigo-600", bg: "bg-indigo-50" },
-    { label: "Overdue", value: myOverdue, icon: <AlertTriangle className="w-3.5 h-3.5" />, color: myOverdue > 0 ? "text-red-600" : "text-muted-foreground", bg: myOverdue > 0 ? "bg-red-50" : "bg-muted" },
-    { label: "On Hold", value: myHold, icon: <PauseCircle className="w-3.5 h-3.5" />, color: myHold > 0 ? "text-amber-600" : "text-muted-foreground", bg: myHold > 0 ? "bg-amber-50" : "bg-muted" },
+    { label: "Active", value: myActive, icon: <ListTodo className="h-3.5 w-3.5" />, color: "text-emerald-600" },
+    { label: "In Progress", value: myInProgress, icon: <ArrowRight className="h-3.5 w-3.5" />, color: "text-blue-600" },
+    { label: "Due This Week", value: myDueThisWeek, icon: <Timer className="h-3.5 w-3.5" />, color: "text-indigo-600" },
+    { label: "Overdue", value: myOverdue, icon: <AlertTriangle className="h-3.5 w-3.5" />, color: myOverdue > 0 ? "text-red-600" : "text-muted-foreground" },
+    { label: "On Hold", value: myHold, icon: <PauseCircle className="h-3.5 w-3.5" />, color: myHold > 0 ? "text-amber-600" : "text-muted-foreground" },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2" data-testid="personal-kpi-strip">
-      {stats.map(s => (
-        <div key={s.label} className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card">
-          <div className={`w-7 h-7 rounded-md ${s.bg} flex items-center justify-center`}>
+    <div
+      className="flex flex-wrap items-center gap-x-1 gap-y-1.5 rounded-lg border bg-card px-3 py-2"
+      data-testid="personal-kpi-strip"
+    >
+      {stats.map((s, i) => (
+        <div key={s.label} className="flex items-center">
+          {i > 0 && <span className="mx-2 hidden h-4 w-px bg-border sm:block" aria-hidden="true" />}
+          <div className="flex items-center gap-1.5">
             <span className={s.color}>{s.icon}</span>
-          </div>
-          <div>
-            <p className={`text-base font-bold leading-none ${s.color}`} data-testid={`my-kpi-${s.label.toLowerCase().replace(/\s+/g, "-")}`}>{s.value}</p>
-            <p className="text-[9px] text-muted-foreground mt-0.5">{s.label}</p>
+            <span
+              className={`text-sm font-bold tabular-nums leading-none ${s.color}`}
+              data-testid={`my-kpi-${s.label.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              {s.value}
+            </span>
+            <span className="text-[11px] text-muted-foreground">{s.label}</span>
           </div>
         </div>
       ))}
@@ -843,32 +936,37 @@ export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityC
   );
 }
 
+type MyTasksScope = "all" | "overdue" | "due-soon" | "in-progress" | "hold";
+
 export function MyTasksView({
   tasks,
   myName,
   onCardClick,
   onStatusChange,
   onPriorityChange,
-  filterStatuses = [],
+  filterStatuses,
 }: {
   tasks: Task[];
   myName: string;
   onCardClick: (task: Task) => void;
   onStatusChange: (id: number, status: string) => void;
   onPriorityChange: (id: number, priority: string) => void;
+  // Accepted for call-site parity (legacy EngineeringTasksPage passes it). The
+  // slim My-Tasks view no longer renders its own status dropdown — search /
+  // status / due filtering live on the page-level filter bar.
   filterStatuses?: string[];
 }) {
+  void filterStatuses;
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [collapsedBuckets, setCollapsedBuckets] = useState<Set<string>>(new Set());
   const [quickNotes, setQuickNotes] = useState<Record<number, string>>({});
   const [postingNote, setPostingNote] = useState<Record<number, boolean>>({});
   const [dueDates, setDueDates] = useState<Record<number, string>>({});
-  const [myStatusFilter, setMyStatusFilter] = useState<string>("all");
-  const [myPriorityFilter, setMyPriorityFilter] = useState<string>("all");
-  const [myProjectFilter, setMyProjectFilter] = useState<string>("all");
-  const [myDueFilter, setMyDueFilter] = useState<string>("all");
-  const [mySearch, setMySearch] = useState("");
+  // The page's filter bar already owns search / status / due / owner. The only
+  // scoping that's genuinely useful *here* is a quick "show me just X" focus —
+  // a single slim segmented row rather than a second full filter block.
+  const [scope, setScope] = useState<MyTasksScope>("all");
 
   const nameLower = myName.toLowerCase();
   const myTasks = useMemo(() => {
@@ -882,27 +980,41 @@ export function MyTasksView({
   }, [tasks, nameLower]);
 
   const filteredMyTasks = useMemo(() => {
+    if (scope === "all") return myTasks;
     return myTasks.filter(t => {
-      if (myStatusFilter !== "all" && t.status !== myStatusFilter) return false;
-      if (myPriorityFilter !== "all" && t.priority !== myPriorityFilter) return false;
-      if (myProjectFilter !== "all" && t.projectName !== myProjectFilter) return false;
-      if (myDueFilter === "overdue" && !isOverdue(t.dueDate, t.status)) return false;
-      if (myDueFilter === "today") {
-        if (!t.dueDate) return false;
-        const d = new Date(t.dueDate).toDateString();
-        if (d !== new Date().toDateString()) return false;
+      switch (scope) {
+        case "overdue":
+          return isOverdue(t.dueDate, t.status);
+        case "due-soon":
+          return (
+            isDueThisWeek(t.dueDate, t.status) ||
+            (!!t.dueDate && new Date(t.dueDate).toDateString() === new Date().toDateString())
+          );
+        case "in-progress":
+          return canonicalizeTaskStatus(t.status) === "in_progress";
+        case "hold":
+          return canonicalizeTaskStatus(t.status) === "hold";
+        default:
+          return true;
       }
-      if (myDueFilter === "week" && !isDueThisWeek(t.dueDate, t.status) && !isOverdue(t.dueDate, t.status)) return false;
-      if (mySearch) {
-        const term = mySearch.toLowerCase();
-        return t.title.toLowerCase().includes(term) || (t.projectName || "").toLowerCase().includes(term);
-      }
-      return true;
     });
-  }, [myTasks, myStatusFilter, myPriorityFilter, myProjectFilter, myDueFilter, mySearch]);
+  }, [myTasks, scope]);
 
-  const uniqueProjects = useMemo(() => {
-    return Array.from(new Set(myTasks.map(t => t.projectName).filter(Boolean))).sort();
+  const scopeOptions = useMemo(() => {
+    const overdue = myTasks.filter(t => isOverdue(t.dueDate, t.status)).length;
+    const dueSoon = myTasks.filter(t =>
+      isDueThisWeek(t.dueDate, t.status) ||
+      (!!t.dueDate && new Date(t.dueDate).toDateString() === new Date().toDateString())
+    ).length;
+    const inProgress = myTasks.filter(t => canonicalizeTaskStatus(t.status) === "in_progress").length;
+    const hold = myTasks.filter(t => canonicalizeTaskStatus(t.status) === "hold").length;
+    return [
+      { key: "all" as const, label: "All", count: myTasks.length },
+      { key: "overdue" as const, label: "Overdue", count: overdue },
+      { key: "due-soon" as const, label: "Due soon", count: dueSoon },
+      { key: "in-progress" as const, label: "In progress", count: inProgress },
+      { key: "hold" as const, label: "On hold", count: hold },
+    ];
   }, [myTasks]);
 
   const buckets = useMemo(() => {
@@ -991,66 +1103,36 @@ export function MyTasksView({
   };
 
   return (
-    <div className="space-y-4" data-testid="my-tasks-view">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[150px] max-w-xs">
-          <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-          <Input
-            data-testid="my-tasks-search"
-            placeholder="Search my tasks..."
-            className="pl-9 h-8 text-xs"
-            value={mySearch}
-            onChange={e => setMySearch(e.target.value)}
-          />
-        </div>
-        <SearchableSelect
-          value={myStatusFilter}
-          onValueChange={setMyStatusFilter}
-          placeholder="Status"
-          triggerClassName="w-[130px] h-8 text-xs"
-          options={[
-            { value: "all", label: "All Statuses" },
-            ...filterStatuses.map(s => ({ value: s, label: getTaskStatusLabel(s) })),
-          ]}
-          data-testid="my-tasks-filter-status"
-        />
-        <SearchableSelect
-          value={myPriorityFilter}
-          onValueChange={setMyPriorityFilter}
-          placeholder="Priority"
-          triggerClassName="w-[110px] h-8 text-xs"
-          options={[
-            { value: "all", label: "All Priorities" },
-            ...PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] })),
-          ]}
-          data-testid="my-tasks-filter-priority"
-        />
-        {uniqueProjects.length > 0 && (
-          <SearchableSelect
-            value={myProjectFilter}
-            onValueChange={setMyProjectFilter}
-            placeholder="Project"
-            triggerClassName="w-[140px] h-8 text-xs"
-            options={[
-              { value: "all", label: "All Projects" },
-              ...uniqueProjects.filter((p): p is string => !!p).map(p => ({ value: p, label: p.replace(/_Tracker.*$/i, "").replace(/_/g, " ") })),
-            ]}
-            data-testid="my-tasks-filter-project"
-          />
-        )}
-        <SearchableSelect
-          value={myDueFilter}
-          onValueChange={setMyDueFilter}
-          placeholder="Due"
-          triggerClassName="w-[120px] h-8 text-xs"
-          options={[
-            { value: "all", label: "All Due Dates" },
-            { value: "overdue", label: "Overdue" },
-            { value: "today", label: "Due Today" },
-            { value: "week", label: "Due This Week" },
-          ]}
-          data-testid="my-tasks-filter-due"
-        />
+    <div className="space-y-3" data-testid="my-tasks-view">
+      {/* Slim quick-scope row. Search / status / due / owner live on the page's
+          filter bar; this is only a focus toggle. */}
+      <div className="flex flex-wrap items-center gap-1.5" data-testid="my-tasks-scope">
+        {scopeOptions.map(opt => {
+          const active = scope === opt.key;
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setScope(opt.key)}
+              aria-pressed={active}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                active
+                  ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                  : "border-border text-muted-foreground hover:bg-muted"
+              }`}
+              data-testid={`my-tasks-scope-${opt.key}`}
+            >
+              {opt.label}
+              <span
+                className={`rounded-full px-1.5 text-[10px] font-bold tabular-nums ${
+                  active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {opt.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {(() => {
@@ -1313,10 +1395,16 @@ export function MyTasksView({
       })}
 
       {filteredMyTasks.length === 0 && (
-        <div className="text-center py-12 text-muted-foreground">
-          <UserCog className="h-12 w-12 mx-auto mb-3 opacity-30" />
-          <p className="text-lg font-medium">No tasks found</p>
-          <p className="text-sm mt-1">{myTasks.length === 0 ? "You have no assigned tasks" : "Adjust your filters to see tasks"}</p>
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center text-muted-foreground" data-testid="my-tasks-empty">
+          <UserCog className="mb-2 h-8 w-8 opacity-30" />
+          <p className="text-sm font-medium">
+            {myTasks.length === 0 ? "Nothing assigned to you" : "Nothing in this view"}
+          </p>
+          <p className="mt-0.5 text-xs">
+            {myTasks.length === 0
+              ? "Tasks assigned to you will show up here."
+              : "Switch the focus above or clear the page filters."}
+          </p>
         </div>
       )}
     </div>
