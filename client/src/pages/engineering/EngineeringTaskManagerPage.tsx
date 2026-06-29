@@ -6,7 +6,6 @@ import {
   RefreshCw,
   AlertTriangle,
   FileText,
-  Link2,
   Trash2,
   ArrowRightLeft,
   Search,
@@ -74,6 +73,11 @@ import {
   SAVED_FILTERS,
 } from "./task-filter-config";
 import { InlineListView, StatusKanbanView, MyTasksView, PersonalKpiStrip } from "./engineering-task-views";
+import { LinkDocumentDialog } from "./dialogs/LinkDocumentDialog";
+import { CheckoutPromptDialog } from "./dialogs/CheckoutPromptDialog";
+import { SubmitForApprovalDialog } from "./dialogs/SubmitForApprovalDialog";
+import { CompletePromptDialog } from "./dialogs/CompletePromptDialog";
+import { GATED_STATUSES } from "./dialogs/task-doc-shared";
 
 /**
  * Engineering Task Manager — work-tracking rebuild.
@@ -274,6 +278,22 @@ export default function EngineeringTaskManagerPage() {
     qc.invalidateQueries({ queryKey: ["/api/engineering/tasks"] });
   }
 
+  function invalidateTaskDocs(id: number) {
+    qc.invalidateQueries({ queryKey: ["/api/engineering/tasks", id, "documents"] });
+    qc.invalidateQueries({ queryKey: ["/api/engineering/tasks", id, "document-candidates"] });
+    qc.invalidateQueries({ queryKey: ["documents"] });
+  }
+
+  // ── Document gate state ───────────────────────────────────────────────────
+  // The document follows the task: three target statuses open a required doc
+  // prompt before the real PATCH fires. Both the page-level inline/Kanban path
+  // and the drawer's status dropdown route through `requestStatusChange`, so the
+  // requirement cannot be bypassed.
+  const [gate, setGate] = useState<{ task: TaskListItem; newStatus: string } | null>(null);
+  // Tracks the document each task checked out (this session) so the later
+  // approval / complete prompts know which file to check in.
+  const [checkedOutByTask, setCheckedOutByTask] = useState<Record<number, number>>({});
+
   // ── Status change (workflow-guarded) ──────────────────────────────────────
   const statusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) =>
@@ -292,25 +312,74 @@ export default function EngineeringTaskManagerPage() {
       }),
   });
 
+  // Fire the real status PATCH (after the workflow guard + any doc prompt).
+  const commitStatus = useCallback(
+    (id: number, status: string) => statusMutation.mutate({ id, status }),
+    [statusMutation],
+  );
+
+  // THE single gated entry point. Order: (1) workflow guard, (2) doc prompt for
+  // the three gated statuses, (3) PATCH. All other transitions PATCH directly.
+  const requestStatusChange = useCallback(
+    (task: TaskListItem, newStatus: string) => {
+      if (task.status === newStatus) return;
+      // Best-effort client-side guard — surface the reason before the round
+      // trip. The server chokepoint remains the authority (Done-gate etc.).
+      const blockReason = getTaskWorkflowBlockReason(
+        { status: task.status, taskTypeTag: task.taskTypeTag },
+        newStatus,
+      );
+      if (blockReason) {
+        toast({ title: "Blocked", description: blockReason, variant: "destructive" });
+        return;
+      }
+      if (GATED_STATUSES.has(newStatus)) {
+        setGate({ task, newStatus });
+        return;
+      }
+      commitStatus(task.id, newStatus);
+    },
+    [toast, commitStatus],
+  );
+
+  // View callbacks (List/Kanban/My-Tasks inline + Kanban drag) feed (id, status);
+  // resolve the task and route through the single gate.
   const handleStatusChange = useCallback(
     (id: number, status: string) => {
       const task = rawTasks.find((t) => t.id === id);
-      if (task) {
-        if (task.status === status) return;
-        // Best-effort client-side guard — surface the reason before the round
-        // trip. The server chokepoint remains the authority (Done-gate etc.).
-        const blockReason = getTaskWorkflowBlockReason(
-          { status: task.status, taskTypeTag: task.taskTypeTag },
-          status,
-        );
-        if (blockReason) {
-          toast({ title: "Blocked", description: blockReason, variant: "destructive" });
-          return;
-        }
-      }
-      statusMutation.mutate({ id, status });
+      if (!task) return;
+      requestStatusChange(task, status);
     },
-    [rawTasks, statusMutation, toast],
+    [rawTasks, requestStatusChange],
+  );
+
+  // ── Gate dialog resolution ────────────────────────────────────────────────
+  function closeGate() {
+    setGate(null);
+  }
+
+  function proceedGate(checkedOutDocId?: number | null) {
+    if (!gate) return;
+    if (checkedOutDocId != null) {
+      setCheckedOutByTask((prev) => ({ ...prev, [gate.task.id]: checkedOutDocId }));
+    }
+    if (gate.newStatus === "complete") {
+      // The checked-out doc is checked in by the Complete prompt; clear it.
+      setCheckedOutByTask((prev) => {
+        const next = { ...prev };
+        delete next[gate.task.id];
+        return next;
+      });
+    }
+    commitStatus(gate.task.id, gate.newStatus);
+    invalidateTaskDocs(gate.task.id);
+    setGate(null);
+  }
+
+  const gateError = useCallback(
+    (message: string) =>
+      toast({ title: "Document step failed", description: message, variant: "destructive" }),
+    [toast],
   );
 
   // Inline priority/due-date edits aren't supported by the spine surface yet —
@@ -384,8 +453,22 @@ export default function EngineeringTaskManagerPage() {
   });
 
   const handleBulkStatusChange = useCallback(
-    (taskIds: number[], status: string) => bulkStatusMutation.mutate({ taskIds, status }),
-    [bulkStatusMutation],
+    (taskIds: number[], status: string) => {
+      // The three doc-gated statuses each require a per-task document step
+      // (check-out / submit-for-approval / finalise) that can't be expressed in
+      // one bulk action — so bulk can't bypass the gate. Direct the user to open
+      // each task instead.
+      if (GATED_STATUSES.has(status)) {
+        toast({
+          title: "Open each task for this status",
+          description:
+            "In Progress, Needs Approval, and Complete each need a document step — set them one task at a time.",
+        });
+        return;
+      }
+      bulkStatusMutation.mutate({ taskIds, status });
+    },
+    [bulkStatusMutation, toast],
   );
   const handleBulkOwnerChange = useCallback(
     (taskIds: number[], ownerUserId: number | null) => bulkOwnerMutation.mutate({ taskIds, ownerUserId }),
@@ -677,9 +760,47 @@ export default function EngineeringTaskManagerPage() {
         options={optionsQuery.data}
         onClose={() => setSelectedId(null)}
         onChanged={refresh}
+        onRequestStatusChange={requestStatusChange}
         toast={toast}
         qc={qc}
       />
+
+      {/* ── Document gate prompts (centralized; serve both inline/Kanban + drawer) ── */}
+      {gate?.newStatus === "in_progress" ? (
+        <CheckoutPromptDialog
+          open
+          taskId={gate.task.id}
+          taskTitle={gate.task.title}
+          projectId={gate.task.projectId}
+          onProceed={(docId) => proceedGate(docId)}
+          onCancel={closeGate}
+          onError={gateError}
+          onLinked={(count) => {
+            if (count > 0) toast({ title: `Linked ${count} document${count === 1 ? "" : "s"}` });
+            invalidateTaskDocs(gate.task.id);
+          }}
+        />
+      ) : null}
+      {gate?.newStatus === "needs_approval" ? (
+        <SubmitForApprovalDialog
+          open
+          taskId={gate.task.id}
+          checkedOutDocId={checkedOutByTask[gate.task.id] ?? null}
+          onProceed={() => proceedGate()}
+          onCancel={closeGate}
+          onError={gateError}
+        />
+      ) : null}
+      {gate?.newStatus === "complete" ? (
+        <CompletePromptDialog
+          open
+          taskId={gate.task.id}
+          checkedOutDocId={checkedOutByTask[gate.task.id] ?? null}
+          onProceed={() => proceedGate()}
+          onCancel={closeGate}
+          onError={gateError}
+        />
+      ) : null}
     </PageShell>
   );
 }
@@ -871,6 +992,7 @@ function TaskDrawer({
   options,
   onClose,
   onChanged,
+  onRequestStatusChange,
   toast,
   qc,
 }: {
@@ -878,11 +1000,13 @@ function TaskDrawer({
   options?: Options;
   onClose: () => void;
   onChanged: () => void;
+  onRequestStatusChange: (task: TaskListItem, newStatus: string) => void;
   toast: ToastFn;
   qc: ReturnType<typeof useQueryClient>;
 }) {
   const open = task != null;
   const taskId = task?.id ?? 0;
+  const [browseOpen, setBrowseOpen] = useState(false);
 
   // Mention roster for the comments input — reuse the page's options users
   // (the only field the picker needs is fullName; role is shown if present).
@@ -895,17 +1019,22 @@ function TaskDrawer({
     queryKey: ["/api/engineering/tasks", taskId, "documents"],
     enabled: open,
   });
-  const links = docsQuery.data?.links ?? [];
+  const links = useMemo(() => docsQuery.data?.links ?? [], [docsQuery.data]);
   const docGated = task != null && requiresDocumentLink(task.taskTypeTag) && links.length === 0;
 
   const candidatesQuery = useQuery<{ candidates: DocumentCandidate[] }>({
     queryKey: ["/api/engineering/tasks", taskId, "document-candidates"],
     enabled: open,
   });
-  const linkedDocIds = new Set(links.map((l) => l.managedDocumentId).filter((x): x is number => x != null));
-  const availableCandidates = (candidatesQuery.data?.candidates ?? []).filter((c) => !linkedDocIds.has(c.id));
+  const linkedDocIds = useMemo(
+    () => new Set(links.map((l) => l.managedDocumentId).filter((x): x is number => x != null)),
+    [links],
+  );
+  const candidateNameById = useMemo(
+    () => new Map((candidatesQuery.data?.candidates ?? []).map((c) => [c.id, c.name])),
+    [candidatesQuery.data],
+  );
 
-  const [docId, setDocId] = useState("");
   const [seamType, setSeamType] = useState<EngineeringSeamTaskTypeTag>(ENGINEERING_SEAM_TASK_TYPE_TAGS[0]);
   const [seamOwner, setSeamOwner] = useState<string>(NONE);
   const [seamNote, setSeamNote] = useState("");
@@ -913,22 +1042,9 @@ function TaskDrawer({
   function invalidateDocs() {
     qc.invalidateQueries({ queryKey: ["/api/engineering/tasks", taskId, "documents"] });
     qc.invalidateQueries({ queryKey: ["/api/engineering/tasks", taskId, "document-candidates"] });
+    qc.invalidateQueries({ queryKey: ["documents"] });
     onChanged();
   }
-
-  const statusMutation = useMutation({
-    mutationFn: async (status: string) => apiRequest("PATCH", `/api/engineering/tasks/${taskId}/status`, { status }),
-    onSuccess: () => {
-      toast({ title: "Status updated" });
-      onChanged();
-    },
-    onError: (e: unknown) =>
-      toast({
-        title: isApiError(e) && e.status === 409 ? "Blocked by dependencies" : "Couldn't update status",
-        description: e instanceof Error ? e.message : undefined,
-        variant: "destructive",
-      }),
-  });
 
   const ownerMutation = useMutation({
     mutationFn: async (ownerUserId: number | null) =>
@@ -940,22 +1056,6 @@ function TaskDrawer({
     onError: (e: unknown) =>
       toast({
         title: "Couldn't reassign owner",
-        description: e instanceof Error ? e.message : undefined,
-        variant: "destructive",
-      }),
-  });
-
-  const linkMutation = useMutation({
-    mutationFn: async () =>
-      apiRequest("POST", `/api/engineering/tasks/${taskId}/documents`, { managedDocumentId: Number(docId) }),
-    onSuccess: () => {
-      toast({ title: "Document linked" });
-      setDocId("");
-      invalidateDocs();
-    },
-    onError: (e: unknown) =>
-      toast({
-        title: "Couldn't link document",
         description: e instanceof Error ? e.message : undefined,
         variant: "destructive",
       }),
@@ -993,15 +1093,12 @@ function TaskDrawer({
       }),
   });
 
-  // Guard the in-drawer status select with the workflow rules + Done-gate.
+  // The status dropdown routes through the page-level centralized gate so the
+  // workflow guard + document prompts apply identically to the inline/Kanban
+  // paths — it cannot be bypassed here.
   function attemptStatus(next: string) {
     if (!task || next === task.status) return;
-    const blockReason = getTaskWorkflowBlockReason({ status: task.status, taskTypeTag: task.taskTypeTag }, next);
-    if (blockReason) {
-      toast({ title: "Blocked", description: blockReason, variant: "destructive" });
-      return;
-    }
-    statusMutation.mutate(next);
+    onRequestStatusChange(task, next);
   }
 
   return (
@@ -1033,7 +1130,7 @@ function TaskDrawer({
                   </SelectTrigger>
                   <SelectContent>
                     {TASK_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s} disabled={s === "complete" && docGated}>
+                      <SelectItem key={s} value={s}>
                         {getTaskStatusLabel(s)}
                       </SelectItem>
                     ))}
@@ -1045,7 +1142,10 @@ function TaskDrawer({
                     data-testid="done-gate-banner"
                   >
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    <span>This task produces a document — link one below before it can be marked done.</span>
+                    <span>
+                      This task produces a document. Moving to In Progress, Needs Approval, or Complete will prompt
+                      you to check it out, submit it for review, or finalise it.
+                    </span>
                   </div>
                 ) : null}
               </div>
@@ -1108,59 +1208,53 @@ function TaskDrawer({
                     <FileText className="h-3.5 w-3.5" />
                     Linked documents
                   </Label>
-                  <span className="text-xs text-muted-foreground">{links.length}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setBrowseOpen(true)}
+                    disabled={task.projectId == null}
+                    data-testid="task-link-doc-open"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Link
+                  </Button>
                 </div>
                 {links.length > 0 ? (
                   <ul className="space-y-1">
-                    {links.map((l) => (
-                      <li
-                        key={l.id}
-                        className="flex items-center justify-between rounded border border-border/60 px-2 py-1 text-xs"
-                      >
-                        <span className="text-muted-foreground">
-                          {l.managedDocumentId ? `Doc #${l.managedDocumentId}` : `Project doc #${l.projectDocumentLinkId}`} ·{" "}
-                          {l.linkRole}
-                        </span>
-                        <button
-                          onClick={() => unlinkMutation.mutate(l.id)}
-                          className="text-muted-foreground hover:text-red-600"
-                          aria-label="Unlink"
+                    {links.map((l) => {
+                      const name =
+                        l.managedDocumentId != null
+                          ? candidateNameById.get(l.managedDocumentId) ?? `Doc #${l.managedDocumentId}`
+                          : `Project doc #${l.projectDocumentLinkId}`;
+                      return (
+                        <li
+                          key={l.id}
+                          className="flex items-center justify-between gap-2 rounded border border-border/60 px-2 py-1 text-xs"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </li>
-                    ))}
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span className="truncate font-medium">{name}</span>
+                            <Badge variant="outline" className="shrink-0 text-[10px]">
+                              {l.linkRole}
+                            </Badge>
+                          </span>
+                          <button
+                            onClick={() => unlinkMutation.mutate(l.id)}
+                            className="shrink-0 text-muted-foreground hover:text-red-600"
+                            aria-label={`Unlink ${name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : (
                   <p className="text-xs text-muted-foreground">No documents linked.</p>
                 )}
-                <div className="flex items-center gap-2">
-                  <Select value={docId} onValueChange={setDocId}>
-                    <SelectTrigger className="h-8" data-testid="doc-candidate-select">
-                      <SelectValue
-                        placeholder={availableCandidates.length ? "Choose a document…" : "No documents on this project"}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableCandidates.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!docId || linkMutation.isPending}
-                    onClick={() => linkMutation.mutate()}
-                  >
-                    <Link2 className="h-3.5 w-3.5" />
-                    Link
-                  </Button>
-                </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Documents come from this project's SharePoint folders (Document Manager).
+                  {task.projectId == null
+                    ? "Assign this task to a project to link documents from its SharePoint folders."
+                    : "Documents come from this project's SharePoint folders (Document Manager)."}
                 </p>
               </div>
 
@@ -1212,6 +1306,23 @@ function TaskDrawer({
                 </Button>
               </div>
             </div>
+
+            {/* Browse-the-project's-folders → link modal (replaces the bare dropdown). */}
+            <LinkDocumentDialog
+              open={browseOpen}
+              onOpenChange={setBrowseOpen}
+              taskId={taskId}
+              taskTitle={task.title}
+              projectId={task.projectId}
+              linkedDocIds={linkedDocIds}
+              onLinked={(count) => {
+                if (count > 0) toast({ title: `Linked ${count} document${count === 1 ? "" : "s"}` });
+                invalidateDocs();
+              }}
+              onError={(message) =>
+                toast({ title: "Couldn't link document", description: message, variant: "destructive" })
+              }
+            />
           </>
         ) : null}
       </SheetContent>
