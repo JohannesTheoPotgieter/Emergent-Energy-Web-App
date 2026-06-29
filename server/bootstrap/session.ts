@@ -78,13 +78,26 @@ export function configureSession(options: SessionBootstrapOptions): void {
       );
     }
   }
-  if (sameSite === "none" && process.env.NODE_ENV !== "production") {
-    log(
-      `[Session] COOKIE_SAMESITE=none is set in non-production. Browsers require Secure=true for SameSite=None; ` +
-        `cookies will be rejected over HTTP. Use 'lax' or 'strict' for local HTTP dev.`,
-      "Startup",
-    );
+  const isProduction = process.env.NODE_ENV === "production";
+
+  // Replit's preview/canvas renders the app inside a cross-site iframe. A
+  // SameSite=Lax session cookie is treated as third-party there and silently
+  // dropped, so login "succeeds" (POST /login 200) but every following request
+  // is unauthenticated — the classic bounce-back-to-login loop. In development
+  // we therefore default the session cookie to SameSite=None;Secure so it
+  // survives the preview iframe. Production keeps the stricter Lax default. An
+  // explicit COOKIE_SAMESITE override always wins in either environment.
+  if (!isProduction && !RAW_SAMESITE) {
+    sameSite = "none";
   }
+
+  // Browsers only honour SameSite=None when the cookie is also Secure. Pair
+  // them automatically so the dev default above actually sticks — Replit dev is
+  // served over HTTPS via the proxy (trust proxy=1), so Secure cookies are fine
+  // here. Over plain HTTP localhost, set COOKIE_SAMESITE=lax to opt back out.
+  const cookieSecure = isProduction || sameSite === "none";
+
+  log(`[Session] Cookie policy resolved: sameSite=${sameSite}, secure=${cookieSecure}`, "Startup");
 
   app.use(
     session({
@@ -94,7 +107,7 @@ export function configureSession(options: SessionBootstrapOptions): void {
       saveUninitialized: false,
       rolling: true, // Reset maxAge on each request (active sessions stay alive)
       cookie: {
-        secure: process.env.NODE_ENV === "production",
+        secure: cookieSecure,
         httpOnly: true,
         sameSite,
         maxAge: SESSION_MAX_AGE,

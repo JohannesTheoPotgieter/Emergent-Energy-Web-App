@@ -37,10 +37,22 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
   if (!token) {
     token = crypto.randomBytes(32).toString("hex");
   }
+  // Match the session cookie's SameSite policy (see server/bootstrap/session.ts):
+  // dev defaults to None;Secure so the double-submit cookie survives Replit's
+  // cross-site preview iframe; production stays Lax. An explicit COOKIE_SAMESITE
+  // override wins. Without this, the csrf-token cookie is dropped in the iframe
+  // and every state-changing request fails the double-submit check.
+  const isProduction = process.env.NODE_ENV === "production";
+  const rawSameSite = process.env.COOKIE_SAMESITE?.trim().toLowerCase();
+  let csrfSameSite: "lax" | "strict" | "none" = isProduction ? "lax" : "none";
+  if (rawSameSite === "lax" || rawSameSite === "strict" || rawSameSite === "none") {
+    csrfSameSite = rawSameSite;
+  }
+  const csrfSecure = isProduction || csrfSameSite === "none";
   res.cookie(CSRF_COOKIE, token, {
     httpOnly: false,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    sameSite: csrfSameSite,
+    secure: csrfSecure,
     path: "/",
   });
 
