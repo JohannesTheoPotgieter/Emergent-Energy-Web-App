@@ -141,6 +141,67 @@ describe("summarizeEngineeringHome — engineer (owner) filter", () => {
   });
 });
 
+describe("summarizeEngineeringHome — tasksByStatus distribution", () => {
+  it("counts open tasks per workflow status in canonical order (hide-completed)", () => {
+    // Default hide-completed: T2 (complete) drops out. Open statuses present:
+    // in_progress (T1, T4, T6), to_do (T3), not_started (T5).
+    const result = summarizeEngineeringHome(baseInput());
+    expect(result.tasksByStatus).toEqual([
+      { status: "not_started", label: "Not Started", count: 1, barClass: "bg-gray-300" },
+      { status: "to_do", label: "To Do", count: 1, barClass: "bg-gray-400" },
+      { status: "in_progress", label: "In Progress", count: 3, barClass: "bg-blue-500" },
+    ]);
+  });
+
+  it("respects the site filter when counting open statuses", () => {
+    const result = summarizeEngineeringHome(baseInput({ filters: { projectIds: [2] } }));
+    // Beta has T3 (to_do) + T4 (in_progress), both open.
+    expect(result.tasksByStatus).toEqual([
+      { status: "to_do", label: "To Do", count: 1, barClass: "bg-gray-400" },
+      { status: "in_progress", label: "In Progress", count: 1, barClass: "bg-blue-500" },
+    ]);
+  });
+
+  it("never includes the complete status as an open bucket", () => {
+    const result = summarizeEngineeringHome(baseInput({ filters: { includeCompleted: true } }));
+    expect(result.tasksByStatus.some((s) => s.status === "complete")).toBe(false);
+  });
+});
+
+describe("summarizeEngineeringHome — byEngineer workload", () => {
+  it("ranks open + overdue load per engineer, most loaded first (hide-completed)", () => {
+    const result = summarizeEngineeringHome(baseInput());
+    // Open tasks: Grace (7) → T1 overdue + T5 = 2 open / 1 overdue;
+    // Alice (9) → T4 + T6 overdue = 2 open / 1 overdue; Bob (8) → T3 = 1 open.
+    // Grace & Alice tie on open(2)/overdue(1) → alphabetical: Alice, Grace.
+    expect(result.byEngineer).toEqual([
+      { userId: 9, name: "Alice", open: 2, overdue: 1 },
+      { userId: 7, name: "Grace", open: 2, overdue: 1 },
+      { userId: 8, name: "Bob", open: 1, overdue: 0 },
+    ]);
+  });
+
+  it("respects the engineer filter (single-engineer slice)", () => {
+    const result = summarizeEngineeringHome(baseInput({ filters: { ownerUserId: 7 } }));
+    expect(result.byEngineer).toEqual([{ userId: 7, name: "Grace", open: 2, overdue: 1 }]);
+  });
+
+  it("buckets unowned open tasks under a trailing Unassigned row", () => {
+    const result = summarizeEngineeringHome(
+      baseInput({
+        tasks: [
+          { id: 10, projectId: 1, status: "in_progress", endDate: null, ownerUserId: 7, ownerName: "Grace", title: "Owned", priority: null },
+          { id: 11, projectId: 1, status: "to_do", endDate: "2026-06-20", ownerUserId: null, ownerName: null, title: "Unowned overdue", priority: null },
+        ],
+      }),
+    );
+    expect(result.byEngineer).toEqual([
+      { userId: 7, name: "Grace", open: 1, overdue: 0 },
+      { userId: null, name: "Unassigned", open: 1, overdue: 1 },
+    ]);
+  });
+});
+
 describe("summarizeEngineeringHome — My Work shape", () => {
   const result = summarizeEngineeringHome(baseInput({ filters: { includeCompleted: true } }));
 

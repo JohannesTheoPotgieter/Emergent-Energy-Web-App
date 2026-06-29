@@ -48,7 +48,7 @@ describe("MyTasksView name matching", () => {
     renderView("", tasks);
     // Regression guard: `"".startsWith("")` is true for every assignee, which
     // previously made My Tasks render the whole board. It must now be empty.
-    expect(screen.getByText("You have no assigned tasks")).toBeTruthy();
+    expect(screen.getByText("Nothing assigned to you")).toBeTruthy();
     expect(screen.queryByText("Design SLD revision")).toBeNull();
     expect(screen.queryByText("Cable schedule check")).toBeNull();
   });
