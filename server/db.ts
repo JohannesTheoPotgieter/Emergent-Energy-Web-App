@@ -297,11 +297,33 @@ async function initializeDatabase(): Promise<void> {
   }
   
   if (config.mode === 'postgres' && config.connectionString) {
-    // Try Postgres with short timeout to avoid blocking startup
-    console.log(`[DB] Testing PostgreSQL connection to ${config.dbHost}...`);
-    
+    // Try Postgres with short timeout to avoid blocking startup. Retry the
+    // reachability probe with bounded backoff so a cold scale-to-zero database
+    // (Neon) does not crash the boot before the HTTP port opens. Still fails loud
+    // in production if every attempt is exhausted (see testPostgresConnectionWithRetry).
+    // Clamp env knobs to sane ranges so a misconfiguration can never create an
+    // extreme pre-listen delay that itself blows the autoscale promote probe window.
+    const clamp = (value: number, min: number, max: number, fallback: number) =>
+      Number.isFinite(value) && value > 0 ? Math.min(Math.max(value, min), max) : fallback;
+    const perAttemptTimeoutMs = clamp(Number(process.env.DB_CONNECT_TIMEOUT_MS), 1000, 30000, 10000);
+    const retryAttempts = clamp(
+      Number(process.env.DB_CONNECT_RETRY_ATTEMPTS),
+      1,
+      10,
+      isProduction ? 5 : 1,
+    );
+    const retryBackoffMs = clamp(Number(process.env.DB_CONNECT_RETRY_BACKOFF_MS), 0, 10000, 1000);
+    console.log(
+      `[DB] Testing PostgreSQL connection to ${config.dbHost}... (up to ${retryAttempts} attempt(s), ${perAttemptTimeoutMs}ms timeout each)`,
+    );
+
     try {
-      const isConnectable = await testPostgresConnection(config.connectionString, 10000);
+      const isConnectable = await testPostgresConnectionWithRetry(
+        config.connectionString,
+        perAttemptTimeoutMs,
+        retryAttempts,
+        retryBackoffMs,
+      );
       
       if (isConnectable) {
         // Use Postgres
@@ -399,6 +421,52 @@ async function initializeDatabase(): Promise<void> {
   );
   await ensureSqliteSchema();
   isInitialized = true;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Cold databases (e.g. Neon scale-to-zero) can refuse or time out the very first
+ * connection while the compute wakes. A single failed probe at boot used to crash
+ * the process before the HTTP port opened, intermittently failing autoscale
+ * promote/health checks (the publish would fail ~1 in 4 attempts and clear on retry).
+ *
+ * Retry the reachability probe with bounded exponential backoff so a transient cold
+ * start is tolerated, while STILL FAILING LOUD: if every attempt fails the function
+ * returns false and the caller throws, so a genuinely-unavailable database fails the
+ * publish and leaves the known-good version serving. This does NOT weaken the
+ * fail-loud-on-bad-DB governance — it only distinguishes "cold, retry succeeds" from
+ * "truly down, all retries exhausted".
+ *
+ * Tunable via env (defaults below): DB_CONNECT_RETRY_ATTEMPTS,
+ * DB_CONNECT_RETRY_BACKOFF_MS, DB_CONNECT_TIMEOUT_MS.
+ */
+async function testPostgresConnectionWithRetry(
+  connectionString: string,
+  perAttemptTimeoutMs: number,
+  attempts: number,
+  baseBackoffMs: number,
+): Promise<boolean> {
+  const maxBackoffMs = 4000;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const ok = await testPostgresConnection(connectionString, perAttemptTimeoutMs);
+    if (ok) {
+      if (attempt > 1) {
+        console.log(`[DB] ✓ PostgreSQL reachable on attempt ${attempt}/${attempts}`);
+      }
+      return true;
+    }
+    if (attempt < attempts) {
+      const wait = Math.min(baseBackoffMs * 2 ** (attempt - 1), maxBackoffMs);
+      console.warn(
+        `[DB] ⚠ PostgreSQL not reachable (attempt ${attempt}/${attempts}); retrying in ${wait}ms (cold-start tolerance)`,
+      );
+      await sleep(wait);
+    }
+  }
+  return false;
 }
 
 function testPostgresConnection(connectionString: string, timeoutMs: number = 10000): Promise<boolean> {
