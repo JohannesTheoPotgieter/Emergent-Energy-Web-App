@@ -18,7 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDisciplineFolders } from "@/hooks/use-discipline-folders";
 import { DisciplinePanel } from "@/components/documents/DisciplinePanel";
-import { DisciplineFolderBinder } from "@/components/documents/DisciplineFolderBinder";
+import { DisciplineWorkspace } from "@/components/documents/DisciplineWorkspace";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { ProjectReadinessCard } from "@/components/documents/ProjectReadinessCard";
 import { ProjectSharepointConnectionCard } from "@/components/documents/ProjectSharepointConnectionCard";
@@ -83,15 +83,26 @@ export function ProjectDocumentsView({
   }, [activeTab, initialDiscipline, displayDisciplines, discipline]);
 
   // ---- Single-discipline mode (Engineering / Quality) ----
+  //
+  // The reworked three-pane workspace. Connection status, approvals, folder
+  // binding and the file browser are all composed inside DisciplineWorkspace
+  // (left rail + center browser + detail drawer) — the standalone connection
+  // card / approvals queue / binder card and the duplicate file list are gone.
+  //
+  // Here the project is fixed (this consumer is given one projectId), so the
+  // rail's project selector reflects that single project. The Engineering /
+  // Quality pages drive a full multi-project rail via DisciplineProjectDocuments.
   if (discipline) {
     return (
-      <div className="space-y-4" data-testid={`project-documents-view-${discipline}`}>
-        {showConnection && <ProjectSharepointConnectionCard projectId={projectId} />}
-        {showApprovals && (
-          <ManagedDocumentApprovalQueue projectId={projectId} title="Approvals waiting on you" />
-        )}
-        <DisciplineFolderBinder projectId={projectId} discipline={discipline} />
-        <DisciplinePanel projectId={projectId} discipline={discipline} />
+      <div data-testid={`project-documents-view-${discipline}`}>
+        <DisciplineWorkspace
+          discipline={discipline}
+          projectScope="all"
+          projectOptions={[{ id: projectId, name: `Project #${projectId}` }]}
+          projectsLoading={false}
+          projectId={projectId}
+          onProjectChange={() => {}}
+        />
       </div>
     );
   }

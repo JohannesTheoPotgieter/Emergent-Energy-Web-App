@@ -20,7 +20,6 @@
 
 import { ShieldCheck } from "lucide-react";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
-import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { DisciplineProjectDocuments } from "@/components/documents/DisciplineProjectDocuments";
 
 export default function QualityDocumentsPage() {
@@ -29,9 +28,8 @@ export default function QualityDocumentsPage() {
       <SectionHeader
         icon={<ShieldCheck className="h-5 w-5" />}
         title="Quality Documents"
-        description="NCR evidence, ITP sign-offs, audit reports, calibration certs, and commissioning packs. Approvals waiting on you appear first; pick a project to see its quality folders and SharePoint connection."
+        description="NCR evidence, ITP sign-offs, audit reports, calibration certs, and commissioning packs — synced from SharePoint. Pick a project, then browse its quality folders. Approvals waiting on you live under “Needs my approval”."
       />
-      <ManagedDocumentApprovalQueue title="Quality approvals waiting on me" />
       <DisciplineProjectDocuments discipline="QUALITY" />
     </PageShell>
   );
