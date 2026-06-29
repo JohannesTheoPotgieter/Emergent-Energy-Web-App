@@ -5,6 +5,7 @@ import {
   isLiveReadyDevOverrideOn,
   LIVE_READY_MODULE_CONFIG,
   LIVE_READY_LANDING_PATH,
+  LIVE_READY_ENGINEERING_LANDING_PATH,
   LIVE_READY_NO_ACCESS_PATH,
   LIVE_READY_ROLE_ALLOWLIST,
   ENABLED_SYSTEM_PAGE_IDS,
@@ -129,13 +130,15 @@ describe("live-ready module — opt-in DEV override (verify the lockdown locally
     expect(LIVE_READY_LANDING_PATH).toBe("/finance");
   });
 
-  it("with the override ON, a non-allowlisted role resolves to /no-access; finance roles to /finance", () => {
+  it("with the override ON: non-allowlisted → /no-access, finance → /finance, engineering → /engineering", () => {
     process.env.NODE_ENV = "development";
     process.env.LIVE_READY_DEV = "1";
-    expect(resolveLiveReadyLanding("ENGINEER")).toBe(LIVE_READY_NO_ACCESS_PATH);
     expect(resolveLiveReadyLanding("QUALITY_MANAGER")).toBe(LIVE_READY_NO_ACCESS_PATH);
+    expect(resolveLiveReadyLanding("HSE_MANAGER")).toBe(LIVE_READY_NO_ACCESS_PATH);
     expect(resolveLiveReadyLanding("CFO")).toBe(LIVE_READY_LANDING_PATH);
     expect(resolveLiveReadyLanding("PROGRAM_MANAGER")).toBe(LIVE_READY_LANDING_PATH);
+    expect(resolveLiveReadyLanding("ENGINEERING_MANAGER")).toBe(LIVE_READY_ENGINEERING_LANDING_PATH);
+    expect(resolveLiveReadyLanding("ENGINEER")).toBe(LIVE_READY_ENGINEERING_LANDING_PATH);
   });
 
   it("accepts LIVE_READY_DEV=true as well as =1, and ignores other values", () => {
@@ -160,7 +163,7 @@ describe("live-ready module — opt-in DEV override (verify the lockdown locally
 });
 
 describe("live-ready module — role allowlist", () => {
-  it("is exactly the seven locked management + finance roles", () => {
+  it("is exactly the locked management/finance + engineering-delivery roles", () => {
     expect([...LIVE_READY_ROLE_ALLOWLIST].sort()).toEqual(
       [
         "ACCOUNTANT",
@@ -168,6 +171,8 @@ describe("live-ready module — role allowlist", () => {
         "CFO",
         "CONSTRUCTION_MANAGER",
         "COO_ADMIN",
+        "ENGINEER",
+        "ENGINEERING_MANAGER",
         "PROGRAM_FINANCE_MANAGER",
         "PROGRAM_MANAGER",
       ].sort(),
@@ -184,7 +189,10 @@ describe("live-ready module — role allowlist", () => {
     expect(isRoleAllowedInLiveReady("CFO")).toBe(true);
     expect(isRoleAllowedInLiveReady("ACCOUNTANT")).toBe(true);
     expect(isRoleAllowedInLiveReady("CONSTRUCTION_MANAGER")).toBe(true);
-    for (const blocked of ["ENGINEER", "QUALITY_MANAGER", "HSE_MANAGER", "PROJECT_DEVELOPER", "CCO", "KEY_ACCOUNTS_MANAGER"]) {
+    // Engineering delivery roles are allowed now the Engineering module is live.
+    expect(isRoleAllowedInLiveReady("ENGINEERING_MANAGER")).toBe(true);
+    expect(isRoleAllowedInLiveReady("ENGINEER")).toBe(true);
+    for (const blocked of ["QUALITY_MANAGER", "HSE_MANAGER", "PROJECT_DEVELOPER", "CCO", "KEY_ACCOUNTS_MANAGER"]) {
       expect(isRoleAllowedInLiveReady(blocked), `${blocked} must be blocked`).toBe(false);
     }
     expect(isRoleAllowedInLiveReady(null)).toBe(false);
@@ -316,11 +324,13 @@ describe("live-ready module — nav section gate", () => {
 });
 
 describe("live-ready module — landing + redirect targets", () => {
-  it("allowed roles land on /finance, others on the no-access landing", () => {
+  it("finance/mgmt land on /finance, engineering on /engineering, others on the no-access landing", () => {
     expect(LIVE_READY_LANDING_PATH).toBe("/finance");
+    expect(LIVE_READY_ENGINEERING_LANDING_PATH).toBe("/engineering");
     expect(resolveLiveReadyLanding("CFO")).toBe("/finance");
     expect(resolveLiveReadyLanding("COO_ADMIN")).toBe("/finance");
-    expect(resolveLiveReadyLanding("ENGINEER")).toBe(LIVE_READY_NO_ACCESS_PATH);
+    expect(resolveLiveReadyLanding("ENGINEERING_MANAGER")).toBe("/engineering");
+    expect(resolveLiveReadyLanding("ENGINEER")).toBe("/engineering");
     expect(resolveLiveReadyLanding("QUALITY_MANAGER")).toBe(LIVE_READY_NO_ACCESS_PATH);
   });
 });
