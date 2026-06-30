@@ -3554,6 +3554,36 @@ export function registerLifecycleRoutes(app: Express) {
             sql`UPDATE audit_events SET project_name = ${pName + ' [DELETED]'} WHERE project_name = ${pN}`,
           );
 
+          // Tables that FK into project_info with NO ACTION but were missing
+          // from the cascade above — any row here makes the final
+          // DELETE FROM project_info fail with a foreign-key violation (the
+          // SERVER_ERROR the lifecycle-board delete was hitting). Children are
+          // cleared before their parents.
+          // commissioning_snapshots → commissioning_sources
+          await safeDel(sql`DELETE FROM commissioning_snapshots WHERE project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM commissioning_sources WHERE project_id = ${pId}`);
+          // mytool company priorities + their children
+          await safeDel(sql`DELETE FROM priority_activity WHERE priority_id IN (SELECT id FROM mytool_company_priorities WHERE linked_project_id = ${pId})`);
+          await safeDel(sql`DELETE FROM priority_comments WHERE priority_id IN (SELECT id FROM mytool_company_priorities WHERE linked_project_id = ${pId})`);
+          await safeDel(sql`DELETE FROM priority_watches WHERE priority_id IN (SELECT id FROM mytool_company_priorities WHERE linked_project_id = ${pId})`);
+          await safeDel(sql`DELETE FROM priority_opportunities WHERE priority_id IN (SELECT id FROM mytool_company_priorities WHERE linked_project_id = ${pId})`);
+          await safeDel(sql`DELETE FROM priority_projects WHERE priority_id IN (SELECT id FROM mytool_company_priorities WHERE linked_project_id = ${pId})`);
+          await safeDel(sql`DELETE FROM priority_links WHERE priority_id IN (SELECT id FROM mytool_company_priorities WHERE linked_project_id = ${pId})`);
+          await safeDel(sql`DELETE FROM mytool_email_links WHERE linked_priority_id IN (SELECT id FROM mytool_company_priorities WHERE linked_project_id = ${pId})`);
+          await safeDel(sql`DELETE FROM mytool_company_priorities WHERE linked_project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM mytool_recurrence_templates WHERE project_id = ${pId}`);
+          // Execution overlays + project sub-records keyed by project_id
+          await safeDel(sql`DELETE FROM execution_review_items WHERE project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM project_subcontractor_assignments WHERE project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM engineering_tickets WHERE project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM project_client_history WHERE project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM user_project_folders WHERE project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM change_requests WHERE project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM raid_items WHERE project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM contracts WHERE project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM sseg_applications WHERE project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM template_overrides WHERE project_id = ${pId}`);
+
           await tx.execute(sql`DELETE FROM project_info WHERE id = ${pId}`);
         });
 
@@ -3563,8 +3593,11 @@ export function registerLifecycleRoutes(app: Express) {
 
         res.json({ success: true, projectName: pName, deletionType: 'hard_delete' });
       } catch (err: any) {
-        console.error('[lifecycle-board] DELETE project error:', err);
-        throw err;
+        // err.detail on a FK violation reads "Key (id)=(N) is still referenced
+        // from table X" — log it so a newly-added project_info FK that slips the
+        // cascade above is diagnosable at a glance (without leaking it to the client).
+        console.error('[lifecycle-board] DELETE project error:', err?.detail || err?.message || err);
+        return res.status(500).json({ error: 'Failed to delete project — a related record is blocking deletion. Please retry; if it persists, contact support.' });
       }
     },
   );
