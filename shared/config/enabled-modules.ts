@@ -90,7 +90,8 @@ export const ENABLED_SYSTEM_PAGE_IDS = [
  * Execution control-tower pages inside the PROJECT_MANAGEMENT nav-group that are
  * Live-Ready. Only these are reachable — the rest of PROJECT_MANAGEMENT (All
  * Projects, Milestone Tracker, project detail, etc.) stays disabled, so the
- * Execution module is ring-fenced exactly like Finance.
+ * Execution module is ring-fenced exactly like Finance. The Lifecycle Board is
+ * included as the project-setup surface (new-project creation / Add Project).
  *
  * Page IDs match `PageRegistryEntry.id` in client/src/config/page-registry.ts.
  */
@@ -100,6 +101,7 @@ export const ENABLED_EXECUTION_PAGE_IDS = [
   "executionDeliveries",   // /execution/deliveries         — program deliveries
   "executionAllocations",  // /execution/allocations        — installer/supplier allocation
   "executionSite",         // /execution/site/:projectId    — per-site detail (+ critical path)
+  "lifecycle",             // /lifecycle-board              — lifecycle board / new-project setup
 ] as const;
 
 /**
