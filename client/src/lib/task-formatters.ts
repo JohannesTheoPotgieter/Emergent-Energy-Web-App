@@ -92,6 +92,10 @@ export const priorityOrder: Record<string, number> = {
 
 export function sortTasksForColumn(tasks: Task[]) {
   return [...tasks].sort((a, b) => {
+    // Plan-linked tasks whose derived deadline is near/overdue rank first.
+    const aPlan = a.planLinkUrgent ? 0 : 1;
+    const bPlan = b.planLinkUrgent ? 0 : 1;
+    if (aPlan !== bPlan) return aPlan - bPlan;
     const aOverdue = isOverdue(a.dueDate, a.status) ? 0 : 1;
     const bOverdue = isOverdue(b.dueDate, b.status) ? 0 : 1;
     if (aOverdue !== bOverdue) return aOverdue - bOverdue;

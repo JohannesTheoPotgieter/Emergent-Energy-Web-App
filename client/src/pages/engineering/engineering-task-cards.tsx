@@ -151,6 +151,16 @@ export function QuickEditPopover({ task, onDueDateChange, onClose }: { task: Tas
 
 export function getTaskContextBadges(task: Task): Array<{ label: string; className: string }> {
   const badges: Array<{ label: string; className: string }> = [];
+  if (task.planLinkUrgent) {
+    // Plan deadline near or passed — amber for upcoming, red for overdue.
+    const overdueByPlan = isOverdue(task.dueDate, task.status);
+    badges.push({
+      label: "Urgent · plan",
+      className: overdueByPlan
+        ? "bg-red-50 text-red-700 border-red-200"
+        : "bg-amber-50 text-amber-700 border-amber-200",
+    });
+  }
   if (task.isBlocked || task.holdReason) {
     badges.push({ label: "Blocked", className: "bg-red-50 text-red-700 border-red-200" });
   }

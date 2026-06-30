@@ -85,6 +85,11 @@ export interface Task {
   // surfaces that don't compute subtasks simply omit them.
   subtaskTotal?: number;
   subtaskDone?: number;
+  // Engineering project-plan link: the task's due date is within 5 days (or
+  // overdue) of the date derived from its linked plan task. Drives the
+  // "Urgent · plan" badge and sorts the task to the top. Optional — surfaces
+  // without a plan link omit it.
+  planLinkUrgent?: boolean;
 }
 
 export interface Comment {
