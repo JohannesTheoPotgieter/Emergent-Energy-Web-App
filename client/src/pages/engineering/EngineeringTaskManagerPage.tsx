@@ -228,6 +228,23 @@ export default function EngineeringTaskManagerPage() {
 
   const rawTasks = useMemo(() => tasksQuery.data?.tasks ?? [], [tasksQuery.data]);
 
+  // Open a task drawer directly from a deep link (?task=N) — e.g. a row on the
+  // Quality Task Board — once the task list has loaded. The param is cleared
+  // after opening so closing the drawer doesn't re-trigger it on refetch.
+  useEffect(() => {
+    if (rawTasks.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const param = params.get("task");
+    if (!param) return;
+    const id = Number(param);
+    params.delete("task");
+    const qs = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+    if (Number.isFinite(id) && rawTasks.some((t) => t.id === id)) {
+      setSelectedId(id);
+    }
+  }, [rawTasks]);
+
   // Spine-specific pre-filters (Site/Owner/Type/Hide-completed) before handing
   // the rest to the shared engineering filter engine.
   const preFiltered = useMemo(() => {
