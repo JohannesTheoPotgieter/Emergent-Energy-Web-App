@@ -67,4 +67,41 @@ describe("lifecycle-board hard-delete FK coverage", () => {
   it("found a non-trivial set of blocking tables (sanity — parser didn't silently match nothing)", () => {
     expect(blockingTables().size).toBeGreaterThan(10);
   });
+
+  // Intermediate blockers: a non-cascade child of a table the handler deletes by
+  // id (work_items, smart_import_runs, …) blocks THAT delete (savepoint swallows
+  // it), so the row survives and the final DELETE FROM project_info then fails.
+  it("clears non-cascade children of the key parent tables the cascade relies on", () => {
+    const handler = deleteHandlerSource();
+    // var name -> table name, and concatenated schema source
+    const varToTable = new Map<string, string>();
+    let all = "";
+    for (const f of schemaFiles()) {
+      const s = fs.readFileSync(f, "utf8");
+      all += s + "\n";
+      for (const m of s.matchAll(/export const (\w+)\s*=\s*pgTable\(\s*["']([^"']+)["']/g)) varToTable.set(m[1], m[2]);
+    }
+    const tableAt = (pos: number): string | null => {
+      let last: string | null = null;
+      for (const m of all.matchAll(/pgTable\(\s*["']([^"']+)["']/g)) {
+        if ((m.index ?? 0) < pos) last = m[1]; else break;
+      }
+      return last;
+    };
+    const parents = ["workItems", "smartImportRuns", "qcChecklist", "deliverables", "projectEngStages", "pdTickets", "intakeRequests"];
+    const uncovered: string[] = [];
+    for (const pv of parents) {
+      const ptable = varToTable.get(pv);
+      if (!ptable) continue;
+      for (const m of all.matchAll(new RegExp(`references\\(\\(\\)\\s*=>\\s*${pv}\\.id`, "g"))) {
+        const at = m.index ?? 0;
+        const after = all.slice(at + m[0].length, at + m[0].length + 160);
+        if (isManagedByDb(after)) continue; // cascade/set-null child — fine
+        const child = tableAt(at);
+        if (child && child !== ptable && !handler.includes(child)) uncovered.push(`${child} -> ${ptable}`);
+      }
+    }
+    const uniq = [...new Set(uncovered)].sort();
+    expect(uniq, `Non-cascade children of cascade-relied-on parents not cleared (each blocks its parent's delete → DELETE FROM project_info 500):\n  ${uniq.join("\n  ")}`).toEqual([]);
+  });
 });
