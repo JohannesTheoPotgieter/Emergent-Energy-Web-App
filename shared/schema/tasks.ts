@@ -231,6 +231,14 @@ export const workItems = pgTable("work_items", {
   linkedPlanItemId: integer("linked_plan_item_id"),
   linkedDeliverableId: integer("linked_deliverable_id"),
   linkedQualityItemInstanceId: integer("linked_quality_item_instance_id"),
+  // Schedule link to a project-plan task (a work_item). The engineering task's
+  // due date is derived from the linked plan task's date per planLinkRelation:
+  //   'before' → plan.startDate − planLinkLeadDays (engineering leads the milestone)
+  //   'after'  → plan.endDate   + planLinkLeadDays (engineering follows)
+  // Kept separate from linkedPlanItemId, which classifies a row AS a plan item.
+  planLinkItemId: integer("plan_link_item_id"),
+  planLinkRelation: text("plan_link_relation"), // 'before' | 'after'
+  planLinkLeadDays: integer("plan_link_lead_days").default(5),
   completedAt: timestamp("completed_at"),
   trackingRag: text("tracking_rag"),
   taskTypeTag: text("task_type_tag"),

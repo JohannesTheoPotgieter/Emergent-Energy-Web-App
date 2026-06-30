@@ -114,6 +114,16 @@ const dependencySchema = z.object({
   dependsOnTaskId: z.number().int().positive(),
 });
 
+const planLinkSchema = z
+  .object({
+    planItemId: z.number().int().positive().nullable(),
+    relation: z.enum(["before", "after"]).optional(),
+    leadDays: z.number().int().min(0).max(365).optional(),
+  })
+  .refine((d) => d.planItemId == null || d.relation != null, {
+    message: "relation is required when linking a plan task.",
+  });
+
 const signOffSchema = z.object({
   decision: z.enum(["approved", "rejected"]),
   kind: z.enum(["qc", "operational"]),
@@ -648,6 +658,44 @@ export function registerEngineeringTasksRoutes(app: Express): void {
         res.json({ ok: true });
       } catch (err) {
         handleError("remove-dependency", err);
+      }
+    },
+  );
+
+  // ── Plan link (derive due date from a project-plan task) ─────────────────────
+
+  app.get(
+    "/api/engineering/tasks/:id/plan-candidates",
+    requireAuth,
+    requirePermission("eng_tasks", "view"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      try {
+        res.json({ candidates: await tasksRepo.listPlanCandidates(parsedId.data) });
+      } catch (err) {
+        handleError("plan-candidates", err);
+      }
+    },
+  );
+
+  app.patch(
+    "/api/engineering/tasks/:id/plan-link",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    validateBody(planLinkSchema),
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      const body = req.body as z.infer<typeof planLinkSchema>;
+      try {
+        const task = await tasksRepo.setPlanLink(parsedId.data, body, actorId(req));
+        if (!task) throw notFound("Task");
+        res.json({ task });
+      } catch (err) {
+        handleError("plan-link", err);
       }
     },
   );

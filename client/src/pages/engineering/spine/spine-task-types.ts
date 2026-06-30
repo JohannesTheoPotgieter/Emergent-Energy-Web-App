@@ -91,6 +91,23 @@ export interface SpineDependencyCandidatesResponse {
   candidates: SpineDependencyCandidate[];
 }
 
+export type SpinePlanLinkRelation = "before" | "after";
+
+/** A plan-kind work_item this task can link to (drives the derived due date).
+ *  Includes the plan's start/end so the client previews the derived due date. */
+export interface SpinePlanCandidate {
+  id: number;
+  title: string;
+  kind: SpineDependencyKind;
+  status: string;
+  startDate: string | null;
+  endDate: string | null;
+}
+
+export interface SpinePlanCandidatesResponse {
+  candidates: SpinePlanCandidate[];
+}
+
 export type SpineSignOffKind = "qc" | "operational";
 export type SpineSignOffDecision = "approved" | "rejected";
 

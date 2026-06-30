@@ -9,6 +9,7 @@
  */
 
 import { and, eq, ne, or, isNull, asc, desc, lte, inArray, count } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db";
 import {
   workItems,
@@ -71,6 +72,100 @@ export interface EngineeringTaskListItem {
   documentCount: number;
   subtaskTotal: number;
   subtaskDone: number;
+  // Project-plan link (derived). Present only when the task links a plan task.
+  planLinkItemId: number | null;
+  planLinkRelation: string | null;
+  planLinkLeadDays: number | null;
+  planItemTitle: string | null;
+  /** The plan start ('before') or end ('after') date the due date is derived from. */
+  planAnchorDate: string | null;
+  /** Computed flag — due within 5 days or overdue and the task isn't complete. */
+  planLinkUrgent: boolean;
+}
+
+// ── Plan-link derivation (read-time authoritative; see PATCH plan-link) ──────
+
+/** Relation a plan-linked engineering task can have to its plan task. */
+export type PlanLinkRelation = "before" | "after";
+
+/** A `work_items` row reads as a "plan" line when it's a milestone, links to a
+ *  plan item, or sits in the PM workstream (same predicate as `classifyKind`).
+ *  This is the canonical "project plan task" test for the plan-link feature. */
+export function isPlanKind(row: {
+  isMilestone: boolean | null;
+  linkedPlanItemId: number | null;
+  workstream: string;
+}): boolean {
+  return classifyKind(row) === "plan";
+}
+
+/**
+ * Add (or subtract) whole calendar days to a date-only string ("YYYY-MM-DD")
+ * and return a date-only string. Uses UTC math so the result never drifts
+ * across a DST / timezone boundary — `work_items.endDate` is a `date` column.
+ */
+function shiftDateDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map((n) => Number(n));
+  const base = Date.UTC(y, (m ?? 1) - 1, d ?? 1);
+  const shifted = new Date(base + days * 24 * 60 * 60 * 1000);
+  const yyyy = shifted.getUTCFullYear();
+  const mm = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(shifted.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/** Today as a date-only string in UTC, for whole-day urgency comparisons. */
+function todayDateStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Whole-day difference (b − a) between two date-only strings. */
+function dayDiff(a: string, b: string): number {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  const at = Date.UTC(ay, (am ?? 1) - 1, ad ?? 1);
+  const bt = Date.UTC(by, (bm ?? 1) - 1, bd ?? 1);
+  return Math.round((bt - at) / (24 * 60 * 60 * 1000));
+}
+
+/** The number of days from today within which a plan link is considered urgent. */
+const PLAN_LINK_URGENT_WINDOW_DAYS = 5;
+
+export interface DerivedPlanLink {
+  /** The synced due date, or null if the needed plan date is missing. */
+  derivedDue: string | null;
+  /** The plan start ('before') or end ('after') date used to derive it. */
+  planAnchorDate: string | null;
+  /** Urgent = derivedDue set, task open, and derivedDue within 5 days or overdue. */
+  planLinkUrgent: boolean;
+}
+
+/**
+ * Derive the synced due date + urgency for a plan-linked engineering task from
+ * the linked plan task's dates. Read-time authoritative: callers OVERRIDE the
+ * persisted `endDate` with `derivedDue` so the due date stays correct if the
+ * plan task's date later moves.
+ *   - 'before' → plan.startDate − leadDays (the engineering task leads)
+ *   - 'after'  → plan.endDate   + leadDays (the engineering task follows)
+ * If the needed plan date is missing, `derivedDue` is null (no urgency).
+ */
+export function derivePlanLink(args: {
+  relation: string | null;
+  leadDays: number | null;
+  planStart: string | null;
+  planEnd: string | null;
+  taskStatus: string;
+}): DerivedPlanLink {
+  const leadDays = args.leadDays ?? 5;
+  const anchor = args.relation === "before" ? args.planStart : args.relation === "after" ? args.planEnd : null;
+  if (!anchor) return { derivedDue: null, planAnchorDate: null, planLinkUrgent: false };
+  const derivedDue = shiftDateDays(anchor, args.relation === "before" ? -leadDays : leadDays);
+  let planLinkUrgent = false;
+  if (!isTaskComplete(args.taskStatus)) {
+    const diff = dayDiff(todayDateStr(), derivedDue); // <0 overdue, 0..N upcoming
+    planLinkUrgent = diff <= PLAN_LINK_URGENT_WINDOW_DAYS;
+  }
+  return { derivedDue, planAnchorDate: anchor, planLinkUrgent };
 }
 
 export async function listEngineeringTasks(filters: EngineeringTaskFilters = {}): Promise<EngineeringTaskListItem[]> {
@@ -81,6 +176,10 @@ export async function listEngineeringTasks(filters: EngineeringTaskFilters = {})
   if (filters.taskTypeTag) conds.push(eq(workItems.taskTypeTag, filters.taskTypeTag));
   if (filters.dueBefore) conds.push(lte(workItems.endDate, filters.dueBefore));
 
+  // Self-join the linked plan task so its dates feed read-time due-date
+  // derivation (authoritative for plan-linked tasks — keeps the synced due date
+  // correct if the plan task's date later moves).
+  const planItems = alias(workItems, "plan_items");
   const rows = await db
     .select({
       id: workItems.id,
@@ -93,10 +192,17 @@ export async function listEngineeringTasks(filters: EngineeringTaskFilters = {})
       endDate: workItems.endDate,
       ownerUserId: workItems.ownerUserId,
       ownerName: users.name,
+      planLinkItemId: workItems.planLinkItemId,
+      planLinkRelation: workItems.planLinkRelation,
+      planLinkLeadDays: workItems.planLinkLeadDays,
+      planItemTitle: planItems.title,
+      planStart: planItems.startDate,
+      planEnd: planItems.endDate,
     })
     .from(workItems)
     .leftJoin(projectInfo, eq(projectInfo.id, workItems.projectId))
     .leftJoin(users, eq(users.id, workItems.ownerUserId))
+    .leftJoin(planItems, eq(planItems.id, workItems.planLinkItemId))
     .where(and(...conds))
     .orderBy(desc(workItems.updatedAt));
 
@@ -127,21 +233,41 @@ export async function listEngineeringTasks(filters: EngineeringTaskFilters = {})
     }
   }
 
-  return rows.map((r: (typeof rows)[number]) => ({
-    id: r.id,
-    title: r.title,
-    projectId: r.projectId ?? null,
-    projectName: r.projectName ?? null,
-    taskTypeTag: r.taskTypeTag ?? null,
-    status: r.status,
-    priority: r.priority ?? null,
-    endDate: r.endDate ?? null,
-    ownerUserId: r.ownerUserId ?? null,
-    ownerName: r.ownerName ?? null,
-    documentCount: docCounts.get(r.id) ?? 0,
-    subtaskTotal: subtaskTotals.get(r.id) ?? 0,
-    subtaskDone: subtaskDone.get(r.id) ?? 0,
-  }));
+  return rows.map((r: (typeof rows)[number]) => {
+    const isPlanLinked = r.planLinkItemId != null;
+    const derived = isPlanLinked
+      ? derivePlanLink({
+          relation: r.planLinkRelation,
+          leadDays: r.planLinkLeadDays,
+          planStart: r.planStart,
+          planEnd: r.planEnd,
+          taskStatus: r.status,
+        })
+      : null;
+    return {
+      id: r.id,
+      title: r.title,
+      projectId: r.projectId ?? null,
+      projectName: r.projectName ?? null,
+      taskTypeTag: r.taskTypeTag ?? null,
+      status: r.status,
+      priority: r.priority ?? null,
+      // Plan-linked: read-time derived due date is authoritative; otherwise the
+      // persisted endDate stands.
+      endDate: isPlanLinked ? derived!.derivedDue : r.endDate ?? null,
+      ownerUserId: r.ownerUserId ?? null,
+      ownerName: r.ownerName ?? null,
+      documentCount: docCounts.get(r.id) ?? 0,
+      subtaskTotal: subtaskTotals.get(r.id) ?? 0,
+      subtaskDone: subtaskDone.get(r.id) ?? 0,
+      planLinkItemId: r.planLinkItemId ?? null,
+      planLinkRelation: isPlanLinked ? r.planLinkRelation ?? null : null,
+      planLinkLeadDays: isPlanLinked ? r.planLinkLeadDays ?? null : null,
+      planItemTitle: isPlanLinked ? r.planItemTitle ?? null : null,
+      planAnchorDate: derived?.planAnchorDate ?? null,
+      planLinkUrgent: derived?.planLinkUrgent ?? false,
+    };
+  });
 }
 
 export interface EngineeringOptions {
@@ -171,6 +297,43 @@ export async function getEngineeringTask(taskId: number): Promise<WorkItemRow | 
     .where(and(eq(workItems.id, taskId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)))
     .limit(1);
   return row ?? null;
+}
+
+/** A single ENG task with the plan-link derived fields + read-time due-date
+ *  override applied (same authoritative derivation as `listEngineeringTasks`).
+ *  `getEngineeringTask` stays the raw accessor for internal mutation paths. */
+export type EngineeringTaskDetail = WorkItemRow & {
+  planItemTitle: string | null;
+  planAnchorDate: string | null;
+  planLinkUrgent: boolean;
+};
+
+export async function getEngineeringTaskDetail(taskId: number): Promise<EngineeringTaskDetail | null> {
+  const row = await getEngineeringTask(taskId);
+  if (!row) return null;
+  if (row.planLinkItemId == null) {
+    return { ...row, planItemTitle: null, planAnchorDate: null, planLinkUrgent: false };
+  }
+  const [plan] = await db
+    .select({ title: workItems.title, startDate: workItems.startDate, endDate: workItems.endDate })
+    .from(workItems)
+    .where(eq(workItems.id, row.planLinkItemId))
+    .limit(1);
+  const derived = derivePlanLink({
+    relation: row.planLinkRelation,
+    leadDays: row.planLinkLeadDays,
+    planStart: plan?.startDate ?? null,
+    planEnd: plan?.endDate ?? null,
+    taskStatus: row.status,
+  });
+  return {
+    ...row,
+    // Read-time override: derived due date is authoritative for plan-linked tasks.
+    endDate: derived.derivedDue,
+    planItemTitle: plan?.title ?? null,
+    planAnchorDate: derived.planAnchorDate,
+    planLinkUrgent: derived.planLinkUrgent,
+  };
 }
 
 async function assignOwner(workItemId: number, userId: number): Promise<void> {
@@ -957,6 +1120,146 @@ export async function listDependencyCandidates(taskId: number): Promise<Dependen
       status: r.status,
       kind: classifyKind(r),
     }));
+}
+
+// ── Plan link (derive an engineering task's due date from a plan task) ────────
+
+export interface PlanCandidate {
+  id: number;
+  title: string;
+  kind: "task" | "plan";
+  status: string;
+  startDate: string | null;
+  endDate: string | null;
+}
+
+/**
+ * Plan-kind work_items on the same project this task can link to (so its due
+ * date derives from the plan task's date). Reuses the `classifyKind` / same
+ * query shape as `listDependencyCandidates`, but returns only plan-kind rows,
+ * excludes self, and includes start/end dates so the client can preview the
+ * derived due date before committing.
+ */
+export async function listPlanCandidates(taskId: number): Promise<PlanCandidate[]> {
+  const task = await getEngineeringTask(taskId);
+  if (!task || task.projectId == null) return [];
+
+  const rows = await db
+    .select({
+      id: workItems.id,
+      title: workItems.title,
+      status: workItems.status,
+      startDate: workItems.startDate,
+      endDate: workItems.endDate,
+      isMilestone: workItems.isMilestone,
+      linkedPlanItemId: workItems.linkedPlanItemId,
+      workstream: workItems.workstream,
+    })
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.projectId, task.projectId),
+        isNull(workItems.deletedAt),
+        inArray(workItems.workstream, ["ENG", "PM"]),
+      ),
+    )
+    .orderBy(asc(workItems.title));
+
+  return rows
+    .filter((r: (typeof rows)[number]) => r.id !== taskId && isPlanKind(r))
+    .map((r: (typeof rows)[number]) => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      startDate: r.startDate ?? null,
+      endDate: r.endDate ?? null,
+      kind: classifyKind(r),
+    }));
+}
+
+/**
+ * Set, change, or clear an engineering task's project-plan link.
+ *   - `planItemId = null` clears the link (planLinkItemId/relation/leadDays) and
+ *     leaves the persisted endDate as-is.
+ *   - Otherwise the plan item must be a plan-kind work_item on the SAME project
+ *     (not self) — rejected with badRequest otherwise. The link is persisted and
+ *     `endDate` is set to the derived due date (or left as-is when the needed
+ *     plan date is missing / derivedDue is null). Read paths re-derive endDate so
+ *     it stays synced if the plan task's date later moves.
+ */
+export async function setPlanLink(
+  taskId: number,
+  input: { planItemId: number | null; relation?: PlanLinkRelation; leadDays?: number },
+  actorId: number,
+): Promise<EngineeringTaskDetail | null> {
+  const task = await getEngineeringTask(taskId);
+  if (!task) return null;
+
+  if (input.planItemId == null) {
+    await db
+      .update(workItems)
+      .set({ planLinkItemId: null, planLinkRelation: null, planLinkLeadDays: null, updatedAt: new Date() })
+      .where(eq(workItems.id, taskId));
+    await recordAudit({
+      userId: actorId,
+      entityType: "work_item",
+      entityId: String(taskId),
+      action: "engineering.task.plan_link_clear",
+      changesJson: { previousPlanItemId: task.planLinkItemId ?? null },
+    });
+    return getEngineeringTaskDetail(taskId);
+  }
+
+  if (input.planItemId === taskId) throw badRequest("A task can't link to itself.");
+  const relation: PlanLinkRelation = input.relation ?? "after";
+  const leadDays = input.leadDays ?? 5;
+
+  const [plan] = await db
+    .select({
+      id: workItems.id,
+      projectId: workItems.projectId,
+      startDate: workItems.startDate,
+      endDate: workItems.endDate,
+      isMilestone: workItems.isMilestone,
+      linkedPlanItemId: workItems.linkedPlanItemId,
+      workstream: workItems.workstream,
+    })
+    .from(workItems)
+    .where(and(eq(workItems.id, input.planItemId), isNull(workItems.deletedAt)))
+    .limit(1);
+  if (!plan) throw notFound("Plan task");
+  if (task.projectId == null || plan.projectId !== task.projectId) {
+    throw badRequest("The plan task must be on the same project.");
+  }
+  if (!isPlanKind(plan)) throw badRequest("That work item isn't a project-plan task.");
+
+  const derived = derivePlanLink({
+    relation,
+    leadDays,
+    planStart: plan.startDate ?? null,
+    planEnd: plan.endDate ?? null,
+    taskStatus: task.status,
+  });
+
+  const set: Partial<typeof workItems.$inferInsert> = {
+    planLinkItemId: input.planItemId,
+    planLinkRelation: relation,
+    planLinkLeadDays: leadDays,
+    updatedAt: new Date(),
+  };
+  // Persist the synced due date when derivable; leave endDate untouched when the
+  // plan task has no usable date (read paths still show "no date" for it).
+  if (derived.derivedDue != null) set.endDate = derived.derivedDue;
+  await db.update(workItems).set(set).where(eq(workItems.id, taskId));
+
+  await recordAudit({
+    userId: actorId,
+    entityType: "work_item",
+    entityId: String(taskId),
+    action: "engineering.task.plan_link_set",
+    changesJson: { planItemId: input.planItemId, relation, leadDays, derivedDue: derived.derivedDue },
+  });
+  return getEngineeringTaskDetail(taskId);
 }
 
 /** Tasks that block `taskId` (its blockedBy predecessors) that are not yet
