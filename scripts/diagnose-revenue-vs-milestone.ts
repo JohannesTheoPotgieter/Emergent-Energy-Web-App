@@ -51,6 +51,7 @@ interface Row {
   dup_excess: string | null;
   planned_revenue_actual: string | null;
   planned_revenue_costed: string | null;
+  dup_summary_rows: string | null;
   sum_milestones: string | null;
   n_milestones: string | null;
   dup_milestone_groups: string | null;
@@ -87,9 +88,17 @@ alloc_dups AS (
   GROUP BY project_id
 ),
 summary AS (
-  SELECT project_id, planned_revenue_actual, planned_revenue_costed
+  -- A project must have exactly ONE live tracker_revenue_summary row, but the
+  -- table has no (project_id) WHERE effective_to IS NULL unique guard, so guard
+  -- against fan-out: take MAX as the ceiling (never inflate it by summing dupes)
+  -- and surface the live-row count so a duplicate ceiling is itself flagged.
+  SELECT project_id,
+         MAX(planned_revenue_actual) AS planned_revenue_actual,
+         MAX(planned_revenue_costed) AS planned_revenue_costed,
+         COUNT(*)                    AS dup_summary_rows
   FROM tracker_revenue_summary
   WHERE effective_to IS NULL
+  GROUP BY project_id
 ),
 milestones AS (
   SELECT project_id,
@@ -120,6 +129,7 @@ SELECT pi.id AS project_id,
        COALESCE(ad.dup_excess, 0)    AS dup_excess,
        s.planned_revenue_actual,
        s.planned_revenue_costed,
+       COALESCE(s.dup_summary_rows, 0) AS dup_summary_rows,
        ms.sum_milestones,
        ms.n_milestones,
        COALESCE(md.dup_milestone_groups, 0) AS dup_milestone_groups
@@ -171,9 +181,10 @@ async function main(): Promise<void> {
         padL("dupKeys", 9) +
         padL("dupExcess", 12) +
         padL("Σmiles", 13) +
-        padL("dupMiles", 9),
+        padL("dupMiles", 9) +
+        padL("dupCeil", 9),
     );
-    console.log("─".repeat(118));
+    console.log("─".repeat(127));
 
     let violations = 0;
     let dupCausedCount = 0;
@@ -183,6 +194,7 @@ async function main(): Promise<void> {
       const dupExcess = num(r.dup_excess) ?? 0;
       const dupKeys = Number(r.dup_key_count ?? 0);
       const dupMiles = Number(r.dup_milestone_groups ?? 0);
+      const dupCeil = Number(r.dup_summary_rows ?? 0);
       const delta = ceiling == null ? null : derived - ceiling;
       const isViolation = delta != null && delta > 1;
       if (isViolation) violations++;
@@ -192,6 +204,7 @@ async function main(): Promise<void> {
       if (dupExplains) dupCausedCount++;
 
       const mark = isViolation ? (dupExplains ? " ⚠dup" : " ⚠src") : "";
+      const ceilMark = dupCeil > 1 ? " ⚠dupCeil" : "";
       console.log(
         padR((r.project_name ?? `#${r.project_id}`).slice(0, 25), 26) +
           padL(money(derived), 14) +
@@ -201,7 +214,9 @@ async function main(): Promise<void> {
           padL(money(dupExcess), 12) +
           padL(money(num(r.sum_milestones)), 13) +
           padL(dupMiles, 9) +
-          mark,
+          padL(dupCeil, 9) +
+          mark +
+          ceilMark,
       );
     }
     console.log("─".repeat(118));
@@ -220,6 +235,8 @@ async function main(): Promise<void> {
     console.log("  dupExcess       R added by those duplicate rows beyond one copy per key.");
     console.log("  Σmiles          Σ live normalized_revenue_lines.amount_ex_vat (milestone claims cross-check).");
     console.log("  dupMiles        # milestone_no/name groups appearing on >1 LIVE revenue line (e.g. 'Claim 1' twice).");
+    console.log("  dupCeil         # LIVE tracker_revenue_summary rows for the project. >1 (⚠dupCeil) ⇒ the ceiling");
+    console.log("                  itself is duplicated; MAX is used so Δ stays meaningful, but the data needs de-duping.");
     console.log("");
     console.log("Read it:");
     console.log("  ⚠dup  → dupExcess explains the overage. Root cause = duplicate LIVE allocations.");
