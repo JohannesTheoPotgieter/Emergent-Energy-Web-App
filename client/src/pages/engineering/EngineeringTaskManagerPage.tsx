@@ -57,12 +57,14 @@ import {
 } from "@shared/engineering/delivery-task-catalog";
 import { TASK_STATUSES, getTaskStatusLabel } from "@shared/task-status";
 import { isTaskComplete } from "@/lib/task-status";
+import { formatDateShort } from "@/lib/task-formatters";
 import type { Task, TeamMember } from "@/components/tasks/types";
 import { SpineSubtasksSection } from "./spine/SpineSubtasksSection";
 import { SpineChecklistsSection } from "./spine/SpineChecklistsSection";
 import { SpineCommentsSection } from "./spine/SpineCommentsSection";
 import { SpineAssigneesSection } from "./spine/SpineAssigneesSection";
 import { SpineDependenciesSection } from "./spine/SpineDependenciesSection";
+import { SpinePlanLinkSection } from "./spine/SpinePlanLinkSection";
 import { SpineSignOffSection } from "./spine/SpineSignOffSection";
 import {
   useEngineeringTaskFilters,
@@ -110,6 +112,14 @@ interface TaskListItem {
   subtaskDone?: number;
   assigneeNames?: string[];
   isBlocked?: boolean;
+  // Project-plan link (read-time derived; spine list response). `endDate` above
+  // is already the synced derived due date when the task is plan-linked.
+  planLinkItemId?: number | null;
+  planLinkRelation?: string | null;
+  planLinkLeadDays?: number | null;
+  planItemTitle?: string | null;
+  planAnchorDate?: string | null;
+  planLinkUrgent?: boolean;
 }
 
 interface DocLink {
@@ -195,6 +205,7 @@ function toTask(t: TaskListItem): Task {
     projectLinkedDeliverableCount: t.documentCount,
     subtaskTotal: t.subtaskTotal ?? 0,
     subtaskDone: t.subtaskDone ?? 0,
+    planLinkUrgent: t.planLinkUrgent ?? false,
   };
 }
 
@@ -268,7 +279,7 @@ export default function EngineeringTaskManagerPage() {
   const adapted = useMemo(() => preFiltered.map(toTask), [preFiltered]);
 
   // Shared filter engine handles status / search / due-date / workload-state.
-  const { filtered, openTasks } = useEngineeringTaskFilters({
+  const { filtered: filteredRaw, openTasks } = useEngineeringTaskFilters({
     tasks: adapted,
     statusFilter,
     priorityFilter: "all",
@@ -279,6 +290,17 @@ export default function EngineeringTaskManagerPage() {
     workloadStateFilter,
     linkedSourceFilter: "all",
   });
+
+  // Default order: plan-urgent tasks float to the top across List / Kanban / My
+  // Tasks; everything else keeps the server order (updated-at desc). The List
+  // view's own column sort still overrides this when the user picks a column;
+  // the Kanban column sort layers `planLinkUrgent` first too (sortTasksForColumn).
+  const filtered = useMemo(() => {
+    const urgent: Task[] = [];
+    const rest: Task[] = [];
+    for (const t of filteredRaw) (t.planLinkUrgent ? urgent : rest).push(t);
+    return urgent.length > 0 ? [...urgent, ...rest] : filteredRaw;
+  }, [filteredRaw]);
 
   const selected = rawTasks.find((t) => t.id === selectedId) ?? null;
   const myName = (user?.name || "").split(/\s+/)[0] || user?.name || "";
@@ -1208,6 +1230,33 @@ function TaskDrawer({
                 ) : null}
               </div>
 
+              {/* Due date — derived & read-only while plan-linked */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5">
+                  Due date
+                  {task.planLinkItemId != null ? (
+                    <Badge
+                      variant="outline"
+                      className="border-indigo-200 bg-indigo-50 px-1 py-0 text-[9px] text-indigo-700"
+                    >
+                      from plan task
+                    </Badge>
+                  ) : null}
+                </Label>
+                <Input
+                  value={task.endDate ? formatDateShort(task.endDate) : "—"}
+                  readOnly
+                  aria-readonly="true"
+                  className="bg-muted/40"
+                  data-testid="task-due-date"
+                />
+                {task.planLinkItemId != null ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    The linked plan task drives this due date — manage it in Project plan link below.
+                  </p>
+                ) : null}
+              </div>
+
               {/* Owner reassign */}
               <div className="space-y-1.5">
                 <Label>Owner</Label>
@@ -1246,6 +1295,25 @@ function TaskDrawer({
 
               {/* Dependencies */}
               <SpineDependenciesSection taskId={taskId} open={open} toast={toast} />
+
+              {/* Project plan link — derives this task's due date from a plan task */}
+              <SpinePlanLinkSection
+                taskId={taskId}
+                open={open}
+                toast={toast}
+                canEdit={canDelete}
+                onChanged={onChanged}
+                state={{
+                  planLinkItemId: task.planLinkItemId ?? null,
+                  planLinkRelation: task.planLinkRelation ?? null,
+                  planLinkLeadDays: task.planLinkLeadDays ?? null,
+                  planItemTitle: task.planItemTitle ?? null,
+                  planAnchorDate: task.planAnchorDate ?? null,
+                  planLinkUrgent: task.planLinkUrgent ?? false,
+                  derivedDue: task.endDate,
+                  status: task.status,
+                }}
+              />
 
               {/* Sign-off */}
               <SpineSignOffSection
