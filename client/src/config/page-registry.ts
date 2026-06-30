@@ -190,7 +190,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "qualityTasks", path: "/quality/tasks", label: "Quality Task Board", iconKey: "ListTodo", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QualityTasksPage" },
   { id: "qualityDocuments", path: "/quality/documents", label: "Quality Document Management", iconKey: "FolderTree", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QualityDocumentsPage" },
   { id: "engineeringAudit", path: "/engineering/audit", label: "Engineering Audit Log", iconKey: "Activity", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "EngineeringAuditPage" },
-  { id: "lifecycle", path: "/lifecycle-board", label: "Lifecycle Board", iconKey: "Layers", navGroup: "PORTFOLIO", permissionEntity: "lifecycle", showInSidebar: false, routeComponentKey: "LifecycleBoardPage" },
+  { id: "lifecycle", path: "/lifecycle-board", label: "Lifecycle Board", iconKey: "Layers", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "lifecycle", showInSidebar: false, routeComponentKey: "LifecycleBoardPage" },
   // PR-B redesign (2026-05-27) — /now is the canonical landing surface
   // that answers "what needs attention right now?". /execution-board
   // stays as the legacy 5-tab dashboard for one transition cycle.

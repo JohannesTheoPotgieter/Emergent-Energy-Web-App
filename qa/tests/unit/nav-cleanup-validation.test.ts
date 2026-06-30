@@ -51,6 +51,7 @@ describe("nav cleanup — six-tab COO spec", () => {
       "/execution/milestones",
       "/execution/deliveries",
       "/execution/allocations",
+      "/lifecycle-board",
     ]);
   });
 
