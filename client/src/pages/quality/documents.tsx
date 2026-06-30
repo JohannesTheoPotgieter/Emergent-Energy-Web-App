@@ -8,8 +8,8 @@
  * are the first thing you see.
  *
  * Data integrity: same backbone as Engineering — managed_documents +
- * folder_taxonomy + project_folders, SharePoint = source of truth, no file
- * bodies in the DB. See AGENT_GUARDRAILS.md § 2 + § 5A.
+ * project_discipline_folders + document_approval_requirements, SharePoint =
+ * source of truth, no file bodies in the DB. See AGENT_GUARDRAILS.md § 2 + § 5A.
  *
  * UX (audit QM-5): the page now carries a standard PageShell + SectionHeader
  * so quality has a titled surface, and the header explicitly names the three

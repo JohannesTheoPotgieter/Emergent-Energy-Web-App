@@ -52,7 +52,6 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowLeft,
-  ExternalLink,
   FileText,
   User,
   XCircle,
@@ -66,7 +65,6 @@ import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { NcrLegacyDeepLinkBanner } from "@/components/quality/NcrLegacyDeepLinkBanner";
-import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { ConfirmDestructive, type ImpactRow } from "@/components/ui/confirm-destructive";
 import { usePermission } from "@/hooks/use-permissions";
@@ -248,7 +246,8 @@ export default function QmDashboardPage() {
   const [statusFilter, setStatusFilter] = useState<"active">("active");
   const [warningFilter, setWarningFilter] = useState(false);
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null);
-  const [warningsExpanded, setWarningsExpanded] = useState(true);
+  const [warningsExpanded, setWarningsExpanded] = useState(false);
+  const [portfolioTotalsOpen, setPortfolioTotalsOpen] = useState(false);
   const [selectedWarning, setSelectedWarning] = useState<Warning | null>(null);
   const [actionType, setActionType] = useState<"override" | "resolve" | null>(null);
   const [reasonText, setReasonText] = useState("");
@@ -481,18 +480,6 @@ export default function QmDashboardPage() {
     return total > 0 ? Math.round((passed / total) * 100) : 0;
   };
 
-  const qmAttentionItems = useMemo((): AttentionItem[] => {
-    const items: AttentionItem[] = [];
-    const danger = "text-red-600 bg-red-50 border-red-200";
-    const warning = "text-amber-700 bg-amber-50 border-amber-200";
-    if (governanceSummary?.overdueActions && governanceSummary.overdueActions > 0) items.push({ label: "Overdue Actions", value: governanceSummary.overdueActions, color: danger, href: "/quality" });
-    if (governanceSummary?.resubmissionNeeded && governanceSummary.resubmissionNeeded > 0) items.push({ label: "Failed QC Items", value: governanceSummary.resubmissionNeeded, color: danger, href: "/quality" });
-    if (governanceSummary?.evidenceRequired && governanceSummary.evidenceRequired > 0) items.push({ label: "Evidence Gaps", value: governanceSummary.evidenceRequired, color: warning, href: "/quality" });
-    if (governanceSummary?.blockedHandovers && governanceSummary.blockedHandovers > 0) items.push({ label: "Blocked Handovers", value: governanceSummary.blockedHandovers, color: danger, href: "/quality" });
-    if (activeWarnings > 0) items.push({ label: "Open Warnings", value: activeWarnings, color: warning, href: "/quality" });
-    return items;
-  }, [governanceSummary, activeWarnings]);
-
   const getProjectProgress = (c: Checklist) => {
     if (!c.phases || c.phases.length === 0) return 0;
     const total = c.phases.reduce((t, p) => t + p.total, 0);
@@ -600,16 +587,13 @@ export default function QmDashboardPage() {
   ].reduce((a, b) => a + b, 0);
 
   return (
-    <PageShell className="p-4 md:p-6" data-testid="qm-dashboard-page">
+    <PageShell data-testid="qm-dashboard-page">
       {/* No global loading gate: each section below renders from its own
           query state so a slow/failed /api/quality/checklists call never
           blanks the KPI cards, warnings, NCRs, or approvals. */}
-      {/* Managed-document approvals waiting on this QM */}
-      <div className="mb-4">
-        <ManagedDocumentApprovalQueue title="Approvals waiting on you" />
-      </div>
       <SectionHeader
         icon={<ShieldCheck className="h-5 w-5" />}
+        eyebrow="Quality"
         title="Quality Management"
         description="Monitor quality checklists, track items, and manage warnings across projects."
         actions={(
@@ -630,8 +614,6 @@ export default function QmDashboardPage() {
 
       {microWalkthroughEnabled ? <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} /> : null}
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
-
-      <AttentionBadges items={qmAttentionItems} threshold={5} testId="qm-attention-needed" />
 
       {/* Governance KPI strip — own query state. A slow/failed
           /api/quality/dashboard call shows an explicit loading or
@@ -662,27 +644,26 @@ export default function QmDashboardPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
           {([
-            { label: "Overdue actions", value: governanceSummary?.overdueActions ?? 0, tone: "danger", sub: "Items past due and still unresolved." },
-            { label: "Failed QC", value: governanceSummary?.resubmissionNeeded ?? 0, tone: "danger", sub: "Items that failed inspection — fix and resubmit." },
-            { label: "Evidence gaps", value: governanceSummary?.evidenceRequired ?? 0, tone: "warning", sub: "Evidence-required items still missing proof." },
-            { label: "Blocked handover", value: governanceSummary?.blockedHandovers ?? 0, tone: "danger", sub: "Projects where quality is holding execution readiness." },
-            { label: "At-risk projects", value: governanceSummary?.atRiskProjects ?? 0, tone: "warning", sub: "Projects carrying elevated quality governance risk." },
+            { label: "Overdue actions", value: governanceSummary?.overdueActions ?? 0, tone: "danger" },
+            { label: "Failed QC", value: governanceSummary?.resubmissionNeeded ?? 0, tone: "danger" },
+            { label: "Evidence gaps", value: governanceSummary?.evidenceRequired ?? 0, tone: "warning" },
+            { label: "Blocked handover", value: governanceSummary?.blockedHandovers ?? 0, tone: "danger" },
+            { label: "At-risk projects", value: governanceSummary?.atRiskProjects ?? 0, tone: "warning" },
           ] as const).map((kpi) => {
             const active = kpi.value > 0;
             const border = !active
               ? "border-border"
               : kpi.tone === "danger" ? "border-red-200" : "border-amber-200";
             const valueColor = !active
-              ? "text-muted-foreground"
+              ? "text-foreground"
               : kpi.tone === "danger" ? "text-red-600" : "text-amber-700";
             return (
               <Card key={kpi.label} className={border}>
                 <CardContent className="p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{kpi.label}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold truncate">{kpi.label}</p>
                   <p className={`text-xl font-bold tabular-nums mt-1 ${valueColor}`}>{kpi.value}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{kpi.sub}</p>
                 </CardContent>
               </Card>
             );
@@ -743,9 +724,13 @@ export default function QmDashboardPage() {
                     key={ncr.id}
                     type="button"
                     className="w-full flex items-start justify-between gap-3 rounded-lg border bg-background px-3 py-2.5 text-left hover:border-red-300 hover:shadow-sm transition-all"
-                    onClick={() => projectName
-                      ? setLocation(`/project/${encodeURIComponent(projectName)}?mode=execution&section=quality&subTab=quality&ncr=${ncr.id}`)
-                      : setLocation(`/quality?ncr=${ncr.id}`)}
+                    onClick={() => {
+                      // Project pages are outside the Live-Ready ring fence, so stay
+                      // in-module: surface the NCR banner via ?ncr and open the
+                      // project's inline quality detail when we know which project.
+                      setLocation(`/quality?ncr=${ncr.id}`);
+                      if (projectName) setSelectedProjectName(projectName);
+                    }}
                     data-testid={`qm-ncr-row-${ncr.id}`}
                   >
                     <div className="min-w-0">
@@ -790,7 +775,7 @@ export default function QmDashboardPage() {
                 <button
                   key={project.projectName}
                   className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-left hover:border-emerald-300 hover:shadow-sm transition-all"
-                  onClick={() => setLocation(`/project/${encodeURIComponent(project.projectName)}?mode=execution&section=quality&subTab=quality`)}
+                  onClick={() => setSelectedProjectName(project.projectName)}
                   data-testid={`top-risk-project-${project.projectName}`}
                 >
                   <span className="text-sm font-medium">{project.projectName}</span>
@@ -807,6 +792,18 @@ export default function QmDashboardPage() {
         </Card>
       )}
 
+      <Collapsible open={portfolioTotalsOpen} onOpenChange={setPortfolioTotalsOpen}>
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between rounded-lg border bg-muted/20 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+            data-testid="qm-portfolio-totals-toggle"
+          >
+            <span className="flex items-center gap-2"><LayoutGrid className="h-4 w-4" /> Portfolio totals</span>
+            {portfolioTotalsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-3">
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         <Card className="border-sky-100" data-testid="kpi-quality-progress">
           <CardContent className="p-3 text-center">
@@ -860,15 +857,17 @@ export default function QmDashboardPage() {
           </CardContent>
         </Card>
       </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       <section aria-label="Project checklists">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-1.5 px-4 h-10 font-semibold text-sm">
             <LayoutGrid className="h-4 w-4" /> Project Checklists
           </div>
-          <div className="w-full rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-            {`Prioritize checklist-level review and navigate to project quality tabs (${activeProjectsCount} active, ${completedProjectsCount} completed).`}
-          </div>
+          <span className="text-xs text-muted-foreground">
+            {activeProjectsCount} active · {completedProjectsCount} completed
+          </span>
 
           {activeFiltersCount > 0 && (
             <Button
@@ -905,16 +904,6 @@ export default function QmDashboardPage() {
                       Review what needs action, who owns it, and when it is due.
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setLocation(`/project/${encodeURIComponent(selectedProjectName)}?mode=execution&section=quality&subTab=quality`)}
-                    data-testid="btn-open-full-project"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                    Open full project
-                  </Button>
                 </div>
               </CardHeader>
               <CardContent className="pt-4">
@@ -1140,13 +1129,11 @@ export default function QmDashboardPage() {
                                     variant="ghost"
                                     size="icon"
                                     className="h-7 w-7"
-                                    onClick={() => {
-                                      setLocation(`/project/${encodeURIComponent(checklist.projectName)}?mode=execution&section=quality&subTab=quality`);
-                                    }}
-                                    aria-label={`Open ${checklist.projectName} project details`}
+                                    onClick={() => setSelectedProjectName(checklist.projectName)}
+                                    aria-label={`Open ${checklist.projectName} quality detail`}
                                     data-testid={`btn-open-project-${checklist.id}`}
                                   >
-                                    <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <Eye className="h-3.5 w-3.5 text-muted-foreground" />
                                   </Button>
                                   {canDeleteQuality && (
                                     <Button
@@ -1244,7 +1231,7 @@ export default function QmDashboardPage() {
                             onView={() => setSelectedWarning(warning)}
                             onOverride={() => { setSelectedWarning(warning); setActionType("override"); }}
                             onResolve={() => { setSelectedWarning(warning); setActionType("resolve"); }}
-                            onViewProject={() => setLocation(`/project/${encodeURIComponent(warning.projectName)}?tab=quality`)}
+                            onViewProject={() => setSelectedProjectName(warning.projectName)}
                           />
                         ))}
                       </div>
@@ -1263,7 +1250,7 @@ export default function QmDashboardPage() {
                             onView={() => setSelectedWarning(warning)}
                             onOverride={() => { setSelectedWarning(warning); setActionType("override"); }}
                             onResolve={() => { setSelectedWarning(warning); setActionType("resolve"); }}
-                            onViewProject={() => setLocation(`/project/${encodeURIComponent(warning.projectName)}?tab=quality`)}
+                            onViewProject={() => setSelectedProjectName(warning.projectName)}
                           />
                         ))}
                       </div>
@@ -1282,7 +1269,7 @@ export default function QmDashboardPage() {
                             onView={() => setSelectedWarning(warning)}
                             onOverride={() => { setSelectedWarning(warning); setActionType("override"); }}
                             onResolve={() => { setSelectedWarning(warning); setActionType("resolve"); }}
-                            onViewProject={() => setLocation(`/project/${encodeURIComponent(warning.projectName)}?tab=quality`)}
+                            onViewProject={() => setSelectedProjectName(warning.projectName)}
                           />
                         ))}
                       </div>
@@ -1294,6 +1281,10 @@ export default function QmDashboardPage() {
           </CollapsibleContent>
         </Card>
       </Collapsible>
+
+      {/* Managed-document approvals waiting on this QM — secondary inbox, kept
+          below the triage surfaces rather than above the page header. */}
+      <ManagedDocumentApprovalQueue title="Approvals waiting on you" />
 
       <Dialog open={!!selectedWarning && !actionType} onOpenChange={(open) => { if (!open) closeDialog(); }}>
         <DialogContent className="max-w-lg">
@@ -1344,7 +1335,7 @@ export default function QmDashboardPage() {
                   size="sm"
                   className="flex-1"
                   onClick={() => {
-                    setLocation(`/project/${encodeURIComponent(selectedWarning.projectName)}?tab=quality`);
+                    setSelectedProjectName(selectedWarning.projectName);
                     closeDialog();
                   }}
                   data-testid="btn-go-to-project"
