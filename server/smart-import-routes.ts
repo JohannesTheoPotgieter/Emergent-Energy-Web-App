@@ -2453,6 +2453,31 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       });
     }
 
+    // Land a freshly imported project on the Execution board at "Financial Close"
+    // (the first board-universe phase). The board — and every Execution view —
+    // reads project_execution_state.phase, and a new import gets the inert
+    // "PLANNING" placeholder there (or null), which sits outside the board's
+    // phase universe, so the project appears nowhere in Execution. Promote that
+    // unmanaged phase to Financial Close. The WHERE guard is HARD: it only
+    // touches a row whose phase is still null or the import placeholder, so an
+    // existing project that is genuinely mid-lifecycle (Planning, Construction,
+    // …) is NEVER reset on re-import.
+    try {
+      await db.execute(sql`
+        INSERT INTO project_execution_state (project_id, phase, current_stage_code, gate_status)
+        VALUES (${projectId}, 'Financial Close', 'S03_SIGNATURE_FINANCIAL_CLOSE', 'IN_PROGRESS')
+        ON CONFLICT (project_id) DO UPDATE SET
+          phase = 'Financial Close',
+          current_stage_code = 'S03_SIGNATURE_FINANCIAL_CLOSE',
+          gate_status = COALESCE(project_execution_state.gate_status, 'IN_PROGRESS'),
+          updated_at = NOW()
+        WHERE project_execution_state.phase IS NULL
+           OR project_execution_state.phase = 'PLANNING'
+      `);
+    } catch (seedErr: unknown) {
+      console.error("[SmartImport] execution-state phase seed failed:", seedErr instanceof Error ? seedErr.message : String(seedErr));
+    }
+
     const ignoredRows = new Map<string, Set<number>>();
     const overrideRows = new Map<string, Map<number, any>>();
     for (const issue of issues) {
