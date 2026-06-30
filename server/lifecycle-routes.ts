@@ -3462,6 +3462,14 @@ export function registerLifecycleRoutes(app: Express) {
           await safeDel(
             sql`DELETE FROM conflict_resolution_log WHERE import_run_id IN (SELECT id FROM smart_import_runs WHERE project_id = ${pId})`,
           );
+          // Finance/tracker snapshot tables that FK to smart_import_runs.id
+          // (import_run_id, NO ACTION) — they block the smart_import_runs delete
+          // below (and then the final project_info delete). Every imported
+          // project has these. Cleared by project_id.
+          await safeDel(sql`DELETE FROM category_revenue_allocations WHERE project_id = ${pId} OR project_name = ${pN}`);
+          await safeDel(sql`DELETE FROM normalized_cost_line_actuals WHERE project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM tracker_revenue_summary WHERE project_id = ${pId}`);
+          await safeDel(sql`DELETE FROM tracker_project_metadata WHERE project_id = ${pId}`);
           await safeDel(sql`DELETE FROM smart_import_runs WHERE project_id = ${pId}`);
           await safeDel(sql`DELETE FROM project_portfolio_assignments WHERE project_id = ${pId}`);
           await safeDel(sql`DELETE FROM teams_chat_groups WHERE project_id = ${pId}`);
@@ -3482,6 +3490,12 @@ export function registerLifecycleRoutes(app: Express) {
           );
           await safeDel(
             sql`DELETE FROM expense_task_links WHERE canonical_task_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`,
+          );
+          // mytool_timeblocks.linked_task_id → work_items (NO ACTION) blocks the
+          // work_items delete below; clear timeblocks pointing at this project's
+          // tasks first.
+          await safeDel(
+            sql`DELETE FROM mytool_timeblocks WHERE linked_task_id IN (SELECT id FROM work_items WHERE project_id = ${pId} OR external_ref LIKE ${pN + '::PLAN::%'})`,
           );
           await safeDel(
             sql`DELETE FROM work_items WHERE project_id = ${pId} OR external_ref LIKE ${pN + '::PLAN::%'}`,
@@ -3545,6 +3559,11 @@ export function registerLifecycleRoutes(app: Express) {
           await safeDel(sql`DELETE FROM weekly_reviews WHERE project_name = ${pN}`);
           await safeDel(sql`DELETE FROM derived_project_kpis WHERE project_name = ${pN}`);
           await safeDel(sql`DELETE FROM merge_audit_log WHERE project_name = ${pN}`);
+          // QuickBooks reconciliation overrides/ignores keyed by project_name.
+          await safeDel(sql`DELETE FROM qb_class_project_overrides WHERE project_name = ${pN}`);
+          await safeDel(sql`DELETE FROM qb_customer_project_overrides WHERE project_name = ${pN}`);
+          await safeDel(sql`DELETE FROM qb_recon_ignores WHERE resolved_project_name = ${pN}`);
+          await safeDel(sql`DELETE FROM qb_revenue_recon_ignores WHERE resolved_project_name = ${pN}`);
 
           // mytool_tasks cleanup removed — table has 0 active rows, personal tasks now in work_items
           await safeDel(

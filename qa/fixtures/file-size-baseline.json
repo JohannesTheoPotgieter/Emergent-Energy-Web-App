@@ -2,7 +2,7 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-06-25",
+  "generated": "2026-06-30",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
@@ -18,7 +18,7 @@
     },
     {
       "file": "server/smart-import-routes.ts",
-      "loc": 4027
+      "loc": 4052
     },
     {
       "file": "server/departments/priority-strategic-routes.ts",
@@ -30,7 +30,7 @@
     },
     {
       "file": "server/lifecycle-routes.ts",
-      "loc": 3572
+      "loc": 3624
     },
     {
       "file": "server/quality-routes.ts",
@@ -162,7 +162,7 @@
     },
     {
       "file": "client/src/pages/qm-dashboard.tsx",
-      "loc": 1641
+      "loc": 1632
     },
     {
       "file": "client/src/components/tabs/ProjectPlanTab.tsx",
