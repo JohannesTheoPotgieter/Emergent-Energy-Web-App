@@ -652,6 +652,26 @@ export function registerEngineeringTasksRoutes(app: Express): void {
     },
   );
 
+  // ── Delete task ──────────────────────────────────────────────────────────────
+
+  app.delete(
+    "/api/engineering/tasks/:id",
+    requireAuth,
+    requirePermission("eng_tasks", "edit"),
+    requireEngTaskOwnership,
+    async (req: Request, res: Response) => {
+      const parsedId = idParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid task id");
+      try {
+        const deleted = await tasksRepo.softDeleteEngineeringTask(parsedId.data, actorId(req));
+        if (!deleted) throw notFound("Task");
+        res.json({ ok: true });
+      } catch (err) {
+        handleError("delete-task", err);
+      }
+    },
+  );
+
   // ── Sign-off ─────────────────────────────────────────────────────────────────
 
   app.get(

@@ -31,6 +31,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { usePermission } from "@/hooks/use-permissions";
 import {
   Select,
   SelectTrigger,
@@ -1024,6 +1026,8 @@ function TaskDrawer({
   const open = task != null;
   const taskId = task?.id ?? 0;
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const { allowed: canDelete } = usePermission("eng_tasks", "edit");
 
   // Mention roster for the comments input — reuse the page's options users
   // (the only field the picker needs is fullName; role is shown if present).
@@ -1073,6 +1077,22 @@ function TaskDrawer({
     onError: (e: unknown) =>
       toast({
         title: "Couldn't reassign owner",
+        description: e instanceof Error ? e.message : undefined,
+        variant: "destructive",
+      }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => apiRequest("DELETE", `/api/engineering/tasks/${taskId}`),
+    onSuccess: () => {
+      toast({ title: "Task deleted" });
+      setConfirmDelete(false);
+      onClose();
+      onChanged();
+    },
+    onError: (e: unknown) =>
+      toast({
+        title: "Couldn't delete task",
         description: e instanceof Error ? e.message : undefined,
         variant: "destructive",
       }),
@@ -1132,11 +1152,32 @@ function TaskDrawer({
               <SheetTitle className="pr-6">{task.title}</SheetTitle>
             </SheetHeader>
             <div className="space-y-5 py-4">
-              <div className="flex flex-wrap gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
                 <Badge variant="outline">{typeLabel(task.taskTypeTag)}</Badge>
                 {task.projectName ? <Badge variant="outline">{task.projectName}</Badge> : null}
                 <Badge variant="outline">{task.ownerName ?? "Unassigned"}</Badge>
+                {canDelete ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto h-7 gap-1 text-destructive hover:text-destructive"
+                    onClick={() => setConfirmDelete(true)}
+                    data-testid="btn-delete-task"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete
+                  </Button>
+                ) : null}
               </div>
+
+              <ConfirmDialog
+                open={confirmDelete}
+                onOpenChange={setConfirmDelete}
+                title="Delete this task?"
+                description="Removes the task and its subtasks from the Task Manager. Linked SharePoint documents are not deleted."
+                confirmLabel={deleteMutation.isPending ? "Deleting…" : "Delete task"}
+                variant="destructive"
+                onConfirm={() => deleteMutation.mutate()}
+              />
 
               {/* Status + Done-gate */}
               <div className="space-y-1.5">

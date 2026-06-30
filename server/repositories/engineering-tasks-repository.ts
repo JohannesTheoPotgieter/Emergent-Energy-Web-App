@@ -319,6 +319,38 @@ export async function reassignEngineeringTaskOwner(
   return updated;
 }
 
+/**
+ * Soft-delete a task (set deletedAt) and cascade the soft-delete to its direct
+ * subtasks so nothing is orphaned. SharePoint documents are NOT touched — only
+ * the task's link/metadata. Returns false when the task isn't found (or is
+ * already deleted). Records an audit event.
+ */
+export async function softDeleteEngineeringTask(
+  taskId: number,
+  actorId: number,
+): Promise<boolean> {
+  const current = await getEngineeringTask(taskId);
+  if (!current) return false;
+  const now = new Date();
+  // Cascade to direct subtasks first, then the task itself.
+  await db
+    .update(workItems)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(and(eq(workItems.parentId, taskId), isNull(workItems.deletedAt)));
+  await db
+    .update(workItems)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(eq(workItems.id, taskId));
+  await recordAudit({
+    userId: actorId,
+    entityType: "work_item",
+    entityId: String(taskId),
+    action: "engineering.task.deleted",
+    changesJson: { title: current.title, projectId: current.projectId ?? null },
+  });
+  return true;
+}
+
 // ── Document links ────────────────────────────────────────────────────────
 
 export async function listTaskDocumentLinks(taskId: number): Promise<WorkItemDocumentLinkRow[]> {
