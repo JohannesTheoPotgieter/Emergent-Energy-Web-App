@@ -285,7 +285,7 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
         aria-label={`Open task: ${task.title}`}
         className={`bg-card border-l-[3px] border border-b-border border-r-border border-t-border rounded px-2 py-1.5 cursor-pointer hover:shadow-sm transition-all group relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
           ${taskPriorityBorderClass(task.priority)}
-          ${overdue ? "bg-red-50/60" : ""}
+          ${overdue ? "bg-status-adverse/5" : ""}
         `}
         data-testid={`kanban-card-${task.id}`}
       >
@@ -303,7 +303,7 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
         <div className="flex items-center gap-1 mt-0.5">
           <span className="text-[9px] text-muted-foreground/60 truncate flex-1">{projectDisplay}</span>
           <SubtaskChip total={task.subtaskTotal ?? 0} done={task.subtaskDone ?? 0} />
-          {task.dueDate && <span className={`text-[9px] ${overdue ? "text-red-600 font-bold" : "text-muted-foreground"}`}>{label || formatDateShort(task.dueDate)}</span>}
+          {task.dueDate && <span className={`text-[9px] ${overdue ? "text-status-adverse font-bold" : "text-muted-foreground"}`}>{label || formatDateShort(task.dueDate)}</span>}
         </div>
         {task.parentTaskTitle && (
           <div className="flex items-center gap-1 mt-0.5">
@@ -336,9 +336,9 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
       aria-label={`Open task: ${task.title}`}
       className={`bg-card border-l-[3px] border border-b-border border-r-border border-t-border rounded-md px-2.5 py-2 cursor-pointer hover:shadow-md hover:translate-y-[-1px] transition-all duration-150 group relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
         ${taskPriorityBorderClass(task.priority)}
-        ${overdue ? "bg-red-50/60 border-r-red-200 border-t-red-200 border-b-red-200" : ""}
-        ${isCritical && !overdue ? "bg-orange-50/30" : ""}
-        ${selected ? "ring-2 ring-blue-500 bg-blue-50/40" : ""}
+        ${overdue ? "bg-status-adverse/5 border-r-status-adverse/30 border-t-status-adverse/30 border-b-status-adverse/30" : ""}
+        ${isCritical && !overdue ? "bg-status-drift/5" : ""}
+        ${selected ? "ring-2 ring-primary bg-primary/5" : ""}
       `}
       data-testid={`kanban-card-${task.id}`}
     >
@@ -349,7 +349,7 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
             role="checkbox"
             aria-checked={!!selected}
             aria-label={`Select task: ${task.title}`}
-            className={`w-4 h-4 mt-0.5 rounded border shrink-0 flex items-center justify-center transition-colors focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300 opacity-0 group-hover:opacity-100 hover:border-blue-400"}`}
+            className={`w-4 h-4 mt-0.5 rounded border shrink-0 flex items-center justify-center transition-colors focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "bg-primary border-primary text-white" : "border-gray-300 opacity-0 group-hover:opacity-100 hover:border-primary/60"}`}
             onClick={(e) => { e.stopPropagation(); onToggleSelect(task.id); }}
             data-testid={`select-task-${task.id}`}
           >
@@ -464,9 +464,9 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
       </div>
 
       {task.holdReason && (
-        <div className="mt-1.5 px-1.5 py-1 bg-red-50 rounded text-[10px] text-red-600 flex items-center gap-1 border border-red-100">
+        <div className="mt-1.5 px-1.5 py-1 bg-status-adverse/5 rounded text-[10px] text-status-adverse flex items-center gap-1 border border-status-adverse/30">
           <PauseCircle className="h-3 w-3 shrink-0" />
-          {task.blockedType && <span className={`px-1 py-0 rounded text-[9px] font-bold ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>{task.blockedType}</span>}
+          {task.blockedType && <span className={`px-1 py-0 rounded text-[9px] font-bold ${task.blockedType === "External" ? "ee-status-warning" : "ee-status-accent"}`}>{task.blockedType}</span>}
           <span className="truncate">{task.holdReason}</span>
         </div>
       )}
@@ -570,13 +570,13 @@ export function KanbanColumn({
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {overdueCount > 0 && (
-              <span className="flex items-center gap-0.5 text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">
+              <span className="flex items-center gap-0.5 text-[9px] font-bold ee-status-danger px-1.5 py-0.5 rounded-full">
                 <AlertTriangle className="h-2.5 w-2.5" />
                 {overdueCount}
               </span>
             )}
             {criticalCount > 0 && overdueCount === 0 && (
-              <span className="flex items-center gap-0.5 text-[9px] font-bold text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded-full">
+              <span className="flex items-center gap-0.5 text-[9px] font-bold ee-status-warning px-1.5 py-0.5 rounded-full">
                 {criticalCount}
               </span>
             )}
