@@ -91,6 +91,7 @@ import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib
 import { softCloseByProjectId, softCloseByProjectName, softCloseByImportRunId, addTemporalColumns, dedupeCostLineInserts } from "./lib/temporal-helpers";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
+import { recomputeDerivedKpisForProject } from "./services/derived-project-kpis-materializer";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
 
 function normalizeForComparison(name: string): string {
@@ -3373,6 +3374,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
     // Refresh materialized dashboard metrics after import commit (both v1 and v2)
     if (projectId) refreshProjectMetricsAsync(projectId);
+    // M1: also refresh derived_project_kpis (priority dashboard / header chips)
+    // on commit — otherwise it lags behind until the 15-min cron. Fire-and-forget.
+    if (projectId) void recomputeDerivedKpisForProject(projectId);
   } catch (err: unknown) {
     const pgCause = (err as any)?.cause;
     console.error("[smart-import] POST commit error:", err);

@@ -76,6 +76,7 @@ import { syncProjectSplitTables } from "../lib/project-info-sync";
 import { recordImportChange } from "../lib/audit/diff-engine";
 import { logAudit } from "../audit-logger";
 import { refreshProjectMetricsAsync } from "./dashboard-metrics";
+import { recomputeDerivedKpisForProject } from "./derived-project-kpis-materializer";
 import { normalizeAllocationConfidence } from "../lib/import/utils";
 
 // ---------------------------------------------------------------------------
@@ -833,6 +834,11 @@ export async function commitSmartImportRunAsSystem(
   }
 
   refreshProjectMetricsAsync(projectId);
+  // M1: also refresh the derived_project_kpis materializer (priority dashboard,
+  // project header chips, strategic chain) on import commit. Previously only the
+  // 15-min cron and dispute-lifecycle events refreshed it, so a scheduled
+  // re-import left those surfaces stale for up to ~15 min. Fire-and-forget.
+  void recomputeDerivedKpisForProject(projectId);
 
   return {
     status: "committed",
