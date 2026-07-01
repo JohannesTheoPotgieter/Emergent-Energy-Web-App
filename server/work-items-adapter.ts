@@ -822,10 +822,16 @@ export async function getWorkItemsForProject(projectId: number): Promise<any[]> 
   });
 }
 
+type WorkItemWorkstream = typeof workItems.$inferSelect["workstream"];
+
 type EngineeringListOptions = {
   projectName?: string;
   status?: string;
   workstream?: string;
+  /** Workstreams to include. Defaults to ["ENG"]. Callers that need adjacent
+   *  lanes (e.g. the Quality task board, which also surfaces native QUALITY
+   *  work items) pass the explicit set. */
+  workstreams?: WorkItemWorkstream[];
   phase?: string;
   ownerUserId?: number;
   projectId?: number;
@@ -855,6 +861,9 @@ export type EngTask = {
   priority: string;
   phase: string | null;
   primaryWorkstream: "Engineering";
+  /** Raw `work_items.workstream` (e.g. "ENG", "QUALITY"). Optional so existing
+   *  EngTask constructors need not set it; `listEngineeringWorkItems` populates it. */
+  workstream?: string;
   ownerUserId: number | null;
   requesterUserId: null;
   approverUserId: null;
@@ -913,8 +922,9 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
   // rejects.
   if (options.ids && options.ids.length === 0) return [];
 
+  const workstreams: WorkItemWorkstream[] = options.workstreams ?? ["ENG"];
   const conditions = [
-    eq(workItems.workstream, "ENG"),
+    inArray(workItems.workstream, workstreams),
     isNull(workItems.deletedAt),
   ];
 
@@ -990,6 +1000,7 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
     priority: wi.priority || "Med",
     phase: wi.phase,
     primaryWorkstream: "Engineering",
+    workstream: wi.workstream,
     ownerUserId: wi.ownerUserId,
     requesterUserId: null,
     approverUserId: null,

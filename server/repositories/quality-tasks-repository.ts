@@ -67,6 +67,10 @@ export async function listQualityTasks(filters: QualityTaskFilters): Promise<Qua
     status: filters.status,
     ownerUserId: filters.ownerUserId,
     projectId: filters.projectId,
+    // Include native QUALITY-workstream work items, not just ENG-lane ones that
+    // happen to look like quality work. isQualityTaskRecord treats the QUALITY
+    // workstream as authoritative.
+    workstreams: ["ENG", "QUALITY"],
   });
   const userMap = await buildUserMap();
 

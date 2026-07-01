@@ -19,11 +19,15 @@ export async function seedQualityTemplate() {
 
   console.log("[Seed] Seeding Quality Checklist Template V1...");
 
-  const [template] = await db.insert(qcTemplate).values({
-    name: "Project Checklist Template V1",
-    version: 1,
-    isActive: true,
-  }).returning();
+  // Seed the whole template atomically. A crash mid-seed must roll the parent
+  // qcTemplate row back too — otherwise the existence guard above would skip a
+  // permanently half-built template on the next run.
+  await db.transaction(async (tx: any) => {
+    const [template] = await tx.insert(qcTemplate).values({
+      name: "Project Checklist Template V1",
+      version: 1,
+      isActive: true,
+    }).returning();
 
   const phases = [
     { phaseKey: "planning_design", phaseName: "Planning & Design", sortOrder: 0 },
@@ -34,7 +38,7 @@ export async function seedQualityTemplate() {
 
   const insertedPhases: Record<string, number> = {};
   for (const p of phases) {
-    const [phase] = await db.insert(qcTemplatePhase).values({
+    const [phase] = await tx.insert(qcTemplatePhase).values({
       templateId: template.id,
       phaseKey: p.phaseKey,
       phaseName: p.phaseName,
@@ -149,14 +153,14 @@ export async function seedQualityTemplate() {
   for (const [phaseKey, groups] of Object.entries(groupsData)) {
     const phaseId = insertedPhases[phaseKey];
     for (const g of groups) {
-      const [group] = await db.insert(qcTemplateGroup).values({
+      const [group] = await tx.insert(qcTemplateGroup).values({
         templatePhaseId: phaseId,
         groupName: g.groupName,
         sortOrder: g.sortOrder,
       }).returning();
 
       for (let i = 0; i < g.items.length; i++) {
-        await db.insert(qcTemplateItem).values({
+        await tx.insert(qcTemplateItem).values({
           templateGroupId: group.id,
           itemName: g.items[i].itemName,
           sortOrder: i,
@@ -204,7 +208,7 @@ export async function seedQualityTemplate() {
     const phaseId = insertedPhases[phaseKey];
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
-      await db.insert(qcTemplateRiskQuestion).values({
+      await tx.insert(qcTemplateRiskQuestion).values({
         templatePhaseId: phaseId,
         questionText: q.questionText,
         sortOrder: i,
@@ -227,13 +231,14 @@ export async function seedQualityTemplate() {
   ];
 
   for (const m of postmortemMetrics) {
-    await db.insert(qcTemplatePostmortemMetric).values({
+    await tx.insert(qcTemplatePostmortemMetric).values({
       name: m.name,
       inputType: m.inputType,
       metricGroup: m.metricGroup,
       scoringRuleJson: m.scoringRuleJson,
     });
   }
+  });
 
   console.log("[Seed] Quality template seeded successfully.");
 
@@ -241,15 +246,18 @@ export async function seedQualityTemplate() {
 }
 
 async function seedZAHolidays() {
-  const existingHolidays = await db.select().from(calendarHoliday).where(eq(calendarHoliday.countryCode, "ZA"));
-  if (existingHolidays.length > 0) {
-    console.log("[Seed] ZA holidays already exist, skipping.");
-    return;
-  }
+  // This list must be extended each year. It is a TOP-UP (insert only dates not
+  // already present) rather than all-or-nothing, so appending future years is
+  // picked up on the next boot instead of being skipped because "some ZA
+  // holidays already exist". A generated/maintained calendar source would remove
+  // the annual-maintenance burden — flagged for follow-up.
+  const existingHolidays = await db
+    .select({ date: calendarHoliday.date })
+    .from(calendarHoliday)
+    .where(eq(calendarHoliday.countryCode, "ZA"));
+  const existingDates = new Set(existingHolidays.map((h: { date: unknown }) => String(h.date)));
 
-  console.log("[Seed] Seeding ZA public holidays 2025-2026...");
-
-  const holidays = [
+  const holidays: Array<{ date: string; name: string }> = [
     { date: "2025-01-01", name: "New Year's Day" },
     { date: "2025-03-21", name: "Human Rights Day" },
     { date: "2025-04-18", name: "Good Friday" },
@@ -275,10 +283,32 @@ async function seedZAHolidays() {
     { date: "2026-12-16", name: "Day of Reconciliation" },
     { date: "2026-12-25", name: "Christmas Day" },
     { date: "2026-12-26", name: "Day of Goodwill" },
+    // 2027 (Good Friday 26 Mar / Family Day 29 Mar; Sunday holidays observed Mon).
+    { date: "2027-01-01", name: "New Year's Day" },
+    { date: "2027-03-21", name: "Human Rights Day" },
+    { date: "2027-03-22", name: "Human Rights Day (observed)" },
+    { date: "2027-03-26", name: "Good Friday" },
+    { date: "2027-03-29", name: "Family Day" },
+    { date: "2027-04-27", name: "Freedom Day" },
+    { date: "2027-05-01", name: "Workers' Day" },
+    { date: "2027-06-16", name: "Youth Day" },
+    { date: "2027-08-09", name: "National Women's Day" },
+    { date: "2027-09-24", name: "Heritage Day" },
+    { date: "2027-12-16", name: "Day of Reconciliation" },
+    { date: "2027-12-25", name: "Christmas Day" },
+    { date: "2027-12-26", name: "Day of Goodwill" },
+    { date: "2027-12-27", name: "Day of Goodwill (observed)" },
   ];
 
+  const missing = holidays.filter((h) => !existingDates.has(h.date));
+  if (missing.length === 0) {
+    console.log("[Seed] ZA holidays already up to date, skipping.");
+    return;
+  }
+
+  console.log(`[Seed] Seeding ${missing.length} ZA public holiday(s)...`);
   await db.insert(calendarHoliday).values(
-    holidays.map((h) => ({ ...h, countryCode: "ZA" }))
+    missing.map((h) => ({ ...h, countryCode: "ZA" }))
   );
 
   console.log("[Seed] ZA holidays seeded successfully.");

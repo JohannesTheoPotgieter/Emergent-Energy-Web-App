@@ -441,10 +441,16 @@ export function evaluateChecklistHandoverReadiness(params: {
   const { items, itemNames, warnings, riskAnswers } = params;
   const blockers: string[] = [];
 
-  const applicableItems = items.filter((item) => item.isApplicable !== false);
-  const completionResults = applicableItems.map((item, index) => ({
+  // Pair each item with its name BEFORE filtering out non-applicable items.
+  // Indexing the filtered `applicableItems` against the original `itemNames`
+  // array mislabels every item that follows a skipped N/A item (off-by-N).
+  const applicablePairs = items
+    .map((item, index) => ({ item, itemName: itemNames?.[index] }))
+    .filter(({ item }) => item.isApplicable !== false);
+  const applicableItems = applicablePairs.map((pair) => pair.item);
+  const completionResults = applicablePairs.map(({ item, itemName }) => ({
     result: isQualityItemComplete(item),
-    itemName: itemNames?.[index],
+    itemName,
   }));
 
   const completeCount = completionResults.filter((r) => r.result.complete).length;
