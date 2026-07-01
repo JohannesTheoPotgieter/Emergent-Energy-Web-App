@@ -631,7 +631,7 @@ export default function QmDashboardPage() {
           ))}
         </div>
       ) : governanceError ? (
-        <Card className="border-amber-200" data-testid="qm-kpi-error">
+        <Card className="border-status-drift/20" data-testid="qm-kpi-error">
           <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-start gap-2">
               <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5" />
@@ -655,10 +655,10 @@ export default function QmDashboardPage() {
             const active = kpi.value > 0;
             const border = !active
               ? "border-border"
-              : kpi.tone === "danger" ? "border-red-200" : "border-amber-200";
+              : kpi.tone === "danger" ? "border-status-adverse/20" : "border-status-drift/20";
             const valueColor = !active
               ? "text-foreground"
-              : kpi.tone === "danger" ? "text-red-600" : "text-amber-700";
+              : kpi.tone === "danger" ? "text-status-adverse" : "text-status-drift";
             return (
               <Card key={kpi.label} className={border}>
                 <CardContent className="p-3">
@@ -679,8 +679,8 @@ export default function QmDashboardPage() {
       <Card className="border-border" data-testid="qm-open-ncrs">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-red-50">
-              <FileText className="h-4 w-4 text-red-600" />
+            <div className="p-1.5 rounded-lg bg-status-adverse/10">
+              <FileText className="h-4 w-4 text-status-adverse" />
             </div>
             Open NCRs
             {!ncrsLoading && !ncrsError && (
@@ -781,7 +781,7 @@ export default function QmDashboardPage() {
                   <span className="text-sm font-medium">{project.projectName}</span>
                   <RiskLevelBadge level={project.riskLevel} />
                   {project.blockedHandover && (
-                    <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200">
+                    <Badge variant="outline" className="text-[10px] ee-status-accent">
                       Handover blocked
                     </Badge>
                   )}
@@ -840,12 +840,12 @@ export default function QmDashboardPage() {
         </Card>
 
         <Card
-          className={`border-amber-100 cursor-pointer hover:shadow-md transition-shadow ${warningFilter ? "ring-2 ring-amber-300" : ""}`}
+          className={`border-status-drift/20 cursor-pointer hover:shadow-md transition-shadow ${warningFilter ? "ring-2 ring-amber-300" : ""}`}
           onClick={() => setWarningFilter(!warningFilter)}
           data-testid="kpi-active-warnings"
         >
           <CardContent className="p-3 text-center">
-            <p className="text-xl font-semibold tabular-nums text-amber-600" data-testid="stat-warnings">{activeWarnings}</p>
+            <p className="text-xl font-semibold tabular-nums text-status-drift" data-testid="stat-warnings">{activeWarnings}</p>
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Warnings</p>
           </CardContent>
         </Card>
@@ -1093,7 +1093,7 @@ export default function QmDashboardPage() {
                               </td>
                               <td className="py-2.5 px-2 text-center">
                                 {warnCount > 0 ? (
-                                  <Badge variant="outline" className="bg-amber-50 text-amber-600 border-amber-200 text-[10px] gap-1">
+                                  <Badge variant="outline" className="ee-status-warning text-[10px] gap-1">
                                     <AlertTriangle className="h-3 w-3" />
                                     {warnCount}
                                   </Badge>
@@ -1169,16 +1169,16 @@ export default function QmDashboardPage() {
       </section>
 
       <Collapsible open={warningsExpanded} onOpenChange={setWarningsExpanded}>
-        <Card className="border-amber-200">
+        <Card className="border-status-drift/20">
           <CollapsibleTrigger asChild>
             <CardHeader className="pb-3 cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg" data-testid="warnings-section-header">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg bg-amber-50">
-                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  <div className="p-1.5 rounded-lg bg-status-drift/10">
+                    <AlertTriangle className="h-4 w-4 text-status-drift" />
                   </div>
                   Active Warnings
-                  <Badge variant="outline" className="bg-amber-50 text-amber-600 border-amber-200 ml-1">
+                  <Badge variant="outline" className="ee-status-warning ml-1">
                     {warnings.length}
                   </Badge>
                 </CardTitle>
@@ -1289,8 +1289,8 @@ export default function QmDashboardPage() {
                 <div className="flex items-center gap-2 mt-1.5">
                   <Badge variant="outline" className={
                     selectedWarning.severity === "High"
-                      ? "bg-red-50 text-red-600 border-red-200 text-xs"
-                      : "bg-amber-50 text-amber-700 border-amber-200 text-xs"
+                      ? "ee-status-danger text-xs"
+                      : "ee-status-warning text-xs"
                   }>
                     {selectedWarning.severity}
                   </Badge>
@@ -1555,12 +1555,12 @@ function WarningRow({ warning, severity, onView, onOverride, onResolve, onViewPr
   onViewProject: () => void;
 }) {
   const borderClass = severity === "high"
-    ? "border-red-200 bg-red-50/30 hover:bg-red-50/60"
+    ? "border-status-adverse/20 bg-status-adverse/5 hover:bg-status-adverse/10"
     : severity === "medium"
-    ? "border-amber-200 bg-amber-50/30 hover:bg-amber-50/60"
+    ? "border-status-drift/20 bg-status-drift/5 hover:bg-status-drift/10"
     : "border-border/50 hover:bg-muted/30";
 
-  const iconClass = severity === "high" ? "text-red-600" : severity === "medium" ? "text-amber-600" : "text-muted-foreground";
+  const iconClass = severity === "high" ? "text-status-adverse" : severity === "medium" ? "text-status-drift" : "text-muted-foreground";
 
   const badgeClass = severity === "high"
     ? "ee-status-danger"
