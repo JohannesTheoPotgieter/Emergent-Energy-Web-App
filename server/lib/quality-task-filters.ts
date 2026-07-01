@@ -19,6 +19,7 @@ export interface QualityTaskRecord {
   projectName?: string | null;
   dueDate?: string | Date | null;
   ownerUserId?: number | null;
+  workstream?: string | null;
 }
 
 function firstString(value: unknown): string | undefined {
@@ -67,38 +68,59 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.toLowerCase() : "";
 }
 
-function qualityTokens(task: QualityTaskRecord): string {
-  return [
-    task.source,
-    task.discipline,
-    task.taskTypeTag,
-    task.title,
-    task.description,
-  ].map(text).join(" ");
+// Split values into whole alphanumeric tokens. Compound values like
+// "missing_evidence" / "qa-check" still classify, while "keypunch" no longer
+// matches "punch" and "evidences" no longer matches "evidence".
+function tokenSet(values: Array<string | null | undefined>): Set<string> {
+  const set = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    for (const token of value.toLowerCase().split(/[^a-z0-9]+/)) {
+      if (token) set.add(token);
+    }
+  }
+  return set;
 }
 
+// Tokens that mark a work item as quality work wherever they appear. Covers the
+// three spellings of non-conformance once tokenised ("non-conformance" and
+// "non_conformance" both split to {non, conformance}).
+const QUALITY_TOKENS = new Set([
+  "quality", "ncr", "nonconformance", "conformance",
+  "snag", "snagging", "punch", "punchlist", "qa", "qc",
+]);
+
 export function isQualityTaskRecord(task: QualityTaskRecord): boolean {
+  // Strongest signals first: an explicit quality-item link or the QUALITY
+  // workstream are authoritative regardless of any keyword.
   if (typeof task.linkedQualityItemInstanceId === "number" && task.linkedQualityItemInstanceId > 0) {
     return true;
   }
-  const tokens = qualityTokens(task);
-  return tokens.includes("quality")
-    || tokens.includes("ncr")
-    || tokens.includes("non-conformance")
-    || tokens.includes("non_conformance")
-    || tokens.includes("non conformance")
-    || tokens.includes("evidence")
-    || tokens.includes("snag")
-    || tokens.includes("punch")
-    || /\b(q[ac])\b/.test(tokens);
+  if (String(task.workstream ?? "").trim().toUpperCase() === "QUALITY") {
+    return true;
+  }
+  // Structured fields (source/discipline/taskTypeTag) are trusted broadly,
+  // including the deliberately-broad "evidence" token.
+  const structured = tokenSet([task.source, task.discipline, task.taskTypeTag]);
+  for (const token of structured) {
+    if (QUALITY_TOKENS.has(token) || token === "evidence") return true;
+  }
+  // Free text (title/description) contributes only strong, quality-specific
+  // keywords, so an incidental mention like "attach evidence of sign-off" on an
+  // unrelated engineering task no longer reclassifies it as quality.
+  const freeText = tokenSet([task.title, task.description]);
+  for (const token of freeText) {
+    if (QUALITY_TOKENS.has(token)) return true;
+  }
+  return false;
 }
 
 function matchesSource(task: QualityTaskRecord, source: string): boolean {
   const normalized = source.trim().toLowerCase();
   if (!normalized || normalized === "quality") return true;
-  const tokens = qualityTokens(task);
-  if (normalized === "evidence") return tokens.includes("evidence") || Boolean(task.linkedQualityItemInstanceId);
-  return tokens.includes(normalized);
+  const tokens = tokenSet([task.source, task.discipline, task.taskTypeTag, task.title, task.description]);
+  if (normalized === "evidence") return tokens.has("evidence") || Boolean(task.linkedQualityItemInstanceId);
+  return tokens.has(normalized);
 }
 
 function dateValue(value: string | Date | null | undefined): number | null {

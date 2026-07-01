@@ -42,6 +42,7 @@ import {
   isValidQmStatusTransition,
   getApprovalBlockReason,
   evaluateChecklistHandoverReadiness,
+  computeQcProgress,
 } from "@shared/quality-governance";
 import { getProjectLinkedItems } from "./project-linking-service";
 import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
@@ -454,16 +455,15 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
 
   const phaseSummaries = phases.map((phase) => {
     const phaseItems = governanceItems.filter((item) => item.phaseId === phase.id);
-    const applicableItems = phaseItems.filter((item) => item.isApplicable !== false);
-    const approvedItems = applicableItems.filter((item) => item.approved).length;
+    const progress = computeQcProgress(phaseItems);
     return {
       phaseId: phase.id,
       phaseKey: phase.phaseKey,
       phaseName: phase.phaseName,
       totalItems: phaseItems.length,
-      applicableItems: applicableItems.length,
-      approvedItems,
-      progressPercent: applicableItems.length > 0 ? Math.round((approvedItems / applicableItems.length) * 100) : 0,
+      applicableItems: progress.totalApplicable,
+      approvedItems: progress.totalApproved,
+      progressPercent: progress.progressPercent,
     };
   });
 
@@ -2117,17 +2117,16 @@ export function registerQualityRoutes(app: Express) {
         const phaseTemplateItems = templateItems.filter((item: any) => phaseGroupIds.includes(item.templateGroupId));
         const phaseItemIds = phaseTemplateItems.map((item: any) => item.id);
         const phaseInstances = itemInstances.filter((item: any) => phaseItemIds.includes(item.templateItemId));
-        const applicable = phaseInstances.filter((item: any) => item.isApplicable);
-        const approved = applicable.filter((item: any) => item.approved);
+        const progress = computeQcProgress(phaseInstances);
 
         return {
           phaseId: phase.id,
           phaseKey: phase.phaseKey,
           phaseName: phase.phaseName,
           totalItems: phaseInstances.length,
-          applicableItems: applicable.length,
-          approvedItems: approved.length,
-          progressPercent: applicable.length > 0 ? Math.round((approved.length / applicable.length) * 100) : 0,
+          applicableItems: progress.totalApplicable,
+          approvedItems: progress.totalApproved,
+          progressPercent: progress.progressPercent,
         };
       });
 
@@ -2544,16 +2543,16 @@ export function registerQualityRoutes(app: Express) {
           const phaseTemplateItems = templateItems.filter(ti => phaseGroupIds.includes(ti.templateGroupId));
           const phaseItemIds = phaseTemplateItems.map(ti => ti.id);
           const phaseInstances = clItems.filter((ii: any) => phaseItemIds.includes(ii.templateItemId));
-          const applicable = phaseInstances.filter((i: any) => i.isApplicable);
-          const passed = applicable.filter((i: any) => i.qmStatus === "pass" || (i.qmStatus === "not_started" && i.approved));
+          const progress = computeQcProgress(phaseInstances);
+          const applicable = phaseInstances.filter((i: any) => i.isApplicable !== false);
           const failed = applicable.filter((i: any) => i.qmStatus === "fail");
           const inReview = applicable.filter((i: any) => i.qmStatus === "review");
 
           return {
             phaseId: phase.id,
             phaseName: phase.phaseName,
-            total: applicable.length,
-            completed: passed.length,
+            total: progress.totalApplicable,
+            completed: progress.totalApproved,
             failed: failed.length,
             inReview: inReview.length,
           };
