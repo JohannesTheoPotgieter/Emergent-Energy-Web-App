@@ -55,6 +55,16 @@ function computeSimilarity(a: string, b: string): { score: number; matchReason?:
   const tokensB = normB.split(/\s+/).filter(Boolean);
   if (tokensA.length === 0 || tokensB.length === 0) return { score: 0 };
 
+  // Distinct trailing token ⇒ different project (mirrors source project-match.ts).
+  let commonLead = 0;
+  const leadLimit = Math.min(tokensA.length, tokensB.length);
+  while (commonLead < leadLimit && tokensA[commonLead] === tokensB[commonLead]) commonLead++;
+  const remainderA = tokensA.slice(commonLead).join(" ");
+  const remainderB = tokensB.slice(commonLead).join(" ");
+  if (commonLead > 0 && remainderA && remainderB && remainderA !== remainderB) {
+    return { score: 0.7, matchReason: "same_base_different_variant" };
+  }
+
   let matchCount = 0;
   for (const t of tokensA) {
     if (tokensB.includes(t)) matchCount++;

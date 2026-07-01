@@ -81,6 +81,25 @@ export function computeSimilarity(a: string, b: string): { score: number; matchR
 
   if (tokensA.length === 0 || tokensB.length === 0) return { score: 0 };
 
+  // Distinct trailing token ⇒ different project (generalises the phase rule
+  // above). When two names share their LEADING tokens but each carries a
+  // DIFFERENT non-empty distinguishing suffix — "Coega Steels BESS" vs
+  // "Coega Steels Ph2", or "… Citrusdal" vs "… Mossel Bay" — they are separate
+  // projects and must never auto-merge onto one another. Cap below the
+  // auto-match threshold (same 0.7 as same_project_different_phase) so they are
+  // still SURFACED as a candidate but a human must confirm. A pure prefix
+  // extension (one side has NO extra tokens) is deliberately left to the logic
+  // below, so a shorter tracker filename can still match its fuller project
+  // name.
+  let commonLead = 0;
+  const leadLimit = Math.min(tokensA.length, tokensB.length);
+  while (commonLead < leadLimit && tokensA[commonLead] === tokensB[commonLead]) commonLead++;
+  const remainderA = tokensA.slice(commonLead).join(" ");
+  const remainderB = tokensB.slice(commonLead).join(" ");
+  if (commonLead > 0 && remainderA && remainderB && remainderA !== remainderB) {
+    return { score: 0.7, matchReason: "same_base_different_variant" };
+  }
+
   let matchCount = 0;
   for (const t of tokensA) {
     if (tokensB.includes(t)) matchCount++;
