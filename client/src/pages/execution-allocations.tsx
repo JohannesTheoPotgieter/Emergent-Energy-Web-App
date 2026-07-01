@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { PageShell } from "@/components/layout/page-shell";
-import { PageHeader } from "@/components/ui/page-header";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { PageError } from "@/components/ui/page-states";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Download, Pencil } from "lucide-react";
+import { Download, LayoutDashboard, Pencil } from "lucide-react";
 import { AllocateDialog } from "@/components/execution/execution-dialogs";
 import { downloadCsv } from "@/lib/table-utils";
 import type { AllocationProgramRow, InstallerRow, InstallerSummary } from "@/lib/execution-types";
@@ -82,9 +82,14 @@ export default function ExecutionAllocations() {
   );
 
   return (
-    <PageShell className="max-w-5xl p-4 md:p-6" data-testid="execution-allocations-page">
-      <PageHeader title="Allocations" subtitle="Subcontractors & suppliers — their role, scope of work, and which sites they're on" />
-      <div className="flex flex-wrap items-center gap-2 mt-3">
+    <PageShell className="max-w-5xl p-4 md:p-6 space-y-4" data-testid="execution-allocations-page">
+      <SectionHeader
+        icon={<LayoutDashboard className="h-5 w-5" />}
+        eyebrow="Execution"
+        title="Allocations"
+        description="Subcontractors & suppliers — their role, scope of work, and which sites they're on"
+      />
+      <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant={lens === "site" ? "default" : "outline"} onClick={() => setLens("site")}>By site</Button>
         <Button size="sm" variant={lens === "counterparty" ? "default" : "outline"} onClick={() => setLens("counterparty")}>By counterparty</Button>
         <Input className="w-48 h-8" placeholder={lens === "site" ? "Search site…" : "Search counterparty…"} value={search} onChange={(e) => setSearch(e.target.value)} data-testid="allocations-search" />
@@ -93,16 +98,16 @@ export default function ExecutionAllocations() {
         </Button>
       </div>
 
-      <div className="mt-4 space-y-2">
+      <div className="space-y-2">
         {isLoading ? (
           <Skeleton className="h-40 w-full" />
         ) : isError ? (
-          <p className="text-sm text-muted-foreground">Could not load. <Button variant="link" onClick={() => refetch()}>Retry</Button></p>
+          <PageError title="Could not load allocations" message="The allocation program failed to load." onRetry={() => refetch()} />
         ) : (data ?? []).length === 0 ? (
-          <p className="text-sm text-muted-foreground">No active sites.</p>
+          <div className="ee-empty-state text-sm text-muted-foreground">No active sites.</div>
         ) : lens === "site" ? (
           sites.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No sites match your search.</p>
+            <div className="ee-empty-state text-sm text-muted-foreground">No sites match your search.</div>
           ) : sites.map((r) => (
             <Card key={r.projectId}><CardContent className="p-3">
               <div className="flex items-center gap-3">
@@ -134,7 +139,7 @@ export default function ExecutionAllocations() {
             </CardContent></Card>
           ))
         ) : byCounterparty.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No counterparties match your search.</p>
+          <div className="ee-empty-state text-sm text-muted-foreground">No counterparties match your search.</div>
         ) : (
           byCounterparty.map(([name, rows]) => (
             <Card key={name}><CardContent className="p-3">

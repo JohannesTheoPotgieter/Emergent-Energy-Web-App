@@ -10,11 +10,13 @@ const badgeVariants = cva(
       variant: {
         default: "border-primary/20 bg-primary/10 text-primary",
         secondary: "border-border bg-secondary text-secondary-foreground",
-        destructive: "border-red-200 bg-red-50 text-red-700",
+        // Status variants route through the canonical .ee-status-* tints
+        // (index.css) so every badge is dark-mode-safe from one source.
+        destructive: "ee-status-danger",
         outline: "text-foreground border-border bg-background",
-        success: "border-emerald-200 bg-emerald-50 text-emerald-700",
-        warning: "border-amber-200 bg-amber-50 text-amber-700",
-        info: "border-blue-200 bg-blue-50 text-blue-700",
+        success: "ee-status-success",
+        warning: "ee-status-warning",
+        info: "ee-status-info",
       },
     },
     defaultVariants: {

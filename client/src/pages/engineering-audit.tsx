@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import {
   Activity, Search, ChevronDown, ChevronRight, Loader2, Users, Clock,
-  Calendar, BarChart3, RefreshCw,
+  Calendar, BarChart3, RefreshCw, Download, Printer,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
@@ -57,11 +57,11 @@ const CATEGORIES = [
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  task_changes: "bg-blue-100 text-blue-700",
-  phase_changes: "bg-purple-100 text-purple-700",
-  data_imports: "bg-green-100 text-green-700",
-  writebacks: "bg-amber-100 text-amber-700",
-  template_applications: "bg-teal-100 text-teal-700",
+  task_changes: "ee-status-info",
+  phase_changes: "ee-status-accent",
+  data_imports: "ee-status-success",
+  writebacks: "ee-status-warning",
+  template_applications: "ee-status-neutral",
 };
 
 const PAGE_SIZE = 50;
@@ -80,6 +80,35 @@ function formatTimestamp(ts: string): string {
   } catch {
     return ts;
   }
+}
+
+// Escape a single CSV field per RFC 4180: wrap in quotes and double any
+// embedded quotes so commas / newlines / quotes in the data can't break rows.
+function csvField(value: unknown): string {
+  const s = value == null ? "" : String(value);
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+// Build a CSV string from the already-loaded audit rows (no new endpoint).
+function buildAuditCsv(rows: AuditEntry[]): string {
+  const header = [
+    "id", "timestamp", "actor", "category", "action_type", "summary", "project", "detail",
+  ];
+  const lines = [header.map(csvField).join(",")];
+  for (const r of rows) {
+    lines.push([
+      r.id,
+      formatTimestamp(r.timestamp),
+      r.actorName || "System",
+      r.category,
+      r.actionType,
+      r.summary,
+      r.projectName || "",
+      r.detail || "",
+    ].map(csvField).join(","));
+  }
+  // Prepend UTF-8 BOM so Excel reads accented characters correctly.
+  return "﻿" + lines.join("\r\n");
 }
 
 // --- Stats Panel ---
@@ -108,8 +137,8 @@ function StatsPanel({ stats, isLoading }: { stats?: AuditStats; isLoading: boole
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       <Card>
         <CardContent className="p-4 flex items-start gap-3">
-          <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
-            <BarChart3 className="h-4 w-4 text-blue-600" />
+          <div className="w-9 h-9 rounded-lg ee-status-info flex items-center justify-center shrink-0">
+            <BarChart3 className="h-4 w-4" />
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Total Actions</p>
@@ -119,8 +148,8 @@ function StatsPanel({ stats, isLoading }: { stats?: AuditStats; isLoading: boole
       </Card>
       <Card>
         <CardContent className="p-4 flex items-start gap-3">
-          <div className="w-9 h-9 rounded-lg bg-green-100 flex items-center justify-center shrink-0">
-            <Clock className="h-4 w-4 text-green-600" />
+          <div className="w-9 h-9 rounded-lg ee-status-success flex items-center justify-center shrink-0">
+            <Clock className="h-4 w-4" />
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Today</p>
@@ -130,8 +159,8 @@ function StatsPanel({ stats, isLoading }: { stats?: AuditStats; isLoading: boole
       </Card>
       <Card>
         <CardContent className="p-4 flex items-start gap-3">
-          <div className="w-9 h-9 rounded-lg bg-purple-100 flex items-center justify-center shrink-0">
-            <Calendar className="h-4 w-4 text-purple-600" />
+          <div className="w-9 h-9 rounded-lg ee-status-accent flex items-center justify-center shrink-0">
+            <Calendar className="h-4 w-4" />
           </div>
           <div>
             <p className="text-xs text-muted-foreground">This Week</p>
@@ -141,8 +170,8 @@ function StatsPanel({ stats, isLoading }: { stats?: AuditStats; isLoading: boole
       </Card>
       <Card>
         <CardContent className="p-4 flex items-start gap-3">
-          <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
-            <Users className="h-4 w-4 text-amber-600" />
+          <div className="w-9 h-9 rounded-lg ee-status-warning flex items-center justify-center shrink-0">
+            <Users className="h-4 w-4" />
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Top Actor</p>
@@ -167,7 +196,7 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
         onClick={() => setExpanded(!expanded)}
         data-testid={`audit-row-${entry.id}`}
       >
-        <TableCell className="text-xs text-muted-foreground whitespace-nowrap w-[160px]">
+        <TableCell className="text-xs text-muted-foreground whitespace-nowrap w-[160px] font-mono">
           {formatTimestamp(entry.timestamp)}
         </TableCell>
         <TableCell className="text-xs font-medium w-[120px]">
@@ -193,6 +222,16 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
       {expanded && entry.detail && (
         <TableRow>
           <TableCell colSpan={6} className="bg-muted/30 border-b">
+            <div className="flex items-center gap-1.5 px-2 pt-2 text-[10px] uppercase tracking-wider text-muted-foreground/70">
+              <span>Entry ID</span>
+              <code
+                className="font-mono text-[11px] normal-case tracking-normal text-muted-foreground cursor-pointer hover:text-foreground"
+                title="Click to copy entry ID"
+                onClick={(e) => { e.stopPropagation(); void navigator.clipboard?.writeText(entry.id); }}
+              >
+                {entry.id}
+              </code>
+            </div>
             <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono p-2 max-h-40 overflow-auto">
               {entry.detail}
             </pre>
@@ -249,6 +288,23 @@ export default function EngineeringAuditPage() {
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const categoryCounts = data?.categoryCounts || {};
 
+  // Export the currently-loaded page of rows to CSV client-side (no new
+  // endpoint) and trigger a Blob download.
+  const handleExportCsv = () => {
+    if (entries.length === 0) return;
+    const csv = buildAuditCsv(entries);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    const stamp = new Date().toISOString().slice(0, 10);
+    anchor.download = `engineering-audit-${stamp}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
   if (isLoading) return <PageSkeleton lines={5} />;
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Engineering Audit" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
@@ -261,9 +317,30 @@ export default function EngineeringAuditPage() {
           title="Engineering Audit Log"
           subtitle={`Complete audit trail of all engineering module actions${total ? ` · ${total.toLocaleString()} entries` : ""}`}
           actions={
-            <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5" data-testid="btn-refresh-audit">
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportCsv}
+                disabled={entries.length === 0}
+                className="gap-1.5"
+                data-testid="btn-export-audit-csv"
+              >
+                <Download className="h-3.5 w-3.5" /> Export CSV
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.print()}
+                className="gap-1.5"
+                data-testid="btn-print-audit"
+              >
+                <Printer className="h-3.5 w-3.5" /> Print
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5" data-testid="btn-refresh-audit">
+                <RefreshCw className="h-3.5 w-3.5" /> Refresh
+              </Button>
+            </>
           }
         />
       }
@@ -342,7 +419,7 @@ export default function EngineeringAuditPage() {
             </div>
           ) : (
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-background">
                 <TableRow>
                   <TableHead className="text-xs w-[160px]">Timestamp</TableHead>
                   <TableHead className="text-xs w-[120px]">Actor</TableHead>

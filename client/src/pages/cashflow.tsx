@@ -99,7 +99,7 @@ function WeekLineDetail({ week, fyParam }: { week: CashflowWeek; fyParam: string
   return (
     <div className="grid gap-4 text-xs md:grid-cols-2">
       <div>
-        <p className="mb-1 font-semibold text-emerald-700">Inflows</p>
+        <p className="mb-1 font-semibold text-status-ties">Inflows</p>
         {inflows.length === 0 ? (
           <p className="text-muted-foreground">None</p>
         ) : (
@@ -124,7 +124,7 @@ function WeekLineDetail({ week, fyParam }: { week: CashflowWeek; fyParam: string
         )}
       </div>
       <div>
-        <p className="mb-1 font-semibold text-rose-700">Outflows</p>
+        <p className="mb-1 font-semibold text-status-adverse">Outflows</p>
         {outflows.length === 0 ? (
           <p className="text-muted-foreground">None</p>
         ) : (
@@ -228,7 +228,7 @@ export default function CashflowPage() {
       return w.hasManualOverride ? (
         <span className="inline-flex items-center justify-end gap-1">
           {display}
-          <Badge variant="outline" className="text-[9px] border-amber-200 text-amber-700">override</Badge>
+          <Badge variant="outline" className="text-[9px] ee-status-warning">override</Badge>
         </span>
       ) : (
         display
@@ -240,7 +240,7 @@ export default function CashflowPage() {
           <button type="button" className="inline-flex items-center gap-1 tabular-nums hover:underline">
             {display}
             {w.hasManualOverride && (
-              <Badge variant="outline" className="text-[9px] border-amber-200 text-amber-700">override</Badge>
+              <Badge variant="outline" className="text-[9px] ee-status-warning">override</Badge>
             )}
           </button>
         }
@@ -291,7 +291,7 @@ export default function CashflowPage() {
       return w.hasOpexOverride ? (
         <span className="inline-flex items-center gap-0.5">
           {value}
-          <Badge variant="outline" className="text-[8px] px-1 py-0 border-amber-200 text-amber-700">ovr</Badge>
+          <Badge variant="outline" className="text-[8px] px-1 py-0 ee-status-warning">ovr</Badge>
         </span>
       ) : (
         value
@@ -307,7 +307,7 @@ export default function CashflowPage() {
           >
             {value}
             {w.hasOpexOverride && (
-              <Badge variant="outline" className="text-[8px] px-1 py-0 border-amber-200 text-amber-700">ovr</Badge>
+              <Badge variant="outline" className="text-[8px] px-1 py-0 ee-status-warning">ovr</Badge>
             )}
             <Pencil className="h-2.5 w-2.5 text-muted-foreground/60" />
           </button>
@@ -335,7 +335,7 @@ export default function CashflowPage() {
       cell: (w) => (
         <span className="inline-flex items-center gap-2 font-medium text-foreground">
           {weekLabel(w.weekStart)}
-          {isCurrent(w) && <Badge variant="outline" className="text-[9px] border-emerald-300 text-emerald-700">NOW</Badge>}
+          {isCurrent(w) && <Badge variant="outline" className="text-[9px] ee-status-success">NOW</Badge>}
         </span>
       ),
       sortValue: (w) => w.weekStart,

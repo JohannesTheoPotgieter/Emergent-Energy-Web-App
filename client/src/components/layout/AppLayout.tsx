@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor, Home, MoreHorizontal, Smartphone, Laptop, MonitorSmartphone, BarChart3, LayoutGrid, Wrench, CheckCircle2, Settings, FolderOpen, ShieldCheck, FileText } from "lucide-react";
+import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Home, MoreHorizontal, Smartphone, Laptop, MonitorSmartphone, BarChart3, LayoutGrid, Wrench, CheckCircle2, Settings, FolderOpen, ShieldCheck, FileText } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getBreadcrumbs, linkIsActive, filterSectionsByEnabledModules } from "@/config/app-navigation";
@@ -26,7 +26,6 @@ import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
 import { useKeyboardNav } from "@/hooks/use-keyboard-nav";
 import { NavOnboardingTour } from "@/components/layout/NavOnboardingTour";
 import { NavOrderCustomizer } from "@/components/layout/NavOrderCustomizer";
-import { useTheme } from "@/hooks/use-theme";
 import { useLayoutMode } from "@/hooks/use-layout-mode";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { trackNavClick, trackPageView } from "@/lib/nav-analytics";
@@ -92,7 +91,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { isScreenEnabled } = useScreenAvailability();
   const { enabled: actionLaunchpadEnabled } = useRolloutFlag("action_launchpad");
   const { enabled: onboardingTourEnabled } = useRolloutFlag("onboarding_tour");
-  const { theme, setTheme } = useTheme();
   const { mode: layoutMode, setMode: setLayoutMode } = useLayoutMode();
   const { isMobile, isTablet } = useBreakpoint();
   const { sectionOrder } = useNavPreferences();
@@ -483,11 +481,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Super Admin</div>
                 )}
               </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Theme</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => setTheme("light")}><Sun className="h-4 w-4 mr-2" />Light{theme === "light" && <span className="ml-auto text-primary text-xs">Active</span>}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme("dark")}><Moon className="h-4 w-4 mr-2" />Dark{theme === "dark" && <span className="ml-auto text-primary text-xs">Active</span>}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme("system")}><Monitor className="h-4 w-4 mr-2" />System{theme === "system" && <span className="ml-auto text-primary text-xs">Active</span>}</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Layout</DropdownMenuLabel>
               <DropdownMenuItem onClick={() => setLayoutMode("auto")} data-testid="layout-mode-auto"><MonitorSmartphone className="h-4 w-4 mr-2" />Auto{layoutMode === "auto" && <span className="ml-auto text-primary text-xs">Active</span>}</DropdownMenuItem>

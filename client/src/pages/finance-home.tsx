@@ -476,11 +476,7 @@ export default function FinanceHomePage() {
             onTrackGapValue != null ? (
               <Badge
                 variant="outline"
-                className={
-                  onTrackGapValue >= 0
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : "border-rose-200 bg-rose-50 text-rose-700"
-                }
+                className={onTrackGapValue >= 0 ? "ee-status-success" : "ee-status-danger"}
               >
                 {onTrackGapValue >= 0 ? "Ahead" : "Behind"} {formatZarCompact(Math.abs(onTrackGapValue))}
               </Badge>
@@ -534,20 +530,18 @@ export default function FinanceHomePage() {
 
         <ChartCard title="Weakest margins · AR overdue + AP due" data-testid="finance-home-risk">
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-md border border-slate-200 p-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-600">AR overdue</p>
-              <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">
-                {arQuery.isLoading ? "…" : formatZar(arPastDue.amount)}
-              </p>
-              <p className="text-[11px] text-slate-400">{arPastDue.count} invoices · 30+ days</p>
-            </div>
-            <div className="rounded-md border border-slate-200 p-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-600">AP due</p>
-              <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">
-                {apQuery.isLoading ? "…" : formatZar(apPastDue.amount)}
-              </p>
-              <p className="text-[11px] text-slate-400">{apPastDue.count} bills · 30+ days</p>
-            </div>
+            <KpiTile
+              label="AR overdue"
+              value={arQuery.isLoading ? "…" : formatZar(arPastDue.amount)}
+              tone="critical"
+              supporting={`${arPastDue.count} invoices · 30+ days`}
+            />
+            <KpiTile
+              label="AP due"
+              value={apQuery.isLoading ? "…" : formatZar(apPastDue.amount)}
+              tone="warning"
+              supporting={`${apPastDue.count} bills · 30+ days`}
+            />
           </div>
           <div className="mt-2">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Weakest margins</p>
@@ -566,7 +560,7 @@ export default function FinanceHomePage() {
                       {p.projectName}
                     </Link>
                     <span
-                      className={`tabular-nums font-medium ${(p.gpPct ?? 0) < 0 ? "text-rose-600" : "text-slate-700"}`}
+                      className={`tabular-nums font-medium ${(p.gpPct ?? 0) < 0 ? "text-status-adverse" : "text-slate-700"}`}
                     >
                       {p.gpPct != null ? `${p.gpPct.toFixed(1)}%` : "—"}
                     </span>
