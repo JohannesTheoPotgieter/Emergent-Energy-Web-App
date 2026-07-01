@@ -240,7 +240,7 @@ export default function ExecutionDeliveries() {
         ) : isError ? (
           <PageError title="Could not load deliveries" message="The delivery program failed to load." onRetry={() => refetch()} />
         ) : rows.length === 0 ? (
-          <p className="ee-empty-state text-sm text-muted-foreground">No deliveries match these filters.</p>
+          <div className="ee-empty-state text-sm text-muted-foreground">No deliveries match these filters.</div>
         ) : (
           <table className="w-full text-sm">
             <thead><tr className="border-b text-left text-xs text-muted-foreground">

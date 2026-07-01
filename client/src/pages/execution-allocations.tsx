@@ -104,10 +104,10 @@ export default function ExecutionAllocations() {
         ) : isError ? (
           <PageError title="Could not load allocations" message="The allocation program failed to load." onRetry={() => refetch()} />
         ) : (data ?? []).length === 0 ? (
-          <p className="ee-empty-state text-sm text-muted-foreground">No active sites.</p>
+          <div className="ee-empty-state text-sm text-muted-foreground">No active sites.</div>
         ) : lens === "site" ? (
           sites.length === 0 ? (
-            <p className="ee-empty-state text-sm text-muted-foreground">No sites match your search.</p>
+            <div className="ee-empty-state text-sm text-muted-foreground">No sites match your search.</div>
           ) : sites.map((r) => (
             <Card key={r.projectId}><CardContent className="p-3">
               <div className="flex items-center gap-3">
@@ -139,7 +139,7 @@ export default function ExecutionAllocations() {
             </CardContent></Card>
           ))
         ) : byCounterparty.length === 0 ? (
-          <p className="ee-empty-state text-sm text-muted-foreground">No counterparties match your search.</p>
+          <div className="ee-empty-state text-sm text-muted-foreground">No counterparties match your search.</div>
         ) : (
           byCounterparty.map(([name, rows]) => (
             <Card key={name}><CardContent className="p-3">
