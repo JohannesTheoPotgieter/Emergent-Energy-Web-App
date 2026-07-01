@@ -304,16 +304,19 @@ export default function EngineeringTaskManagerPage() {
 
   const selected = rawTasks.find((t) => t.id === selectedId) ?? null;
   const myName = (user?.name || "").split(/\s+/)[0] || user?.name || "";
+  const myUserId = user?.id ?? null;
 
-  // Scope the My Tasks KPI strip the same way MyTasksView does (assignee-name
-  // match) so the headline figures and the list below always agree.
+  // Scope the My Tasks KPI strip the same way MyTasksView does — id-based
+  // ownership (robust to shared first names / renames) so the headline figures
+  // and the list below always agree.
   const myAssignedTasks = useMemo(() => {
-    const nameLower = myName.toLowerCase();
-    if (!nameLower) return [];
+    if (myUserId == null) return [];
     return filtered.filter((t) =>
-      (t.assignees || []).some((a) => a && a.toLowerCase().startsWith(nameLower)),
+      t.ownerUserId === myUserId ||
+      t.assigneeUserId === myUserId ||
+      (t.assigneeUserIds || []).includes(myUserId),
     );
-  }, [filtered, myName]);
+  }, [filtered, myUserId]);
 
   function refresh() {
     qc.invalidateQueries({ queryKey: ["/api/engineering/tasks"] });
@@ -777,6 +780,7 @@ export default function EngineeringTaskManagerPage() {
             <MyTasksView
               tasks={filtered}
               myName={myName}
+              myUserId={myUserId}
               onCardClick={onCardClick}
               onStatusChange={handleStatusChange}
               onPriorityChange={handlePriorityChange}

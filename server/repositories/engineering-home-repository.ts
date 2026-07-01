@@ -14,6 +14,7 @@
  */
 
 import { and, eq, isNull, inArray, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db";
 import {
   projectInfo,
@@ -26,6 +27,8 @@ import {
   summarizeEngineeringHome,
   type EngineeringHomeSummary,
 } from "../lib/engineering/home-aggregation";
+import { effectiveEngineeringDueDate } from "@shared/engineering/plan-link";
+import { toNumberArray } from "../lib/drizzle-helpers";
 
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
@@ -64,6 +67,10 @@ export async function getEngineeringHome(
     taskPredicates.push(inArray(workItems.projectId, projectIds));
   }
 
+  // Self-join the linked plan task so its dates feed the SAME read-time due-date
+  // derivation the Task Manager uses — otherwise Home's overdue / due-this-week
+  // counts diverge from the Task Manager for plan-linked tasks.
+  const planItems = alias(workItems, "home_plan_items");
   const taskRows = await db
     .select({
       id: workItems.id,
@@ -74,20 +81,39 @@ export async function getEngineeringHome(
       ownerName: users.name,
       title: workItems.title,
       priority: workItems.priority,
+      planLinkItemId: workItems.planLinkItemId,
+      planLinkRelation: workItems.planLinkRelation,
+      planLinkLeadDays: workItems.planLinkLeadDays,
+      planStart: planItems.startDate,
+      planEnd: planItems.endDate,
     })
     .from(workItems)
     .leftJoin(users, eq(users.id, workItems.ownerUserId))
+    .leftJoin(planItems, eq(planItems.id, workItems.planLinkItemId))
     .where(and(...taskPredicates));
 
-  const projectRows = await db
-    .select({
-      id: projectInfo.id,
-      projectName: projectInfo.projectName,
-      phase: projectExecutionState.phase,
-      currentStageCode: projectExecutionState.currentStageCode,
-    })
-    .from(projectInfo)
-    .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+  // Single "today" reused for both due-date derivation and the aggregator so
+  // urgency and bucketing agree.
+  const today = isoToday();
+
+  // Only fetch the projects actually referenced by the in-scope ENG tasks —
+  // the portfolio never surfaces a project with no in-scope task, so scanning
+  // the whole project table (hundreds of rows) on every Home load is wasted.
+  const referencedProjectIds = [
+    ...new Set(toNumberArray(taskRows.map((t: (typeof taskRows)[number]) => t.projectId))),
+  ];
+  const projectRows = referencedProjectIds.length === 0
+    ? []
+    : await db
+        .select({
+          id: projectInfo.id,
+          projectName: projectInfo.projectName,
+          phase: projectExecutionState.phase,
+          currentStageCode: projectExecutionState.currentStageCode,
+        })
+        .from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(inArray(projectInfo.id, referencedProjectIds));
 
   const assignmentRows = await db
     .select({ workItemId: workItemAssignments.workItemId })
@@ -99,7 +125,18 @@ export async function getEngineeringHome(
       id: t.id,
       projectId: t.projectId ?? null,
       status: t.status,
-      endDate: t.endDate ?? null,
+      // Effective due = plan-link derived when linked (authoritative), else the
+      // persisted end date. Same rule as the Task Manager.
+      endDate: effectiveEngineeringDueDate({
+        planLinkItemId: t.planLinkItemId ?? null,
+        planLinkRelation: t.planLinkRelation ?? null,
+        planLinkLeadDays: t.planLinkLeadDays ?? null,
+        planStart: t.planStart ?? null,
+        planEnd: t.planEnd ?? null,
+        endDate: t.endDate ?? null,
+        status: t.status,
+        today,
+      }),
       ownerUserId: t.ownerUserId ?? null,
       ownerName: t.ownerName ?? null,
       title: t.title,
@@ -113,7 +150,7 @@ export async function getEngineeringHome(
     })),
     myUserId: userId,
     myAssignedTaskIds: new Set(assignmentRows.map((a: (typeof assignmentRows)[number]) => a.workItemId)),
-    today: isoToday(),
+    today,
     filters: { projectIds, ownerUserId, includeCompleted },
   });
 }

@@ -941,6 +941,7 @@ type MyTasksScope = "all" | "overdue" | "due-soon" | "in-progress" | "hold";
 export function MyTasksView({
   tasks,
   myName,
+  myUserId,
   onCardClick,
   onStatusChange,
   onPriorityChange,
@@ -948,6 +949,10 @@ export function MyTasksView({
 }: {
   tasks: Task[];
   myName: string;
+  /** Preferred ownership match — the signed-in user's id. When provided, "My
+   *  Tasks" matches on owner/assignee id (robust to name collisions and
+   *  renames); `myName` is only the fallback for legacy call sites. */
+  myUserId?: number | null;
   onCardClick: (task: Task) => void;
   onStatusChange: (id: number, status: string) => void;
   onPriorityChange: (id: number, priority: string) => void;
@@ -970,14 +975,23 @@ export function MyTasksView({
 
   const nameLower = myName.toLowerCase();
   const myTasks = useMemo(() => {
+    // Prefer id-based ownership — robust to two people sharing a first name and
+    // to renames. Match owner OR any assignee id.
+    if (myUserId != null) {
+      return tasks.filter(t =>
+        t.ownerUserId === myUserId ||
+        t.assigneeUserId === myUserId ||
+        (t.assigneeUserIds || []).includes(myUserId)
+      );
+    }
+    // Legacy fallback (call sites that don't pass an id): name-prefix match.
     // An empty name must match NOTHING — otherwise `"".startsWith("")` is true
-    // for every assignee and "My Tasks" silently shows the whole board. This
-    // mirrors the parent orchestrator's `if (!myName) return []` guard.
+    // for every assignee and "My Tasks" silently shows the whole board.
     if (!nameLower) return [];
     return tasks.filter(t =>
       (t.assignees || []).some(a => a && a.toLowerCase().startsWith(nameLower))
     );
-  }, [tasks, nameLower]);
+  }, [tasks, nameLower, myUserId]);
 
   const filteredMyTasks = useMemo(() => {
     if (scope === "all") return myTasks;
