@@ -14,7 +14,7 @@ import {
   UserCircle,
   X,
 } from "lucide-react";
-import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -582,7 +582,7 @@ export default function EngineeringTaskManagerPage() {
       </div>
 
       {/* Filter bar */}
-      <Card className="mt-3 border-border bg-card">
+      <Card className="border-border bg-card">
         <CardContent className="flex flex-wrap items-center gap-2 p-3">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -701,7 +701,7 @@ export default function EngineeringTaskManagerPage() {
       </Card>
 
       {/* Saved views */}
-      <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="saved-views">
+      <div className="flex flex-wrap items-center gap-1.5" data-testid="saved-views">
         <span className="text-[11px] text-muted-foreground">Quick views:</span>
         {SAVED_FILTERS.map((sv) => (
           <button
@@ -721,7 +721,7 @@ export default function EngineeringTaskManagerPage() {
       </div>
 
       {/* Content */}
-      <div className="mt-4">
+      <div>
         {tasksQuery.isLoading ? (
           <Card className="border-border bg-card">
             <CardContent className="space-y-2 p-4">
@@ -731,16 +731,20 @@ export default function EngineeringTaskManagerPage() {
             </CardContent>
           </Card>
         ) : tasksQuery.isError ? (
-          <Card className="border-border bg-card">
-            <CardContent className="flex flex-col items-center gap-2 p-8 text-center">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
-              <p className="text-sm text-muted-foreground">Couldn't load tasks.</p>
+          <WorkspaceNotice
+            tone="warning"
+            icon={<AlertTriangle className="h-4 w-4" />}
+            title="Couldn't load tasks"
+            description={
+              tasksQuery.error instanceof Error ? tasksQuery.error.message : "Please try again."
+            }
+            actions={
               <Button variant="outline" size="sm" onClick={refresh}>
                 <RefreshCw className="h-4 w-4" />
                 Retry
               </Button>
-            </CardContent>
-          </Card>
+            }
+          />
         ) : rawTasks.length === 0 ? (
           <Card className="border-border bg-card">
             <CardContent className="px-4 py-12 text-center">
@@ -1218,7 +1222,7 @@ function TaskDrawer({
                 </Select>
                 {docGated ? (
                   <div
-                    className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800"
+                    className="ee-status-warning flex items-start gap-2 rounded-md border p-2 text-xs"
                     data-testid="done-gate-banner"
                   >
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -1237,7 +1241,7 @@ function TaskDrawer({
                   {task.planLinkItemId != null ? (
                     <Badge
                       variant="outline"
-                      className="border-indigo-200 bg-indigo-50 px-1 py-0 text-[9px] text-indigo-700"
+                      className="ee-status-accent px-1 py-0 text-[10px]"
                     >
                       from plan task
                     </Badge>
@@ -1365,7 +1369,7 @@ function TaskDrawer({
                           </span>
                           <button
                             onClick={() => unlinkMutation.mutate(l.id)}
-                            className="shrink-0 text-muted-foreground hover:text-red-600"
+                            className="shrink-0 text-muted-foreground hover:text-status-adverse"
                             aria-label={`Unlink ${name}`}
                           >
                             <Trash2 className="h-3.5 w-3.5" />

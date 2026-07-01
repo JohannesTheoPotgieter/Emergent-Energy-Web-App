@@ -91,22 +91,22 @@ interface EngineeringHomeSummary {
 }
 
 const DUE_META: Record<DueBucket, { label: string; cls: string }> = {
-  overdue: { label: "Overdue", cls: "bg-red-100 text-red-700" },
-  today: { label: "Today", cls: "bg-amber-100 text-amber-700" },
-  this_week: { label: "This week", cls: "bg-blue-100 text-blue-700" },
-  later: { label: "Later", cls: "bg-muted text-foreground" },
-  none: { label: "No date", cls: "bg-muted text-muted-foreground" },
+  overdue: { label: "Overdue", cls: "ee-status-danger" },
+  today: { label: "Today", cls: "ee-status-warning" },
+  this_week: { label: "This week", cls: "ee-status-info" },
+  later: { label: "Later", cls: "ee-status-neutral" },
+  none: { label: "No date", cls: "ee-status-neutral" },
 };
 
 /** Phase chip colour — emerald for live delivery phases, neutral otherwise.
  *  Keyed on a normalised substring of the canonical phase label. */
 function phaseChipClass(phaseLabel: string): string {
   const l = phaseLabel.toLowerCase();
-  if (l.includes("construction") || l.includes("commission")) return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (l.includes("hold")) return "bg-red-50 text-red-700 border-red-200";
-  if (l.includes("handover") || l.includes("close")) return "bg-blue-50 text-blue-700 border-blue-200";
-  if (l.includes("planning") || l.includes("design")) return "bg-amber-50 text-amber-700 border-amber-200";
-  return "bg-muted/60 text-foreground border-border";
+  if (l.includes("construction") || l.includes("commission")) return "ee-status-success";
+  if (l.includes("hold")) return "ee-status-danger";
+  if (l.includes("handover") || l.includes("close")) return "ee-status-info";
+  if (l.includes("planning") || l.includes("design")) return "ee-status-warning";
+  return "ee-status-neutral";
 }
 
 // ----- Persisted filter selection (mirrors task-filter-config helpers) -------
@@ -281,9 +281,9 @@ const STAT_TONE: Record<
   { iconWrap: string; accent: string; ring: string }
 > = {
   emerald: { iconWrap: "bg-primary/10 text-primary", accent: "from-primary/60", ring: "" },
-  blue: { iconWrap: "bg-blue-100 text-blue-600", accent: "from-blue-400/60", ring: "" },
-  amber: { iconWrap: "bg-amber-100 text-amber-600", accent: "from-amber-400/60", ring: "" },
-  red: { iconWrap: "bg-red-100 text-red-600", accent: "from-red-400/70", ring: "ring-1 ring-red-200" },
+  blue: { iconWrap: "ee-status-info", accent: "from-primary/40", ring: "" },
+  amber: { iconWrap: "ee-status-warning", accent: "from-status-drift/50", ring: "" },
+  red: { iconWrap: "ee-status-danger", accent: "from-status-adverse/60", ring: "ring-1 ring-status-adverse/40" },
 };
 
 /** Dashboard stat tile — coloured icon chip, large value, label, and an
@@ -584,7 +584,7 @@ export default function EngineeringHomePage() {
                             <td className="px-4 py-2.5 text-right tabular-nums">{row.open}</td>
                             <td className="px-4 py-2.5 text-right">
                               {row.overdue > 0 ? (
-                                <span className="inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-red-700">
+                                <span className="ee-status-danger inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-semibold tabular-nums">
                                   {row.overdue}
                                 </span>
                               ) : (
@@ -612,13 +612,13 @@ export default function EngineeringHomePage() {
             <div className="space-y-4">
               <DashboardPanel
                 title="At risk"
-                icon={<ShieldAlert className={cn("h-4 w-4", atRisk.length > 0 && "text-red-500")} />}
+                icon={<ShieldAlert className={cn("h-4 w-4", atRisk.length > 0 && "text-status-adverse")} />}
                 right={atRisk.length > 0 ? `${atRisk.length} overdue` : undefined}
                 bodyClassName={atRisk.length === 0 ? "p-4" : "p-2"}
               >
                 {atRisk.length === 0 ? (
                   <div className="flex flex-col items-center gap-2 py-6 text-center">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                    <CheckCircle2 className="h-5 w-5 text-status-ties" />
                     <p className="text-sm text-muted-foreground">Nothing overdue in scope.</p>
                   </div>
                 ) : (
@@ -626,14 +626,14 @@ export default function EngineeringHomePage() {
                     {atRisk.map((row) => (
                       <li
                         key={row.projectId}
-                        className="flex items-center justify-between gap-3 rounded-md border border-red-100 bg-red-50/60 px-3 py-2"
+                        className="ee-status-danger flex items-center justify-between gap-3 rounded-md border px-3 py-2"
                         data-testid={`at-risk-${row.projectId}`}
                       >
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-foreground">{row.projectName}</p>
                           <p className="truncate text-[11px] text-muted-foreground">{row.phaseLabel}</p>
                         </div>
-                        <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-red-700">
+                        <span className="shrink-0 rounded bg-status-adverse px-1.5 py-0.5 text-xs font-semibold tabular-nums text-white">
                           {row.overdue} overdue
                         </span>
                       </li>
@@ -651,7 +651,7 @@ export default function EngineeringHomePage() {
               >
                 {data.myWork.length === 0 ? (
                   <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                    <CheckCircle2 className="h-5 w-5 text-status-ties" />
                     <p className="text-sm text-muted-foreground">
                       {filters.ownerUserId != null && filters.ownerUserId !== userId ? (
                         <span className="inline-flex items-center gap-1.5">

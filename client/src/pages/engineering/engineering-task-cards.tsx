@@ -152,37 +152,35 @@ export function QuickEditPopover({ task, onDueDateChange, onClose }: { task: Tas
 export function getTaskContextBadges(task: Task): Array<{ label: string; className: string }> {
   const badges: Array<{ label: string; className: string }> = [];
   if (task.planLinkUrgent) {
-    // Plan deadline near or passed — amber for upcoming, red for overdue.
+    // Plan deadline near or passed — warning for upcoming, danger for overdue.
     const overdueByPlan = isOverdue(task.dueDate, task.status);
     badges.push({
       label: "Urgent · plan",
-      className: overdueByPlan
-        ? "bg-red-50 text-red-700 border-red-200"
-        : "bg-amber-50 text-amber-700 border-amber-200",
+      className: overdueByPlan ? "ee-status-danger" : "ee-status-warning",
     });
   }
   if (task.isBlocked || task.holdReason) {
-    badges.push({ label: "Blocked", className: "bg-red-50 text-red-700 border-red-200" });
+    badges.push({ label: "Blocked", className: "ee-status-danger" });
   }
   if (task.isReviewNeeded) {
-    badges.push({ label: "Review", className: "bg-violet-50 text-violet-700 border-violet-200" });
+    badges.push({ label: "Review", className: "ee-status-accent" });
   }
   if (task.isApprovalPending) {
-    badges.push({ label: "Approval", className: "bg-amber-50 text-amber-700 border-amber-200" });
+    badges.push({ label: "Approval", className: "ee-status-warning" });
   }
   if ((task.projectLinkedDeliverableCount || 0) > 0) {
     badges.push({
       label: `${task.projectLinkedDeliverableCount} deliverable${task.projectLinkedDeliverableCount === 1 ? "" : "s"}`,
-      className: "bg-blue-50 text-blue-700 border-blue-200",
+      className: "ee-status-info",
     });
   }
   if ((task.microsoftActionRequiredCount || 0) > 0) {
     badges.push({
       label: `${task.microsoftActionRequiredCount} MS action${task.microsoftActionRequiredCount === 1 ? "" : "s"}`,
-      className: "bg-cyan-50 text-cyan-700 border-cyan-200",
+      className: "ee-status-info",
     });
   } else if (task.hasMicrosoftContext) {
-    badges.push({ label: "MS linked", className: "bg-cyan-50 text-cyan-700 border-cyan-200" });
+    badges.push({ label: "MS linked", className: "ee-status-info" });
   }
   return badges;
 }
@@ -293,11 +291,11 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
       >
         <div className="flex items-center gap-1.5">
           <h4 className="text-[11px] font-medium leading-tight truncate flex-1 min-w-0" data-testid={`text-card-title-${task.id}`}>{task.title}</h4>
-          {isViewingOnly && <span className="shrink-0 inline-flex items-center gap-0.5 px-1 py-0 rounded text-[8px] font-medium border bg-sky-50 border-sky-200 text-sky-700"><Eye className="h-2 w-2" />Viewing</span>}
-          {overdue && <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />}
-          {!overdue && dueSoon && <Clock className="h-3 w-3 text-amber-500 shrink-0" />}
+          {isViewingOnly && <span className="shrink-0 inline-flex items-center gap-0.5 px-1 py-0 rounded text-[10px] font-medium ee-status-info border"><Eye className="h-2 w-2" />Viewing</span>}
+          {overdue && <AlertTriangle className="h-3 w-3 text-status-adverse shrink-0" />}
+          {!overdue && dueSoon && <Clock className="h-3 w-3 text-status-drift shrink-0" />}
           {assigneeNames.length > 0 && (
-            <div className={`w-4 h-4 rounded-full ${getAvatarColor(assigneeNames[0])} flex items-center justify-center text-[7px] font-bold text-white shrink-0`} title={assigneeNames[0]}>
+            <div className={`w-4 h-4 rounded-full ${getAvatarColor(assigneeNames[0])} flex items-center justify-center text-[10px] font-bold text-white shrink-0`} title={assigneeNames[0]}>
               {getInitials(assigneeNames[0])}
             </div>
           )}
@@ -310,7 +308,7 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
         {task.parentTaskTitle && (
           <div className="flex items-center gap-1 mt-0.5">
             <CornerDownRight className="h-2.5 w-2.5 text-muted-foreground/50 shrink-0" />
-            <span className="text-[8px] text-muted-foreground/50 truncate">Sub-task of {task.parentTaskTitle}</span>
+            <span className="text-[10px] text-muted-foreground/50 truncate">Sub-task of {task.parentTaskTitle}</span>
           </div>
         )}
         {onStatusChange && (
@@ -361,10 +359,10 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
         <h4 className="text-[13px] font-medium leading-snug line-clamp-2 flex-1 min-w-0" data-testid={`text-card-title-${task.id}`}>
           {task.title}
         </h4>
-        {isViewingOnly && <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-sky-50 border-sky-200 text-sky-700 mt-0.5"><Eye className="h-2.5 w-2.5" />Viewing</span>}
+        {isViewingOnly && <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium ee-status-info border mt-0.5"><Eye className="h-2.5 w-2.5" />Viewing</span>}
         <div className="flex items-center gap-0.5 shrink-0">
           {task.trackingRag && task.trackingRag !== "Green" && (
-            <div className={`w-2 h-2 rounded-full mt-1.5 ${task.trackingRag === "Amber" ? "bg-amber-500" : task.trackingRag === "Red" ? "bg-red-500 animate-pulse" : "bg-gray-400"}`} title={`RAG: ${task.trackingRag}`} />
+            <div className={`w-2 h-2 rounded-full mt-1.5 ${task.trackingRag === "Amber" ? "bg-status-drift" : task.trackingRag === "Red" ? "bg-status-adverse animate-pulse" : "bg-gray-400"}`} title={`RAG: ${task.trackingRag}`} />
           )}
           {onDueDateChange && (
             <Popover open={quickEditOpen} onOpenChange={setQuickEditOpen}>
@@ -414,7 +412,7 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
         </div>
         {task.dueDate && (
           <span className={`text-[10px] flex items-center gap-0.5 font-medium px-1 py-0 rounded
-            ${overdue ? "text-red-700 bg-red-100" : dueSoon ? "text-amber-700 bg-amber-50" : "text-muted-foreground"}`}
+            ${overdue ? "ee-status-danger" : dueSoon ? "ee-status-warning" : "text-muted-foreground"}`}
           >
             {overdue && <AlertTriangle className="h-3 w-3 shrink-0" />}
             {!overdue && dueSoon && <Clock className="h-3 w-3 shrink-0" />}
@@ -444,12 +442,12 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
             <div className="flex items-center gap-1 min-w-0">
               <div className="flex -space-x-1">
                 {assigneeNames.slice(0, 2).map((name, i) => (
-                  <div key={i} className={`w-5 h-5 rounded-full ${getAvatarColor(name)} flex items-center justify-center text-[8px] font-bold text-white ring-1 ring-card`} title={name}>
+                  <div key={i} className={`w-5 h-5 rounded-full ${getAvatarColor(name)} flex items-center justify-center text-[10px] font-bold text-white ring-1 ring-card`} title={name}>
                     {getInitials(name)}
                   </div>
                 ))}
                 {assigneeNames.length > 2 && (
-                  <div className="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center text-[8px] font-bold text-muted-foreground ring-1 ring-card">
+                  <div className="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center text-[10px] font-bold text-muted-foreground ring-1 ring-card">
                     +{assigneeNames.length - 2}
                   </div>
                 )}
@@ -590,7 +588,7 @@ export function KanbanColumn({
           </div>
         </div>
         <div className="h-1 bg-muted rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all duration-500 ${isTaskComplete(status) ? "bg-emerald-500" : status === "hold" ? "bg-red-400" : "bg-primary/40"}`} style={{ width: `${Math.max(pct, 1)}%` }} />
+          <div className={`h-full rounded-full transition-all duration-500 ${isTaskComplete(status) ? "bg-status-ties" : status === "hold" ? "bg-status-adverse" : "bg-primary/40"}`} style={{ width: `${Math.max(pct, 1)}%` }} />
         </div>
       </div>
       <ScrollArea className="flex-1 px-1.5 pb-2" style={{ maxHeight: "calc(100vh - 280px)" }}>
