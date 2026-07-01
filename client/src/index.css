@@ -564,11 +564,35 @@ body {
     background: linear-gradient(180deg, hsl(var(--primary) / 0.08) 0%, hsl(var(--primary) / 0.04) 100%);
   }
 
+  /* ── Semantic status tints (canonical) ───────────────────────────────
+     Single dark-safe vocabulary for every status chip/badge/tint in the
+     app. Backed by the --ee-status-* brand tokens; each carries its own
+     .dark override so pages never need per-page dark-mode patches. Pair a
+     class with .ee-chip (or the Badge component) for a pill, or apply the
+     colours directly to a surface. Map: ok/on-track → success (ties),
+     attention/soon → warning (drift), breach/overdue → danger (adverse),
+     review/informational → info, signed/locked → locked, category/other →
+     accent, inert → neutral. */
   .ee-status-success { @apply border-emerald-200 bg-emerald-50 text-emerald-700; }
   .ee-status-warning { @apply border-amber-200 bg-amber-50 text-amber-700; }
   .ee-status-danger { @apply border-red-200 bg-red-50 text-red-700; }
   .ee-status-info { @apply border-blue-200 bg-blue-50 text-blue-700; }
+  .ee-status-accent { @apply border-violet-200 bg-violet-50 text-violet-700; }
+  .ee-status-neutral { @apply border-border bg-muted text-muted-foreground; }
+  .ee-status-locked { @apply border-slate-300 bg-slate-100 text-slate-700; }
 }
+
+/* Dark-mode surfaces for the semantic status tints. Higher specificity than
+   the base .ee-status-* rules, so they win inside .dark without !important.
+   These centralise what the old per-[data-testid] override blocks did by
+   hand — new pages get correct dark mode for free by using the classes. */
+.dark .ee-status-success { border-color: hsl(150 30% 26%); background-color: hsl(150 32% 13%); color: hsl(150 52% 74%); }
+.dark .ee-status-warning { border-color: hsl(40 40% 28%); background-color: hsl(40 44% 14%); color: hsl(42 82% 74%); }
+.dark .ee-status-danger { border-color: hsl(0 40% 30%); background-color: hsl(0 42% 15%); color: hsl(0 78% 80%); }
+.dark .ee-status-info { border-color: hsl(220 40% 30%); background-color: hsl(220 42% 16%); color: hsl(215 74% 80%); }
+.dark .ee-status-accent { border-color: hsl(280 30% 32%); background-color: hsl(280 32% 16%); color: hsl(282 62% 82%); }
+.dark .ee-status-neutral { border-color: hsl(215 14% 24%); background-color: hsl(215 14% 16%); color: hsl(215 16% 66%); }
+.dark .ee-status-locked { border-color: hsl(215 14% 30%); background-color: hsl(215 14% 19%); color: hsl(215 16% 72%); }
 
 /* Mobile: compact sub-nav pills for horizontal scroll */
 @media (max-width: 768px) {
