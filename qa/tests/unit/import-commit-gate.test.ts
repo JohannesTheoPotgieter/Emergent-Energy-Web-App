@@ -239,6 +239,16 @@ describe("commit-gate wiring + financial safety", () => {
     expect(schedulerSrc).toContain("NET_DELTA_NOTIFY_ROLES");
   });
 
+  it("H6: the net-delta swing park runs even under auto-commit-all (not gated by !forceCommit)", () => {
+    // A large REV/COS swing is the wrong-file / bad-data signature, so the park
+    // must fire regardless of the owner's auto-commit-all switch — i.e. the
+    // maybeParkOnNetDelta call must NOT sit inside an `if (!forceCommit)` block.
+    const parkIdx = schedulerSrc.indexOf("maybeParkOnNetDelta({");
+    expect(parkIdx).toBeGreaterThan(-1);
+    const preceding = schedulerSrc.slice(Math.max(0, parkIdx - 400), parkIdx);
+    expect(preceding).not.toContain("if (!forceCommit)");
+  });
+
   it("(c) the commit path refreshes reconciliation after writing", () => {
     // The scheduler commit transaction refreshes reconciliation.
     expect(commitSrc).toContain("refreshReconciliationForProjects");
