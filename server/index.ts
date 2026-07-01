@@ -1,6 +1,7 @@
 import express from "express";
 import passport from "passport";
 import { createServer } from "http";
+import path from "path";
 import { preloadRuntimeSecrets } from "./secrets/vault";
 import { storage } from "./storage";
 import { dbMode, initializeDatabase } from "./db";
@@ -102,6 +103,25 @@ async function bootstrap() {
   // Mounted before session/auth middleware so it never consumes a session cookie
   // and is not subject to user-login or CSRF checks.
   registerOpsDashboardRoute(app);
+
+  // Autoscale promote sends a startup probe to GET / and requires a 200 before
+  // cutting traffic to the new build. Serve the SPA shell for the bare root path
+  // HERE — before the session/passport/CSRF chain below, each of which does a
+  // Postgres round-trip via the session store. On a cold publish (Neon
+  // scale-to-zero waking + boot-time schedulers saturating the pool) that
+  // round-trip could time out and 500 the probe, aborting the publish (the
+  // documented "~1 in 4 attempts" flake). The HTML shell never needed a session;
+  // the SPA still authenticates via /api/* (which also bootstraps the CSRF
+  // cookie on every response). Production only — dev serves / via Vite.
+  if (process.env.NODE_ENV === "production") {
+    const rootIndexHtml = path.resolve(__dirname, "public", "index.html");
+    app.get("/", (_req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+      res.sendFile(rootIndexHtml);
+    });
+  }
 
   configureSession({
     app,

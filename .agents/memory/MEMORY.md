@@ -5,4 +5,5 @@
 - [Milestone = integer WBS](milestone-wbs-rule.md) — a plan milestone is ALWAYS a top-level integer WBS ("1","2"); derive at read via shared `isMilestoneWbs`, never trust stored `is_milestone`.
 - [Dev DB is Postgres](dev-db-is-postgres.md) — dev runs PostgreSQL (host helium), NOT SQLite as replit.md claims; assume Postgres in dev.
 - [Drizzle migrate bootstrap probes](drizzle-migrate-bootstrap-probes.md) — every new migration needs a probe in drizzle-bootstrap.ts or its DDL silently never runs on prod; fix drift with a guarded re-assert migration.
+- [Deploy promote probe must be DB-free](deploy-promote-probe-db-dependency.md) — autoscale promotes on GET /=200; keep `/` DB-independent (serve SPA shell before session/passport/csrf) or cold-Neon+pool contention 500s the probe and aborts publish (~1 in 4). Build-phase success ≠ publish success.
 - [Deploy cold-Neon boot crash](deploy-cold-neon-boot.md) — intermittent publish fails are the promote/health-check, not the build: cold scale-to-zero Neon refuses the first boot connect → exit(1) before listen. Fix = retry/backoff on the connect probe, NOT port-first (that would weaken finance fail-loud).
