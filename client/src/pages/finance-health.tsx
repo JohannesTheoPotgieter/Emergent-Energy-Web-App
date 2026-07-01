@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { FinanceLoading, FinanceError } from "@/components/finance/template/states";
 import { RefreshCw, ShieldCheck, Activity, Play } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -55,10 +56,10 @@ interface FinanceHealth {
 }
 
 const LEVEL_STYLE: Record<string, string> = {
-  healthy: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  warn: "bg-amber-100 text-amber-800 border-amber-200",
-  critical: "bg-red-100 text-red-800 border-red-200",
-  unknown: "bg-slate-100 text-slate-700 border-slate-200",
+  healthy: "ee-status-success",
+  warn: "ee-status-warning",
+  critical: "ee-status-danger",
+  unknown: "ee-status-neutral",
 };
 const STATE_TO_LEVEL: Record<string, Level> = { healthy: "healthy", stale: "warn", failing: "critical", unknown: "unknown" };
 
@@ -112,8 +113,10 @@ export default function FinanceHealthPage() {
         }
       />
 
-      {healthQuery.isLoading && <p className="text-muted-foreground p-6">Loading finance health…</p>}
-      {healthQuery.isError && <p className="text-red-600 p-6">Could not load finance health.</p>}
+      {healthQuery.isLoading && <FinanceLoading label="Loading finance health…" />}
+      {healthQuery.isError && (
+        <FinanceError title="Could not load finance health." onRetry={() => healthQuery.refetch()} />
+      )}
 
       {data && (
         <div className="space-y-6">
@@ -152,7 +155,7 @@ export default function FinanceHealthPage() {
                 <TableBody>
                   {data.jobs.map((j) => (
                     <TableRow key={j.job.key} data-testid={`row-job-${j.job.key}`}>
-                      <TableCell className="font-medium">{j.job.displayName}{j.job.critical && <span className="ml-1 text-red-500" title="critical">*</span>}</TableCell>
+                      <TableCell className="font-medium">{j.job.displayName}{j.job.critical && <span className="ml-1 text-status-adverse" title="critical">*</span>}</TableCell>
                       <TableCell><LevelBadge level={STATE_TO_LEVEL[j.state] ?? "unknown"} label={j.state} /></TableCell>
                       <TableCell>{j.lastSuccessAt ? formatRelativeWithAbsoluteZA(j.lastSuccessAt) : "never"}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
@@ -173,7 +176,7 @@ export default function FinanceHealthPage() {
                 {data.freshness.signals.map((s) => (
                   <div key={s.key} className="flex items-start gap-2 text-sm">
                     <LevelBadge level={s.breached ? "critical" : "healthy"} label={s.breached ? "breach" : "ok"} />
-                    <span className={s.breached ? "text-red-700" : "text-muted-foreground"}>{s.detail}</span>
+                    <span className={s.breached ? "text-status-adverse" : "text-muted-foreground"}>{s.detail}</span>
                   </div>
                 ))}
               </CardContent>
@@ -221,7 +224,7 @@ export default function FinanceHealthPage() {
                 <div key={i.displayName} className="flex items-center gap-2">
                   <LevelBadge level={STATE_TO_LEVEL[i.health] ?? "unknown"} label={i.health} />
                   <span className="font-medium">{i.displayName}</span>
-                  {i.warning && <span className="text-amber-700">— {i.warning}</span>}
+                  {i.warning && <span className="text-status-drift">— {i.warning}</span>}
                 </div>
               ))}
             </CardContent>

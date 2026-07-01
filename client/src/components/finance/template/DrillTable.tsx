@@ -324,7 +324,7 @@ export function DrillTable<Row>({
                         else m.delete(key);
                       }}
                       className={cn(
-                        "border-b border-slate-100 last:border-0 hover:bg-slate-50/70 transition-colors",
+                        "border-b border-slate-100 last:border-0 odd:bg-muted/30 hover:bg-slate-50/70 transition-colors",
                         onRowClick && "cursor-pointer",
                       )}
                       onClick={onRowClick ? () => onRowClick(row) : undefined}
