@@ -83,6 +83,50 @@ describe("applyTemplateToProject", () => {
     const r = await applyTemplateToProject(1, 7, 99);
     expect(r).toEqual({ milestoneTaskLinks: 0, taskCostLinks: 0, rulesMatched: 0, rulesTotal: 1 });
   });
+
+  it("links only the single best-matching milestone per rule (no cross-product over every milestone)", async () => {
+    // Two milestones both match the rule's "delivery" keyword. The old logic
+    // linked BOTH (a milestone×task cross-product); the fix links only the one
+    // best-scoring milestone (ties → first), so a rule maps to one milestone.
+    mtRepo.getRevenueMilestonesForProjects.mockResolvedValue([
+      { projectId: 1, rowHash: "m2", milestoneNo: "3", milestoneName: "Delivery of Inverters" },
+      { projectId: 1, rowHash: "m3", milestoneNo: "4", milestoneName: "Delivery of Panels" },
+    ]);
+    mtRepo.getPlanTasksForProjects.mockResolvedValue([
+      { id: 10, projectId: 1, taskNo: "5.1", title: "Install equipment", percentComplete: 0 },
+    ]);
+    tplRepo.getById.mockResolvedValue({
+      id: 7, name: "Std", rules: [{ label: "Delivery", milestoneKeywords: ["delivery"], taskKeywords: ["install"], outflowKeywords: [] }],
+    });
+    const r = await applyTemplateToProject(1, 7, 99);
+    expect(r.milestoneTaskLinks).toBe(1);
+    expect(mtRepo.addMilestoneTaskLink).toHaveBeenCalledTimes(1);
+    expect(mtRepo.addMilestoneTaskLink).toHaveBeenCalledWith({ projectId: 1, revenueRowHash: "m2", workItemId: 10, createdBy: 99 });
+  });
+
+  it("attaches each outflow to its single closest task, not every matched task", async () => {
+    // A milestone legitimately spans multiple tasks (both link), but the single
+    // inverter outflow must attach to ONE task (the closest by its own words),
+    // not fan out over every matched task (the old task×outflow cross-product).
+    mtRepo.getRevenueMilestonesForProjects.mockResolvedValue([
+      { projectId: 1, rowHash: "m2", milestoneNo: "3", milestoneName: "Delivery of Inverters" },
+    ]);
+    mtRepo.getPlanTasksForProjects.mockResolvedValue([
+      { id: 10, projectId: 1, taskNo: "5.1", title: "Install inverters", percentComplete: 0 },
+      { id: 11, projectId: 1, taskNo: "5.2", title: "Install panels", percentComplete: 0 },
+    ]);
+    mtRepo.getCostLinesForProjects.mockResolvedValue([
+      { projectId: 1, rowHash: "c1", description: "Huawei inverter 100KTL", costCategory: "2. Inverters", status: "planned" },
+    ]);
+    tplRepo.getById.mockResolvedValue({
+      id: 7, name: "Std", rules: [{ label: "Install", milestoneKeywords: ["inverters"], taskKeywords: ["install"], outflowKeywords: ["inverter"] }],
+    });
+    const r = await applyTemplateToProject(1, 7, 99);
+    expect(r.milestoneTaskLinks).toBe(2); // milestone spans both install tasks
+    expect(r.taskCostLinks).toBe(1);      // outflow attaches once, to the closest task
+    expect(mtRepo.addTaskCostLink).toHaveBeenCalledTimes(1);
+    expect(mtRepo.addTaskCostLink).toHaveBeenCalledWith({ projectId: 1, workItemId: 10, costRowHash: "c1", createdBy: 99 });
+  });
 });
 
 describe("createTemplateFromProject", () => {

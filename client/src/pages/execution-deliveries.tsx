@@ -188,11 +188,20 @@ export default function ExecutionDeliveries() {
     queryKey: ["/api/execution-review/program/deliveries"],
   });
 
+  // Full active-project universe for the "new delivery" picker — NOT derived
+  // from delivery rows (a project with no deliveries yet would otherwise be
+  // unpickable). Fall back to the row-derived set if the list hasn't loaded.
+  const { data: activeProjects } = useQuery<ProjectOpt[]>({
+    queryKey: ["/api/execution-review/program/projects"],
+  });
   const projects = useMemo<ProjectOpt[]>(() => {
+    if (activeProjects && activeProjects.length > 0) {
+      return [...activeProjects].sort((a, b) => a.name.localeCompare(b.name));
+    }
     const m = new Map<number, string>();
     for (const r of data ?? []) m.set(r.projectId, r.projectName);
     return [...m.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [data]);
+  }, [activeProjects, data]);
 
   const rows = useMemo(
     () => (data ?? []).filter((r) => {
@@ -203,7 +212,12 @@ export default function ExecutionDeliveries() {
     [data, overdueOnly, hideCompleted],
   );
   const { sorted, sort, toggle } = useTableSort(rows, deliverySortValue);
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["/api/execution-review/program/deliveries"] });
+  // A delivery write changes the board's Next-delivery column too, so refresh
+  // both this list and the board.
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["/api/execution-review/program/deliveries"] });
+    qc.invalidateQueries({ queryKey: ["/api/execution-review/board"] });
+  };
 
   const exportCsv = () => downloadCsv(
     "execution-deliveries",

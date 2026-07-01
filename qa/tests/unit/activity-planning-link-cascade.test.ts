@@ -109,6 +109,23 @@ describe("Activity Planning link cascade", () => {
     expect(row.outflowTotal).toBe(0);
   });
 
+  it("a fully-settled project is hidden by default but shown with includeSettled", async () => {
+    // Milestone collected (confirmed past receipt) AND every outflow paid → the
+    // project has no open money, so it drops off the program by default. The
+    // includeSettled toggle keeps it on so planning can review closed work.
+    const paidMilestone: RevenueMilestoneRow = {
+      ...milestone(), status: "paid", paidDate: "2026-06-10", paidDateConfirmed: true,
+    };
+    mtRepo.getRevenueMilestonesForProjects.mockResolvedValue([paidMilestone]);
+    // default cost() is already status "paid" → no open outflow
+
+    const dflt = await getMilestoneProgram(new Date("2026-06-23"));
+    expect(dflt.rows.find((r) => r.projectId === 1)).toBeUndefined();
+
+    const withSettled = await getMilestoneProgram(new Date("2026-06-23"), { includeSettled: true });
+    expect(withSettled.rows.find((r) => r.projectId === 1)).toBeDefined();
+  });
+
   it("partial chain (task→cost only, no milestone→task): cost is task-linked but does NOT count toward the milestone-earned Linked-outflow total", async () => {
     // This documents the hub rule: an outflow is only "earned" by a milestone
     // once the FULL chain exists. Task-level linkage removes it from the

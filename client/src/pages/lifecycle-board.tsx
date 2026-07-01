@@ -25,6 +25,7 @@ import { usePermission } from "@/hooks/use-permissions";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
+import { apiRequest } from "@/lib/queryClient";
 
 interface StageGateBlock {
   projectId: number;
@@ -547,24 +548,17 @@ export default function LifecycleBoardPage() {
     if (!deleteTarget?.id) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/lifecycle-board/projects/${deleteTarget.id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-        credentials: "include",
-      });
-      if (res.ok) {
-        toast({ title: "Project Deleted", description: `${cleanProjectName(deleteTarget.projectName)} and all related data have been permanently removed` });
-        setDeleteConfirmOpen(false);
-        setDeleteTarget(null);
-        setProjectDialogOpen(false);
-        setSelectedProject(null);
-        invalidateProjects();
-      } else {
-        const err = await res.json();
-        toast({ title: "Error", description: err.error || "Failed to delete project", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Error", description: "Network error", variant: "destructive" });
+      // apiRequest centralises auth + CSRF headers and parses the error body
+      // (the raw fetch omitted the CSRF token and crashed on a non-JSON error).
+      await apiRequest("DELETE", `/api/lifecycle-board/projects/${deleteTarget.id}`);
+      toast({ title: "Project Deleted", description: `${cleanProjectName(deleteTarget.projectName)} and all related data have been permanently removed` });
+      setDeleteConfirmOpen(false);
+      setDeleteTarget(null);
+      setProjectDialogOpen(false);
+      setSelectedProject(null);
+      invalidateProjects();
+    } catch (err) {
+      toast({ title: "Error", description: err instanceof Error ? err.message : "Failed to delete project", variant: "destructive" });
     } finally {
       setDeleting(false);
     }
