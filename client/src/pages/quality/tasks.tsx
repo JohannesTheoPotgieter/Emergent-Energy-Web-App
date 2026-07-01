@@ -164,9 +164,9 @@ function MetricCard({
           className={cn(
             "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
             active && tone === "danger"
-              ? "bg-red-100 text-red-600"
+              ? "bg-status-adverse/10 text-status-adverse"
               : active && tone === "warning"
-                ? "bg-amber-100 text-amber-700"
+                ? "bg-status-drift/10 text-status-drift"
                 : "bg-primary/8 text-primary",
           )}
         >
