@@ -74,15 +74,15 @@ interface QualityTaskResponse {
 
 // Source vocabulary returned by the server (deriveQualitySource).
 const SOURCE_META: Record<string, { label: string; cls: string }> = {
-  ncr: { label: "NCR", cls: "bg-red-50 text-red-700 border-red-200" },
-  evidence: { label: "Evidence", cls: "bg-amber-50 text-amber-700 border-amber-200" },
-  qa: { label: "QA / QC", cls: "bg-blue-50 text-blue-700 border-blue-200" },
-  quality: { label: "Quality", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  ncr: { label: "NCR", cls: "ee-status-danger" },
+  evidence: { label: "Evidence", cls: "ee-status-warning" },
+  qa: { label: "QA / QC", cls: "ee-status-info" },
+  quality: { label: "Quality", cls: "ee-status-success" },
 };
 
 function sourceMeta(source?: string | null) {
   const key = String(source || "quality").toLowerCase();
-  return SOURCE_META[key] ?? { label: source || "Quality", cls: "bg-muted text-muted-foreground border-border" };
+  return SOURCE_META[key] ?? { label: source || "Quality", cls: "ee-status-neutral" };
 }
 
 function dueMs(d?: string | Date | null): number | null {

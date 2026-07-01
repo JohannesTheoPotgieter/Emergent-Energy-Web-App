@@ -199,12 +199,12 @@ function RiskLevelBadge({ level }: { level?: string }) {
   const normalized = String(level || "low").toLowerCase();
   const styles =
     normalized === "critical"
-      ? "bg-red-50 text-red-600 border-red-200"
+      ? "ee-status-danger"
       : normalized === "high"
-        ? "bg-amber-50 text-amber-700 border-amber-200"
+        ? "ee-status-warning"
         : normalized === "medium"
-          ? "bg-muted text-muted-foreground border-border"
-          : "bg-emerald-50 text-emerald-700 border-emerald-200";
+          ? "ee-status-neutral"
+          : "ee-status-success";
   const label = normalized.charAt(0).toUpperCase() + normalized.slice(1);
   return (
     <Badge variant="outline" className={`text-[10px] ${styles}`}>
@@ -663,7 +663,7 @@ export default function QmDashboardPage() {
               <Card key={kpi.label} className={border}>
                 <CardContent className="p-3">
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold truncate">{kpi.label}</p>
-                  <p className={`text-xl font-bold tabular-nums mt-1 ${valueColor}`}>{kpi.value}</p>
+                  <p className={`text-xl font-semibold tabular-nums mt-1 ${valueColor}`}>{kpi.value}</p>
                 </CardContent>
               </Card>
             );
@@ -704,8 +704,8 @@ export default function QmDashboardPage() {
               <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchNcrs()} data-testid="btn-retry-ncrs">Retry</Button>
             </div>
           ) : openNcrs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground" data-testid="qm-ncrs-empty">
-              <ShieldCheck className="h-10 w-10 mb-2 text-emerald-500/70" />
+            <div className="ee-empty-state text-muted-foreground" data-testid="qm-ncrs-empty">
+              <ShieldCheck className="h-10 w-10 mb-2 opacity-20" />
               <p className="font-medium text-foreground">No open NCRs</p>
               <p className="text-xs mt-1">There are no open non-conformances across active projects.</p>
             </div>
@@ -715,10 +715,10 @@ export default function QmDashboardPage() {
                 const projectName = ncrProjectName(ncr.projectId);
                 const sev = String(ncr.severity || "").toLowerCase();
                 const sevClass = sev === "critical"
-                  ? "bg-red-50 text-red-600 border-red-200"
+                  ? "ee-status-danger"
                   : sev === "major"
-                    ? "bg-amber-50 text-amber-700 border-amber-200"
-                    : "bg-muted text-muted-foreground border-border";
+                    ? "ee-status-warning"
+                    : "ee-status-neutral";
                 return (
                   <button
                     key={ncr.id}
@@ -805,9 +805,9 @@ export default function QmDashboardPage() {
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-3">
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-        <Card className="border-sky-100" data-testid="kpi-quality-progress">
+        <Card className="border-border" data-testid="kpi-quality-progress">
           <CardContent className="p-3 text-center">
-            <p className="text-xl font-bold tabular-nums text-sky-600" data-testid="stat-progress">{overallProgress}%</p>
+            <p className="text-xl font-semibold tabular-nums text-sky-600" data-testid="stat-progress">{overallProgress}%</p>
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Progress</p>
             <div className="w-full h-1 bg-sky-100 rounded-full overflow-hidden mt-1.5">
               <div className="h-full bg-sky-500 rounded-full" style={{ width: `${overallProgress}%` }} />
@@ -817,7 +817,7 @@ export default function QmDashboardPage() {
 
         <Card className="border-emerald-100" data-testid="kpi-quality-score">
           <CardContent className="p-3 text-center">
-            <p className="text-xl font-bold tabular-nums text-emerald-600" data-testid="stat-score">{overallScore}%</p>
+            <p className="text-xl font-semibold tabular-nums text-emerald-600" data-testid="stat-score">{overallScore}%</p>
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Score</p>
             <div className="w-full h-1 bg-emerald-100 rounded-full overflow-hidden mt-1.5">
               <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${overallScore}%` }} />
@@ -825,16 +825,16 @@ export default function QmDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-blue-100" data-testid="kpi-total-projects">
+        <Card className="border-border" data-testid="kpi-total-projects">
           <CardContent className="p-3 text-center">
-            <p className="text-xl font-bold tabular-nums" data-testid="stat-total-projects">{totalProjects}</p>
+            <p className="text-xl font-semibold tabular-nums" data-testid="stat-total-projects">{totalProjects}</p>
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Projects</p>
           </CardContent>
         </Card>
 
         <Card className="border-emerald-100" data-testid="kpi-items-passed">
           <CardContent className="p-3 text-center">
-            <p className="text-xl font-bold tabular-nums" data-testid="stat-items-passed">{totalItemsPassed}<span className="text-sm font-normal text-muted-foreground">/{totalItemsAll}</span></p>
+            <p className="text-xl font-semibold tabular-nums" data-testid="stat-items-passed">{totalItemsPassed}<span className="text-sm font-normal text-muted-foreground">/{totalItemsAll}</span></p>
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Passed</p>
           </CardContent>
         </Card>
@@ -845,14 +845,14 @@ export default function QmDashboardPage() {
           data-testid="kpi-active-warnings"
         >
           <CardContent className="p-3 text-center">
-            <p className="text-xl font-bold tabular-nums text-amber-600" data-testid="stat-warnings">{activeWarnings}</p>
+            <p className="text-xl font-semibold tabular-nums text-amber-600" data-testid="stat-warnings">{activeWarnings}</p>
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Warnings</p>
           </CardContent>
         </Card>
 
-        <Card className="border-indigo-100" data-testid="kpi-avg-score">
+        <Card className="border-border" data-testid="kpi-avg-score">
           <CardContent className="p-3 text-center">
-            <p className="text-xl font-bold tabular-nums" data-testid="stat-avg-completion">{avgQmScore}%</p>
+            <p className="text-xl font-semibold tabular-nums" data-testid="stat-avg-completion">{avgQmScore}%</p>
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Avg Score</p>
           </CardContent>
         </Card>
@@ -862,9 +862,6 @@ export default function QmDashboardPage() {
 
       <section aria-label="Project checklists">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-1.5 px-4 h-10 font-semibold text-sm">
-            <LayoutGrid className="h-4 w-4" /> Project Checklists
-          </div>
           <span className="text-xs text-muted-foreground">
             {activeProjectsCount} active · {completedProjectsCount} completed
           </span>
@@ -972,8 +969,8 @@ export default function QmDashboardPage() {
                   <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchChecklists()} data-testid="btn-retry-projects">Retry</Button>
                 </div>
               ) : filteredProjects.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                  <Shield className="h-16 w-16 mb-4 opacity-20" />
+                <div className="ee-empty-state text-muted-foreground">
+                  <Shield className="h-10 w-10 mb-4 opacity-20" />
                   <p className="font-medium">No checklists found</p>
                   <p className="text-xs mt-1">
                     {activeFiltersCount > 0 ? "Try adjusting your filters" : "Start a quality process for a project"}
@@ -993,7 +990,6 @@ export default function QmDashboardPage() {
                           <th className="text-left py-2 px-3 font-medium text-muted-foreground text-xs">
                             <SortHeader label="Project" sortKey="name" currentSort={projectSort} currentDir={projectSortDir} onSort={(k) => { if (projectSort === k) setProjectSortDir(d => d === "asc" ? "desc" : "asc"); else { setProjectSort(k as ProjectSortKey); setProjectSortDir("asc"); }}} className="text-xs" />
                           </th>
-                          <th className="text-center py-2 px-2 font-medium text-muted-foreground text-xs w-[70px]">Status</th>
                           <th className="text-center py-2 px-2 font-medium text-muted-foreground text-xs w-[80px]">
                             <SortHeader label="Progress" sortKey="completion" currentSort={projectSort} currentDir={projectSortDir} onSort={(k) => { if (projectSort === k) setProjectSortDir(d => d === "asc" ? "desc" : "asc"); else { setProjectSort(k as ProjectSortKey); setProjectSortDir("asc"); }}} className="text-xs justify-center" />
                           </th>
@@ -1033,34 +1029,26 @@ export default function QmDashboardPage() {
                                 <div className="mt-1 flex flex-wrap gap-1">
                                   <RiskLevelBadge level={checklist.qualityRiskLevel} />
                                   {(checklist.overdueCount ?? 0) > 0 && (
-                                    <Badge variant="outline" className="text-[10px] bg-red-50 text-red-600 border-red-200">
+                                    <Badge variant="outline" className="text-[10px] ee-status-danger">
                                       {checklist.overdueCount} overdue
                                     </Badge>
                                   )}
                                   {(checklist.resubmissionCount ?? 0) > 0 && (
-                                    <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                                    <Badge variant="outline" className="text-[10px] ee-status-warning">
                                       {checklist.resubmissionCount} retry
                                     </Badge>
                                   )}
                                   {(checklist.evidenceGapCount ?? 0) > 0 && (
-                                    <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                                    <Badge variant="outline" className="text-[10px] ee-status-warning">
                                       {checklist.evidenceGapCount} evidence
                                     </Badge>
                                   )}
                                   {checklist.blockedHandover && (
-                                    <Badge variant="outline" className="text-[10px] bg-red-50 text-red-600 border-red-200">
+                                    <Badge variant="outline" className="text-[10px] ee-status-danger">
                                       Handover blocked
                                     </Badge>
                                   )}
                                 </div>
-                              </td>
-                              <td className="py-2.5 px-2 text-center">
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px] bg-muted text-muted-foreground border-border"
-                                >
-                                  active
-                                </Badge>
                               </td>
                               <td className="py-2.5 px-2 text-center">
                                 <div className="flex items-center gap-1.5 justify-center" title={`${reviewedItems}/${totalItems} reviewed`}>
@@ -1212,8 +1200,8 @@ export default function QmDashboardPage() {
                   <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchWarnings()} data-testid="btn-retry-warnings">Retry</Button>
                 </div>
               ) : warnings.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-                  <ShieldCheck className="h-10 w-10 mb-2 text-emerald-500/70" />
+                <div className="ee-empty-state text-muted-foreground">
+                  <ShieldCheck className="h-10 w-10 mb-2 opacity-20" />
                   <p className="font-medium text-foreground">No active warnings</p>
                   <p className="text-xs mt-1">Quality warning queue is currently clear.</p>
                 </div>
@@ -1575,10 +1563,10 @@ function WarningRow({ warning, severity, onView, onOverride, onResolve, onViewPr
   const iconClass = severity === "high" ? "text-red-600" : severity === "medium" ? "text-amber-600" : "text-muted-foreground";
 
   const badgeClass = severity === "high"
-    ? "bg-red-50 text-red-600 border-red-200"
+    ? "ee-status-danger"
     : severity === "medium"
-    ? "bg-amber-50 text-amber-700 border-amber-200"
-    : "bg-muted text-muted-foreground border-border";
+    ? "ee-status-warning"
+    : "ee-status-neutral";
 
   return (
     <div
