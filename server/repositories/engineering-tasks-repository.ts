@@ -8,7 +8,7 @@
  * notifications use the canonical spine tables/services.
  */
 
-import { and, eq, ne, or, isNull, asc, desc, lte, inArray, count } from "drizzle-orm";
+import { and, eq, ne, or, isNull, asc, desc, inArray, count } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db";
 import {
@@ -44,6 +44,13 @@ import { createNotification } from "../services/notification-service";
 import { listManagedDocumentsByProject } from "./managed-documents-repository";
 import { isTaskComplete } from "@shared/task-status";
 import { conflict, notFound, badRequest } from "../lib/api-error";
+import { runInTransaction } from "../lib/drizzle-helpers";
+import {
+  derivePlanLink,
+  effectiveEngineeringDueDate,
+  type PlanLinkRelation,
+  type DerivedPlanLink,
+} from "@shared/engineering/plan-link";
 
 export type WorkItemRow = typeof workItems.$inferSelect;
 export type WorkItemDocumentLinkRow = typeof workItemDocumentLinks.$inferSelect;
@@ -84,9 +91,12 @@ export interface EngineeringTaskListItem {
 }
 
 // ── Plan-link derivation (read-time authoritative; see PATCH plan-link) ──────
-
-/** Relation a plan-linked engineering task can have to its plan task. */
-export type PlanLinkRelation = "before" | "after";
+// The DB-free derivation now lives in `@shared/engineering/plan-link`, the
+// single source shared by the Task Manager list/detail AND the Engineering Home
+// counts so a task's due/overdue can't diverge between surfaces. Re-exported
+// here to keep this repository's public surface unchanged.
+export { derivePlanLink, effectiveEngineeringDueDate };
+export type { PlanLinkRelation, DerivedPlanLink };
 
 /** A `work_items` row reads as a "plan" line when it's a milestone, links to a
  *  plan item, or sits in the PM workstream (same predicate as `classifyKind`).
@@ -99,82 +109,16 @@ export function isPlanKind(row: {
   return classifyKind(row) === "plan";
 }
 
-/**
- * Add (or subtract) whole calendar days to a date-only string ("YYYY-MM-DD")
- * and return a date-only string. Uses UTC math so the result never drifts
- * across a DST / timezone boundary — `work_items.endDate` is a `date` column.
- */
-function shiftDateDays(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split("-").map((n) => Number(n));
-  const base = Date.UTC(y, (m ?? 1) - 1, d ?? 1);
-  const shifted = new Date(base + days * 24 * 60 * 60 * 1000);
-  const yyyy = shifted.getUTCFullYear();
-  const mm = String(shifted.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(shifted.getUTCDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-/** Today as a date-only string in UTC, for whole-day urgency comparisons. */
-function todayDateStr(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/** Whole-day difference (b − a) between two date-only strings. */
-function dayDiff(a: string, b: string): number {
-  const [ay, am, ad] = a.split("-").map(Number);
-  const [by, bm, bd] = b.split("-").map(Number);
-  const at = Date.UTC(ay, (am ?? 1) - 1, ad ?? 1);
-  const bt = Date.UTC(by, (bm ?? 1) - 1, bd ?? 1);
-  return Math.round((bt - at) / (24 * 60 * 60 * 1000));
-}
-
-/** The number of days from today within which a plan link is considered urgent. */
-const PLAN_LINK_URGENT_WINDOW_DAYS = 5;
-
-export interface DerivedPlanLink {
-  /** The synced due date, or null if the needed plan date is missing. */
-  derivedDue: string | null;
-  /** The plan start ('before') or end ('after') date used to derive it. */
-  planAnchorDate: string | null;
-  /** Urgent = derivedDue set, task open, and derivedDue within 5 days or overdue. */
-  planLinkUrgent: boolean;
-}
-
-/**
- * Derive the synced due date + urgency for a plan-linked engineering task from
- * the linked plan task's dates. Read-time authoritative: callers OVERRIDE the
- * persisted `endDate` with `derivedDue` so the due date stays correct if the
- * plan task's date later moves.
- *   - 'before' → plan.startDate − leadDays (the engineering task leads)
- *   - 'after'  → plan.endDate   + leadDays (the engineering task follows)
- * If the needed plan date is missing, `derivedDue` is null (no urgency).
- */
-export function derivePlanLink(args: {
-  relation: string | null;
-  leadDays: number | null;
-  planStart: string | null;
-  planEnd: string | null;
-  taskStatus: string;
-}): DerivedPlanLink {
-  const leadDays = args.leadDays ?? 5;
-  const anchor = args.relation === "before" ? args.planStart : args.relation === "after" ? args.planEnd : null;
-  if (!anchor) return { derivedDue: null, planAnchorDate: null, planLinkUrgent: false };
-  const derivedDue = shiftDateDays(anchor, args.relation === "before" ? -leadDays : leadDays);
-  let planLinkUrgent = false;
-  if (!isTaskComplete(args.taskStatus)) {
-    const diff = dayDiff(todayDateStr(), derivedDue); // <0 overdue, 0..N upcoming
-    planLinkUrgent = diff <= PLAN_LINK_URGENT_WINDOW_DAYS;
-  }
-  return { derivedDue, planAnchorDate: anchor, planLinkUrgent };
-}
-
 export async function listEngineeringTasks(filters: EngineeringTaskFilters = {}): Promise<EngineeringTaskListItem[]> {
   const conds = [eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)];
   if (filters.projectId != null) conds.push(eq(workItems.projectId, filters.projectId));
   if (filters.ownerUserId != null) conds.push(eq(workItems.ownerUserId, filters.ownerUserId));
   if (filters.status) conds.push(eq(workItems.status, filters.status));
   if (filters.taskTypeTag) conds.push(eq(workItems.taskTypeTag, filters.taskTypeTag));
-  if (filters.dueBefore) conds.push(lte(workItems.endDate, filters.dueBefore));
+  // NB: `dueBefore` is applied AFTER plan-link derivation (below), not as a SQL
+  // predicate on the persisted `endDate` — for a plan-linked task the derived
+  // due can differ from the stored date, so filtering the raw column would
+  // include/exclude the wrong tasks.
 
   // Self-join the linked plan task so its dates feed read-time due-date
   // derivation (authoritative for plan-linked tasks — keeps the synced due date
@@ -233,7 +177,7 @@ export async function listEngineeringTasks(filters: EngineeringTaskFilters = {})
     }
   }
 
-  return rows.map((r: (typeof rows)[number]) => {
+  const items = rows.map((r: (typeof rows)[number]) => {
     const isPlanLinked = r.planLinkItemId != null;
     const derived = isPlanLinked
       ? derivePlanLink({
@@ -268,6 +212,13 @@ export async function listEngineeringTasks(filters: EngineeringTaskFilters = {})
       planLinkUrgent: derived?.planLinkUrgent ?? false,
     };
   });
+
+  // Due-before filter, applied to the effective (plan-link-derived) due date.
+  if (filters.dueBefore) {
+    const cutoff = filters.dueBefore;
+    return items.filter((i: EngineeringTaskListItem) => i.endDate != null && i.endDate <= cutoff);
+  }
+  return items;
 }
 
 export interface EngineeringOptions {
@@ -405,13 +356,22 @@ export async function transitionEngineeringTaskStatus(
   assertTaskWorkflowTransition(context, newStatus, opts.source ?? "status_update");
 
   const completedAt = isTaskComplete(newStatus) ? new Date() : null;
-  const [updated] = await db
-    .update(workItems)
-    .set({ status: newStatus, completedAt, updatedAt: new Date() })
-    .where(eq(workItems.id, taskId))
-    .returning();
+  // Atomic: the status change and its history row commit together (or not at
+  // all) so the two can never diverge on a mid-write failure.
+  const updated = await runInTransaction(async (tx) => {
+    const [row] = await tx
+      .update(workItems)
+      .set({ status: newStatus, completedAt, updatedAt: new Date() })
+      .where(eq(workItems.id, taskId))
+      .returning();
+    await tx
+      .insert(workItemStatusHistory)
+      .values(buildStatusHistoryInsert(taskId, current.status, newStatus, actorId, opts.reason));
+    return row;
+  });
 
-  await db.insert(workItemStatusHistory).values(buildStatusHistoryInsert(taskId, current.status, newStatus, actorId, opts.reason));
+  // Audit + owner notification are post-commit side effects — a failed
+  // notification must not roll back the persisted status change.
   await recordAudit({
     userId: actorId,
     entityType: "work_item",
@@ -495,15 +455,18 @@ export async function softDeleteEngineeringTask(
   const current = await getEngineeringTask(taskId);
   if (!current) return false;
   const now = new Date();
-  // Cascade to direct subtasks first, then the task itself.
-  await db
-    .update(workItems)
-    .set({ deletedAt: now, updatedAt: now })
-    .where(and(eq(workItems.parentId, taskId), isNull(workItems.deletedAt)));
-  await db
-    .update(workItems)
-    .set({ deletedAt: now, updatedAt: now })
-    .where(eq(workItems.id, taskId));
+  // Atomic: cascade to direct subtasks AND the task itself commit together so a
+  // mid-write failure can't leave a half-deleted tree (orphaned subtasks).
+  await runInTransaction(async (tx) => {
+    await tx
+      .update(workItems)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(workItems.parentId, taskId), isNull(workItems.deletedAt)));
+    await tx
+      .update(workItems)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(eq(workItems.id, taskId));
+  });
   await recordAudit({
     userId: actorId,
     entityType: "work_item",
@@ -1410,10 +1373,13 @@ export async function listSignOffs(taskId: number): Promise<SignOffOut[]> {
 }
 
 /**
- * Record a sign-off decision against the `approvals` table, transition the
- * task status per the contract, and post a summary comment. An operational
- * approval drives the task to 'complete' through the workflow chokepoint
- * (source 'approval_action'), so the dependency complete-guard still applies.
+ * Record a sign-off decision: transition the task status per the contract (QC
+ * approve → `qc_approved`, operational approve → `complete`, reject →
+ * `provide_feedback`), then record the decision against the `approvals` table
+ * and post a summary comment. The transition runs FIRST, through the workflow
+ * chokepoint with the `approval_action` source, so the deliverable/document
+ * Done-gates and the dependency complete-guard still apply and an illegal
+ * sign-off is rejected before any approval row is written.
  */
 export async function recordSignOff(
   taskId: number,
@@ -1425,6 +1391,29 @@ export async function recordSignOff(
   const task = await getEngineeringTask(taskId);
   if (!task) throw notFound("Task");
   if (task.projectId == null) throw badRequest("Sign-off requires the task to belong to a project.");
+
+  // Resolve the target status per the sign-off contract.
+  let targetStatus: string | null = null;
+  if (decision === "rejected") {
+    targetStatus = "provide_feedback";
+  } else if (kind === "qc") {
+    targetStatus = "qc_approved";
+  } else {
+    targetStatus = "complete";
+  }
+
+  // Apply the guard-gated transition FIRST. A sign-off IS an approval action,
+  // so it uses the `approval_action` source (exempt from the "use Send for
+  // Approval" gate and the complete gate) — while the deliverable/document
+  // Done-gates and the dependency complete-guard still apply. Running it before
+  // any approval / comment / audit row is written means an illegal sign-off is
+  // rejected cleanly, leaving no orphaned sign-off record behind.
+  if (targetStatus && targetStatus !== task.status) {
+    await transitionEngineeringTaskStatus(taskId, targetStatus, actorId, {
+      source: "approval_action",
+      reason: `${kind} sign-off ${decision}`,
+    });
+  }
 
   const now = new Date();
   const approvalType = `${SIGN_OFF_PREFIX}${kind}${SIGN_OFF_SUFFIX}`;
@@ -1444,25 +1433,6 @@ export async function recordSignOff(
       projectId: task.projectId,
     })
     .returning({ id: approvals.id });
-
-  // Status transition per the contract.
-  let targetStatus: string | null = null;
-  if (decision === "rejected") {
-    targetStatus = "provide_feedback";
-  } else if (kind === "qc") {
-    targetStatus = "qc_approved";
-  } else {
-    targetStatus = "complete";
-  }
-  if (targetStatus && targetStatus !== task.status) {
-    // Operational approval reaching 'complete' uses the approval_action source
-    // so the workflow guard's approval branch is satisfied; the dependency
-    // complete-guard inside transitionEngineeringTaskStatus still fires.
-    await transitionEngineeringTaskStatus(taskId, targetStatus, actorId, {
-      source: kind === "operational" && decision === "approved" ? "approval_action" : "status_update",
-      reason: `${kind} sign-off ${decision}`,
-    });
-  }
 
   // Summary comment (reuse the comment surface — no mentions/notifications).
   await db.insert(taskComments).values({

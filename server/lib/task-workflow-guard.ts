@@ -1,13 +1,20 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { hasDeliverableRequirementFlag } from "@shared/task-deliverable-requirement";
 import { requiresDocumentLink } from "@shared/engineering/delivery-task-catalog";
+import { normalizeStatus } from "@shared/utils/status-normalization";
 import { db } from "../db";
 import { workItems, taskDeliverables, workItemDocumentLinks } from "@shared/schema";
 
 export type TaskWorkflowMutationSource = "status_update" | "bulk_status_update" | "send_for_approval" | "send_deliverable" | "approval_action";
 
-const COMPLETE_STATUSES = new Set(["COMPLETE", "DONE", "CLOSED"]);
-const APPROVAL_STATUSES = new Set(["NEEDS APPROVAL", "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL"]);
+// Canonical lowercase_underscore status keys (post migration 20260413), matched
+// via `normalizeStatus` so legacy space/upper forms ("NEEDS APPROVAL") and the
+// canonical form ("needs_approval") both compare correctly. This mirrors the
+// client guard (`client/src/lib/task-workflow-guard.ts`) exactly — previously
+// these were UPPER+space literals that NEVER matched the normalized statuses,
+// silently disabling the approval gate.
+const COMPLETE_STATUSES = new Set(["complete", "done", "closed"]);
+const APPROVAL_STATUSES = new Set(["needs_approval", "qc_approved", "provide_feedback", "operational_approval"]);
 
 const DELIVERABLE_REQUIRED_MESSAGE = "This task requires a deliverable. Use Send Deliverable.";
 const APPROVAL_REQUIRED_MESSAGE = "This task requires approval. Use Send for Approval.";
@@ -121,8 +128,8 @@ export function assertTaskWorkflowTransition(
   requestedStatus: string,
   source: TaskWorkflowMutationSource,
 ): void {
-  const next = String(requestedStatus || "").toUpperCase();
-  const current = String(context.currentStatus || "").toUpperCase();
+  const next = normalizeStatus(requestedStatus);
+  const current = normalizeStatus(context.currentStatus);
   const movingToComplete = COMPLETE_STATUSES.has(next);
   const movingToApproval = APPROVAL_STATUSES.has(next);
   const currentlyInApprovalFlow = APPROVAL_STATUSES.has(current);
@@ -148,7 +155,11 @@ export function assertTaskWorkflowTransition(
     throw new TaskWorkflowGuardError(DOCUMENT_LINK_REQUIRED_MESSAGE);
   }
 
-  if (context.approvalRequired && movingToApproval && !currentlyInApprovalFlow) {
+  // The "use Send for Approval" gate blocks a MANUAL status flip straight into
+  // an approval state. `approval_action` is the approval system itself acting
+  // (e.g. a QC/operational sign-off recording its decision), so it is exempt —
+  // just as it is exempt from the complete gate below.
+  if (context.approvalRequired && movingToApproval && !currentlyInApprovalFlow && source !== "approval_action") {
     if (context.deliverableRequired && !context.deliverableSent) {
       throw new TaskWorkflowGuardError(DELIVERABLE_BEFORE_APPROVAL_MESSAGE);
     }
