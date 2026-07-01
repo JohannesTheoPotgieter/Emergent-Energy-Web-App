@@ -13,7 +13,7 @@
 // 2026-06-19).
 // ============================================================
 
-import { and, asc, eq, inArray, isNull, notInArray, count } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, notInArray, or, count } from "drizzle-orm";
 import { isMilestoneWbs } from "@shared/lib/milestone-wbs";
 import { db } from "../db";
 import {
@@ -147,12 +147,18 @@ export class ExecutionBoardRepository {
    * always excluded.
    */
   async getActiveProjects(includeArchived = false): Promise<ActiveProjectRow[]> {
+    // LEFT JOIN, not INNER: a project without a project_execution_state row must
+    // still surface across the Execution lenses (board/planning/deliveries/
+    // allocations) rather than becoming silently invisible. The execution-state
+    // predicates therefore tolerate NULL (no row = treated as active/unarchived).
     const conditions = [
-      isNull(projectExecutionState.deletedAt),
+      or(isNull(projectExecutionState.deletedAt), isNull(projectExecutionState.projectId)),
       isNull(projectInfo.deletedAt),
     ];
     if (!includeArchived) {
-      conditions.push(eq(projectExecutionState.archivedStatus, "ACTIVE"));
+      conditions.push(
+        or(eq(projectExecutionState.archivedStatus, "ACTIVE"), isNull(projectExecutionState.archivedStatus)),
+      );
     }
     return this.dbInstance
       .select({
@@ -172,7 +178,7 @@ export class ExecutionBoardRepository {
         clientHandoverDate: projectExecutionState.clientHandoverDate,
       })
       .from(projectInfo)
-      .innerJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
       .where(and(...conditions))
       .orderBy(asc(projectInfo.projectName));
   }

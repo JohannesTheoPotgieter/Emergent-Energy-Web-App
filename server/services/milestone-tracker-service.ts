@@ -23,6 +23,7 @@ import {
   type ActivityTemplateRow,
 } from "../repositories/activity-plan-template-repository";
 import { pctTo100 } from "../lib/kpi-formulas";
+import { parsePlanDate } from "./execution-board-math";
 
 // ──────────────────────────────── shapes ─────────────────────────────────────
 
@@ -514,18 +515,19 @@ function buildActivities(projectId: number, projectName: string, milestones: Mil
       if (d) outflows.push({ date: d, amount: o.amount, realised: o.state === "paid" });
     }
 
-    // cashflow timing: amount-weighted money-out date − money-in date, in days
+    // cashflow timing: amount-weighted money-out date − money-in date, in days.
+    // parsePlanDate (not Date.parse) so SA-format DD/MM/YYYY dates aren't misread
+    // as MM/DD, consistent with the rest of the execution date handling.
     let cashflowDays: number | null = null;
-    if (inDate) {
-      const inMs = Date.parse(inDate);
+    const inMs = parsePlanDate(inDate)?.getTime() ?? NaN;
+    if (Number.isFinite(inMs)) {
       let wsum = 0, dsum = 0;
       for (const o of m.outflows) {
-        const d = outflowMoneyDate(o);
+        const ms = parsePlanDate(outflowMoneyDate(o))?.getTime() ?? NaN;
         const amt = o.amount ?? 0;
-        const ms = d ? Date.parse(d) : NaN;
         if (Number.isFinite(ms) && amt > 0) { wsum += amt; dsum += ms * amt; }
       }
-      if (wsum > 0 && Number.isFinite(inMs)) cashflowDays = Math.round((dsum / wsum - inMs) / 86_400_000);
+      if (wsum > 0) cashflowDays = Math.round((dsum / wsum - inMs) / 86_400_000);
     }
     const cashflowState: AxisState = cashflowDays == null ? "unknown" : cashflowDays >= 0 ? "positive" : "negative";
 
@@ -663,7 +665,11 @@ export async function getProjectMilestones(projectId: number, now: Date = new Da
 
 // ──────────────────────────── program overview ───────────────────────────────
 
-export async function getMilestoneProgram(now: Date = new Date()): Promise<MilestoneProgram> {
+export async function getMilestoneProgram(
+  now: Date = new Date(),
+  opts: { includeSettled?: boolean } = {},
+): Promise<MilestoneProgram> {
+  const includeSettled = opts.includeSettled ?? false;
   const today = todayIso(now);
   // includeArchived — same universe as the board, so the phase filter can reach
   // every project in a phase (incl. completed/archived ones with open money).
@@ -720,10 +726,11 @@ export async function getMilestoneProgram(now: Date = new Date()): Promise<Miles
     if (bundle.milestones.length === 0) continue; // no revenue milestones → not on the tracker
     const views = buildMilestones(p.id, p.projectName, bundle, today);
     const openInflowViews = views.filter(inflowOpen);
-    // Only surface projects that still have open money — an inflow still to
-    // collect (colour-aware: a future/forecast receipt date is NOT collected) or
-    // an outflow still to pay.
-    if (openInflowViews.length === 0 && !hasOpenOutflow(bundle.costs)) continue;
+    // By default only surface projects that still have open money — an inflow
+    // still to collect (colour-aware: a future/forecast receipt date is NOT
+    // collected) or an outflow still to pay. includeSettled keeps fully-settled
+    // projects on the program too (so planning can review closed work).
+    if (!includeSettled && openInflowViews.length === 0 && !hasOpenOutflow(bundle.costs)) continue;
 
     const inflowTotal = views.reduce((s, m) => s + (m.amount ?? 0), 0);
     const inflowOutstanding = openInflowViews.reduce((s, m) => s + (m.amount ?? 0), 0);
@@ -897,10 +904,25 @@ function templateKeywords(text: string | null | undefined): string[] {
   return phrase ? [phrase] : [];
 }
 
-function matchesAnyKeyword(text: string | null | undefined, keywords: string[]): boolean {
-  if (!text || keywords.length === 0) return false;
+/** How many distinct keywords appear in the text (0 = no match). Used to pick the
+ *  single best target rather than linking every candidate (cross-product). */
+function keywordScore(text: string | null | undefined, keywords: string[]): number {
+  if (!text || keywords.length === 0) return 0;
   const t = text.toLowerCase();
-  return keywords.some((k) => k && t.includes(k));
+  let n = 0;
+  for (const k of keywords) if (k && t.includes(k)) n++;
+  return n;
+}
+
+/** The single highest-scoring item (first wins ties); null if nothing matches. */
+function bestMatch<T>(items: T[], textOf: (i: T) => string | null | undefined, keywords: string[]): T | null {
+  let best: T | null = null;
+  let bestScore = 0;
+  for (const it of items) {
+    const s = keywordScore(textOf(it), keywords);
+    if (s > bestScore) { bestScore = s; best = it; }
+  }
+  return best;
 }
 
 /** Derive template rules from a project's existing links — one rule per milestone
@@ -993,17 +1015,36 @@ export async function applyTemplateToProject(projectId: number, templateId: numb
   let rulesMatched = 0;
 
   for (const rule of tpl.rules) {
-    const ms = b.milestones.filter((m) => matchesAnyKeyword(m.milestoneName, rule.milestoneKeywords));
-    const ts = b.tasks.filter((t) => matchesAnyKeyword(t.title, rule.taskKeywords));
-    const os = b.costs.filter((c) => matchesAnyKeyword(c.description ?? c.costCategory, rule.outflowKeywords));
-    if (ms.length > 0 && ts.length > 0) rulesMatched++;
-    for (const m of ms) for (const t of ts) {
-      const key = `${m.rowHash}::${t.id}`;
-      if (!existingMt.has(key)) { existingMt.add(key); toMt.push({ revenueRowHash: m.rowHash, workItemId: t.id }); }
+    // A rule represents ONE milestone → its task(s) → their outflow(s). Match the
+    // single best milestone (not every candidate) so we don't fan a rule out over
+    // every deposit/milestone in the project. A milestone legitimately spans
+    // several tasks, so link all tasks that match the rule's task keywords.
+    const milestone = bestMatch(b.milestones, (m) => m.milestoneName, rule.milestoneKeywords);
+    const matchedTasks = b.tasks
+      .map((t) => ({ t, score: keywordScore(t.title, rule.taskKeywords) }))
+      .filter((x) => x.score > 0)
+      .sort((a, c) => c.score - a.score)
+      .map((x) => x.t);
+    if (milestone && matchedTasks.length > 0) rulesMatched++;
+
+    if (milestone) {
+      for (const t of matchedTasks) {
+        const key = `${milestone.rowHash}::${t.id}`;
+        if (!existingMt.has(key)) { existingMt.add(key); toMt.push({ revenueRowHash: milestone.rowHash, workItemId: t.id }); }
+      }
     }
-    for (const t of ts) for (const c of os) {
-      const key = `${t.id}::${c.rowHash}`;
-      if (!existingTc.has(key)) { existingTc.add(key); toTc.push({ workItemId: t.id, costRowHash: c.rowHash }); }
+
+    // Each matched outflow attaches to its single closest task (by the outflow's
+    // own keywords), falling back to the rule's top-scoring task — never every
+    // task (which is the cross-product that over-links).
+    if (matchedTasks.length > 0) {
+      const outflows = b.costs.filter((c) => keywordScore(c.description ?? c.costCategory, rule.outflowKeywords) > 0);
+      for (const c of outflows) {
+        const target =
+          bestMatch(matchedTasks, (t) => t.title, templateKeywords(c.description ?? c.costCategory)) ?? matchedTasks[0];
+        const key = `${target.id}::${c.rowHash}`;
+        if (!existingTc.has(key)) { existingTc.add(key); toTc.push({ workItemId: target.id, costRowHash: c.rowHash }); }
+      }
     }
   }
 

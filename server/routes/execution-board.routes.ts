@@ -118,6 +118,20 @@ export function registerExecutionBoardRoutes(app: Express) {
     },
   );
 
+  // Active projects (id + name) for the Deliveries "new delivery" picker — the
+  // full active universe, so a project with no deliveries yet can still be
+  // chosen (deriving the list from delivery rows would hide it).
+  app.get(
+    "/api/execution-review/program/projects",
+    jwtAuth,
+    requireAuth,
+    requirePermission("execution_review", "view"),
+    async (_req: Request, res: Response) => {
+      const projects = await executionBoardRepository.getActiveProjects();
+      res.json(projects.map((p) => ({ id: p.id, name: p.projectName })));
+    },
+  );
+
   // Work items for a project — the Deliveries task picker (link an order to the
   // execution task that defines when it's needed on site).
   app.get(

@@ -82,8 +82,9 @@ export function registerMilestoneTrackerRoutes(app: Express) {
     jwtAuth,
     requireAuth,
     requirePermission("execution_review", "view"),
-    async (_req: Request, res: Response) => {
-      res.json(await getMilestoneProgram());
+    async (req: Request, res: Response) => {
+      const includeSettled = req.query.includeSettled === "true" || req.query.includeSettled === "1";
+      res.json(await getMilestoneProgram(new Date(), { includeSettled }));
     },
   );
 

@@ -651,7 +651,11 @@ export async function getDeliveriesProgram(now: Date = new Date()): Promise<Deli
       projectName: nameById.get(p.projectId) ?? "",
       label: p.title,
       date: neededBy,
-      rag: plan.willMakeIt,
+      // RAG = "will this delivery make its needed date". Prefer the lead-time
+      // planner; when it can't assess (no lead time / not ordered) fall back to
+      // the same target-date RAG the milestone/task rows use, so every row's
+      // colour means the same thing and an overdue order still reads red.
+      rag: plan.willMakeIt ?? deliveryRag(nd, today, complete),
       source: "procurement",
       overdue: !complete && nd != null && diffDays(nd, today) < 0,
       complete,
