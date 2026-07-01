@@ -27,10 +27,10 @@
  */
 
 import crypto from "crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { storage } from "../storage";
-import { smartImportRuns } from "@shared/schema";
+import { smartImportRuns, categoryRevenueAllocations } from "@shared/schema";
 import { detectChanges, downloadFileContent, listFolderChildren } from "../sharepoint";
 import { isConnectorMocked } from "../lib/connector-mode";
 import { ApiError } from "../lib/api-error";
@@ -385,12 +385,34 @@ async function processFileV2(
     conflictPolicyParks: policyDecision.decision === "park",
   };
   const gate = decideSchedulerAutoCommit(gateSignals);
+
+  // H4: a re-import that parsed ZERO category allocations for a project that
+  // currently HAS live allocations would silently RETAIN the stale ones — the
+  // S09 soft-close+insert is gated on `catAllocs.length > 0`, so nothing rotates
+  // and the number stays put (stale, not zeroed). That is NOT a REV/COS swing,
+  // so the net-delta park (H6) cannot see it. Park it explicitly rather than
+  // auto-commit a workbook that lost its Costing/budget pane.
+  let zeroAllocRetain = false;
+  if (autoMappedProjectId && (preview.normalization?.categoryAllocations?.length ?? 0) === 0) {
+    const liveAlloc = await db
+      .select({ id: categoryRevenueAllocations.id })
+      .from(categoryRevenueAllocations)
+      .where(and(
+        eq(categoryRevenueAllocations.projectId, autoMappedProjectId),
+        isNull(categoryRevenueAllocations.effectiveTo),
+      ))
+      .limit(1);
+    zeroAllocRetain = liveAlloc.length > 0;
+  }
+
   // Owner "always commit" switch: commit whenever a project is resolved,
   // bypassing the gate's review + wrong-file guards. We can only commit to a
   // known project, so an unmatched file still parks for a human to map it.
-  const forcedCommit = forceCommit && !!autoMappedProjectId && gate.decision === "park";
+  // (auto-commit-all does NOT override the H4 zero-allocation park — a lost
+  // Costing pane is a data-loss signature, not a "small expected conflict".)
+  const forcedCommit = forceCommit && !!autoMappedProjectId && gate.decision === "park" && !zeroAllocRetain;
   const effectiveDecision: "commit" | "park" =
-    forceCommit && autoMappedProjectId ? "commit" : gate.decision;
+    zeroAllocRetain ? "park" : (forceCommit && autoMappedProjectId ? "commit" : gate.decision);
 
   const summaryJson = {
     ...(preview as unknown as Record<string, unknown>),
@@ -411,7 +433,9 @@ async function processFileV2(
       // Tightened auto-commit gate: why this run auto-committed or parked.
       // When the owner's auto-commit-all switch overrides a park, record the
       // effective decision plus the gate reason it bypassed (kept for audit).
-      autoCommitGate: forcedCommit
+      autoCommitGate: zeroAllocRetain
+        ? { decision: "park", reason: "zero category allocations parsed but project has live allocations — possible lost Costing/budget pane (H4)" }
+        : forcedCommit
         ? { decision: "commit", reason: `owner auto-commit-all (gate would park: ${gate.reason})`, forced: true }
         : { decision: gate.decision, reason: gate.reason },
     },
@@ -444,19 +468,25 @@ async function processFileV2(
     try {
       // Net-delta guard: park (don't auto-commit) when this run would swing the
       // project's REV or COS beyond the threshold vs its current value. Uses the
-      // dry-run preview for the "would-be" totals (no parallel formula). Skipped
-      // entirely under the owner's auto-commit-all switch ("no guards").
-      if (!forceCommit) {
-        const parkedByDelta = await maybeParkOnNetDelta({
-          runId: run.id,
-          projectId: autoMappedProjectId,
-          projectName: resolvedProjectName,
-          v2ConflictResolutions: policyDecision.resolutions,
-          gateSignals,
-          summaryJson,
-        });
-        if (parkedByDelta) return { status: "parked", runId: run.id };
-      }
+      // dry-run preview for the "would-be" totals (no parallel formula).
+      //
+      // H6: this park stays ACTIVE even under the owner's auto-commit-all switch.
+      // auto-commit-all bypasses the review + wrong-file GATE (small, expected
+      // conflicts), but a LARGE REV/COS swing vs the project's current value is
+      // exactly the wrong-file / bad-data signature (e.g. a mis-matched tracker
+      // rotating one project's snapshot onto another, or a credit-note negative)
+      // — it must still park for a human rather than auto-commit silently.
+      // First-population runs don't trip it: buildProjectMetricSwings returns []
+      // when the project currently has zero REV and COS.
+      const parkedByDelta = await maybeParkOnNetDelta({
+        runId: run.id,
+        projectId: autoMappedProjectId,
+        projectName: resolvedProjectName,
+        v2ConflictResolutions: policyDecision.resolutions,
+        gateSignals,
+        summaryJson,
+      });
+      if (parkedByDelta) return { status: "parked", runId: run.id };
 
       const commitResult = await commitSmartImportRunAsSystem({
         runId: run.id,

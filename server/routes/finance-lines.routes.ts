@@ -41,6 +41,10 @@ import {
   resolveLeafProvenance,
 } from "../repositories/finance-provenance-repository";
 import {
+  recomputeDerivedKpisForProject,
+  recomputeAllDerivedKpis,
+} from "../services/derived-project-kpis-materializer";
+import {
   buildRevCosGpTree,
   buildInvoiceLeaf,
   buildSourceCell,
@@ -312,6 +316,36 @@ async function resolveProjectScope(
 export function registerFinanceLinesRoutes(app: Express): void {
   const repo = new FinanceLineLevelRepository();
   const provenanceRepo = new FinanceProvenanceRepository();
+
+  // M1: on-demand refresh of the derived_project_kpis materializer (priority
+  // dashboard / project header chips). Import commits now refresh it
+  // automatically; this is the admin escape hatch for a correction made outside
+  // a commit, so the operator need not wait for the 15-min cron.
+  //   POST /api/finance/kpis/refresh?projectId=NN  → one project
+  //   POST /api/finance/kpis/refresh               → whole portfolio
+  app.post(
+    "/api/finance/kpis/refresh",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    async (req: Request, res: Response) => {
+      try {
+        const raw = req.query.projectId;
+        if (raw != null && String(raw).trim() !== "") {
+          const projectId = parseProjectId(String(raw));
+          await recomputeDerivedKpisForProject(projectId);
+          res.json({ refreshed: "project", projectId });
+          return;
+        }
+        const projectCount = await recomputeAllDerivedKpis();
+        res.json({ refreshed: "portfolio", projectCount });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        const wrapped = serverError("Failed to refresh derived KPIs");
+        (wrapped as unknown as { cause?: unknown }).cause = err;
+        throw wrapped;
+      }
+    },
+  );
 
   app.get(
     "/api/finance/lines/:projectId",
