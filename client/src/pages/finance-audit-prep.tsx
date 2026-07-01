@@ -13,11 +13,11 @@
  */
 import { useMemo, useState } from "react";
 import { FinanceShell } from "@/components/layout/FinanceShell";
+import { SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { FileDown, ShieldCheck, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -117,35 +117,49 @@ export default function FinanceAuditPrepPage() {
   return (
     <FinanceShell>
       <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-emerald-600" />
-              Audit Prep
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-              Year-end auditor bundles. Each download returns the year's
-              activity as a CSV that opens directly in Excel. Every export
-              is recorded against the user's audit trail.
-            </p>
+        <SectionHeader
+          icon={<ShieldCheck className="h-4 w-4" />}
+          eyebrow="FINANCE · AUDIT"
+          title="Audit Prep"
+          description="Year-end auditor bundles. Each download returns the year's activity as a CSV that opens directly in Excel. Every export is recorded against the user's audit trail."
+          badges={[
+            { label: "financials : approve", variant: "outline" },
+          ]}
+        />
+
+        {/* Trust provenance — the facts an auditor asks about a bundle. */}
+        <div className="ee-data-trust-grid">
+          <div className="ee-data-trust-card">
+            <div className="ee-data-trust-label">FY window</div>
+            <div className="ee-data-trust-value font-mono">
+              Sep {fy - 1} – Aug {fy}
+            </div>
           </div>
-          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-            financials : approve
-          </Badge>
+          <div className="ee-data-trust-card">
+            <div className="ee-data-trust-label">Permission scope</div>
+            <div className={`ee-data-trust-value ${canApprove ? "text-status-locked" : "text-status-adverse"}`}>
+              {canApprove ? "financials : approve" : "read-only (no approve)"}
+            </div>
+          </div>
+          <div className="ee-data-trust-card">
+            <div className="ee-data-trust-label">Requested by</div>
+            <div className="ee-data-trust-value truncate">
+              {user?.name || user?.email || "—"}
+            </div>
+          </div>
+          <div className="ee-data-trust-card">
+            <div className="ee-data-trust-label">Delivery</div>
+            <div className="ee-data-trust-value">CSV · UTF-8 · Excel-ready</div>
+          </div>
         </div>
 
         {!canApprove && (
-          <Card className="border-amber-200 bg-amber-50/60">
-            <CardContent className="p-4 flex items-start gap-2 text-sm text-amber-900">
-              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-              <div>
-                Your role does not have <code className="font-mono">financials : approve</code>.
-                The download buttons are visible but will return 403 — the
-                CFO or a member of the COO/CEO admin group needs to run
-                these.
-              </div>
-            </CardContent>
-          </Card>
+          <WorkspaceNotice
+            tone="warning"
+            icon={<AlertTriangle className="h-4 w-4" />}
+            title="Your role does not have financials : approve"
+            description="The download buttons are visible but will return 403 — the CFO or a member of the COO/CEO admin group needs to run these."
+          />
         )}
 
         <Card>
@@ -174,15 +188,15 @@ export default function FinanceAuditPrepPage() {
         </Card>
 
         {lastError && (
-          <Card className="border-red-200 bg-red-50/60">
-            <CardContent className="p-4 flex items-start gap-2 text-sm text-red-900" data-testid="text-audit-prep-error">
-              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-              <div>
-                <div className="font-semibold">Download failed</div>
-                <div className="font-mono text-[12px] mt-0.5">{lastError}</div>
-              </div>
-            </CardContent>
-          </Card>
+          <WorkspaceNotice
+            tone="warning"
+            icon={<AlertTriangle className="h-4 w-4" />}
+            title="Download failed"
+          >
+            <span className="font-mono text-[12px] text-muted-foreground" data-testid="text-audit-prep-error">
+              {lastError}
+            </span>
+          </WorkspaceNotice>
         )}
 
         <div className="grid grid-cols-1 gap-3">
@@ -190,16 +204,17 @@ export default function FinanceAuditPrepPage() {
             <Card key={cfg.id} data-testid={`card-audit-export-${cfg.id}`}>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <FileDown className="w-4 h-4 text-emerald-600" />
+                  <FileDown className="w-4 h-4 text-status-ties" />
                   {cfg.title}
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-0 space-y-3">
                 <p className="text-sm text-muted-foreground">{cfg.description}</p>
-                <div className="flex items-center justify-between">
-                  <code className="font-mono text-[11px] text-muted-foreground">
-                    GET {cfg.endpoint}?fy={fy}
-                  </code>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[11px] text-muted-foreground">
+                    FY <span className="font-mono">{fy}</span> · requested by{" "}
+                    <span className="font-medium text-foreground">{user?.name || user?.email || "—"}</span>
+                  </span>
                   <Button
                     size="sm"
                     onClick={() => downloadCsv(cfg)}
