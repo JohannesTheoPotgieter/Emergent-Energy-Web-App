@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { PageShell } from "@/components/layout/page-shell";
-import { PageHeader } from "@/components/ui/page-header";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { PageError } from "@/components/ui/page-states";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { RagBadge } from "@/components/ui/status-badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
-import { Download, Pencil, Plus, Truck } from "lucide-react";
+import { Download, LayoutDashboard, Pencil, Plus, Truck } from "lucide-react";
 import type { DeliveryProgramRow, WorkItemPick } from "@/lib/execution-types";
 import { fmtDate, parseExecDate } from "@/lib/execution-types";
 import { useTableSort, SortHeader, downloadCsv } from "@/lib/table-utils";
@@ -216,9 +216,14 @@ export default function ExecutionDeliveries() {
   );
 
   return (
-    <PageShell className="max-w-5xl p-4 md:p-6" data-testid="execution-deliveries-page">
-      <PageHeader title="Deliveries" subtitle="Plan orders backward from the execution task they feed — capture lead time, see if they'll make it on site" />
-      <div className="flex flex-wrap items-center gap-2 mt-3">
+    <PageShell className="max-w-5xl p-4 md:p-6 space-y-4" data-testid="execution-deliveries-page">
+      <SectionHeader
+        icon={<LayoutDashboard className="h-5 w-5" />}
+        eyebrow="Execution"
+        title="Deliveries"
+        description="Plan orders backward from the execution task they feed — capture lead time, see if they'll make it on site"
+      />
+      <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={() => setDialog({ row: null })} className="gap-1.5" data-testid="deliveries-new"><Plus className="w-4 h-4" />New delivery</Button>
         <Button size="sm" variant={overdueOnly ? "default" : "outline"} onClick={() => setOverdueOnly((v) => !v)} data-testid="deliveries-overdue-only">Overdue only</Button>
         <Button size="sm" variant={hideCompleted ? "default" : "outline"} onClick={() => setHideCompleted((v) => !v)} data-testid="deliveries-hide-completed">Hide completed</Button>
@@ -229,13 +234,13 @@ export default function ExecutionDeliveries() {
           </Button>
         </div>
       </div>
-      <Card className="mt-4"><CardContent className="p-0 overflow-x-auto">
+      <Card><CardContent className="p-0 overflow-x-auto">
         {isLoading ? (
           <div className="p-4 space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
         ) : isError ? (
-          <p className="p-8 text-center text-sm text-muted-foreground">Could not load. <Button variant="link" onClick={() => refetch()}>Retry</Button></p>
+          <PageError title="Could not load deliveries" message="The delivery program failed to load." onRetry={() => refetch()} />
         ) : rows.length === 0 ? (
-          <p className="p-8 text-center text-sm text-muted-foreground">No deliveries match these filters.</p>
+          <p className="ee-empty-state text-sm text-muted-foreground">No deliveries match these filters.</p>
         ) : (
           <table className="w-full text-sm">
             <thead><tr className="border-b text-left text-xs text-muted-foreground">

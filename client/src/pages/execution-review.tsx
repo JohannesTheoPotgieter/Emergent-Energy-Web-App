@@ -1,13 +1,14 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowDown, ArrowUp, ArrowUpDown, Download, Pencil } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, LayoutDashboard, Pencil } from "lucide-react";
 import { useApiMutation } from "@/hooks/use-api-mutation";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, LabelList,
 } from "recharts";
-import { PageShell } from "@/components/layout/page-shell";
-import { PageHeader } from "@/components/ui/page-header";
+import { PageShell, SectionHeader, FilterBar } from "@/components/layout/page-shell";
+import { PageError } from "@/components/ui/page-states";
+import { statusClasses, ragLevel } from "@/lib/design-tokens";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -55,15 +56,25 @@ function loadFilters(): Filters {
 const LS_KEY = "execution-board-filters";
 const LS_GROUP = "execution-board-group-by-pm";
 
-const RAG_COLORS: Record<string, string> = { green: "#16A34A", amber: "#F59E0B", red: "#DC2626", none: "#CBD5E1" };
+// Chart fills for the schedule-RAG donut/legend. Recharts needs a concrete CSS
+// colour (not a Tailwind class), so we read the canonical brand hexes straight
+// from the --ee-status-* design tokens rather than re-declaring pastels here.
+const RAG_CHART_FILL: Record<string, string> = {
+  green: "var(--ee-status-ties)",
+  amber: "var(--ee-status-drift)",
+  red: "var(--ee-status-adverse)",
+  none: "var(--ee-status-locked)",
+};
 
 // Canonical lifecycle RAG status (GREEN / AMBER / RED) — the same ragStatus the
 // company lifecycle board sets (a comment is required for the audit trail).
 const RAG_STATUS_OPTIONS = ["GREEN", "AMBER", "RED"] as const;
-const RAG_STATUS_STYLE: Record<string, { dot: string; text: string; bg: string }> = {
-  GREEN: { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200" },
-  AMBER: { dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50 border-amber-200" },
-  RED: { dot: "bg-red-500", text: "text-red-700", bg: "bg-red-50 border-red-200" },
+// Solid dot uses the fixed brand hex (bg-status-*); the chip surface routes
+// through the canonical statusClasses/ragLevel helpers so dark mode is free.
+const RAG_STATUS_DOT: Record<string, string> = {
+  GREEN: "bg-status-ties",
+  AMBER: "bg-status-drift",
+  RED: "bg-status-adverse",
 };
 
 function PhaseCell({
@@ -96,15 +107,14 @@ function RagStatusCell({
   const [rag, setRag] = useState("");
   const [comment, setComment] = useState("");
   const current = row.ragStatus ? row.ragStatus.toUpperCase() : null;
-  const style = current ? RAG_STATUS_STYLE[current] : null;
 
-  const badge = current && style ? (
-    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${style.bg} ${style.text}`}>
-      <span className={`w-2 h-2 rounded-full ${style.dot}`} />{current}
+  const badge = current ? (
+    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${statusClasses(ragLevel(current), "soft")}`}>
+      <span className={`w-2 h-2 rounded-full ${RAG_STATUS_DOT[current] ?? "bg-status-locked"}`} />{current}
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 text-muted-foreground text-[11px]">
-      <span className="w-2 h-2 rounded-full bg-slate-300" />Not set
+      <span className="w-2 h-2 rounded-full bg-status-locked" />Not set
     </span>
   );
 
@@ -118,19 +128,16 @@ function RagStatusCell({
       <PopoverContent data-interactive="true" onClick={(e) => e.stopPropagation()} className="w-64 p-3 space-y-2" align="start">
         <div className="text-xs font-semibold">Set RAG status</div>
         <div className="flex gap-1.5">
-          {RAG_STATUS_OPTIONS.map((r) => {
-            const s = RAG_STATUS_STYLE[r];
-            return (
-              <button
-                key={r}
-                onClick={() => setRag(r)}
-                className={`flex-1 inline-flex items-center justify-center gap-1 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${rag === r ? `${s.bg} ${s.text} ring-1 ring-emerald-400` : "bg-card text-muted-foreground border-border"}`}
-                data-testid={`rag-opt-${r}-${row.projectId}`}
-              >
-                <span className={`w-2 h-2 rounded-full ${s.dot}`} />{r}
-              </button>
-            );
-          })}
+          {RAG_STATUS_OPTIONS.map((r) => (
+            <button
+              key={r}
+              onClick={() => setRag(r)}
+              className={`flex-1 inline-flex items-center justify-center gap-1 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${rag === r ? `${statusClasses(ragLevel(r), "soft")} ring-1 ring-emerald-400` : "bg-card text-muted-foreground border-border"}`}
+              data-testid={`rag-opt-${r}-${row.projectId}`}
+            >
+              <span className={`w-2 h-2 rounded-full ${RAG_STATUS_DOT[r] ?? "bg-status-locked"}`} />{r}
+            </button>
+          ))}
         </div>
         <textarea
           value={comment}
@@ -485,26 +492,31 @@ export default function ExecutionReviewBoard() {
   const h = data?.header;
 
   return (
-    <PageShell className="max-w-7xl p-4 md:p-6" data-testid="execution-board-page">
-      <PageHeader title="Execution" subtitle="Program-wide delivery control tower · schedule read verbatim from the latest imported program plan" />
+    <PageShell className="max-w-7xl p-4 md:p-6 space-y-4" data-testid="execution-board-page">
+      <SectionHeader
+        icon={<LayoutDashboard className="h-5 w-5" />}
+        eyebrow="Execution"
+        title="Execution"
+        description="Program-wide delivery control tower · schedule read verbatim from the latest imported program plan"
+      />
 
       {/* KPI strip — reflects the active scope (phase/search/PM) filters; tiles cross-filter the table */}
       {h && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
-          <Kpi label="Active sites" value={kpis.activeCount} accent="bg-emerald-500" onClick={() => setFilters({ ...DEFAULT_FILTERS })} />
-          <Kpi label="Behind (red)" value={kpis.ragRed} tone={kpis.ragRed > 0 ? "text-red-600" : ""} accent="bg-red-500" active={filters.rag === "red"}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <Kpi label="Active sites" value={kpis.activeCount} accent="bg-status-ties" onClick={() => setFilters({ ...DEFAULT_FILTERS })} />
+          <Kpi label="Behind (red)" value={kpis.ragRed} tone={kpis.ragRed > 0 ? "text-status-adverse" : ""} accent="bg-status-adverse" active={filters.rag === "red"}
             onClick={() => setFilters((f) => ({ ...f, rag: f.rag === "red" ? "all" : "red" }))} />
-          <Kpi label="Overdue deliveries" value={kpis.overdueDeliveries} tone={kpis.overdueDeliveries > 0 ? "text-amber-600" : ""} accent="bg-amber-500"
+          <Kpi label="Overdue deliveries" value={kpis.overdueDeliveries} tone={kpis.overdueDeliveries > 0 ? "text-status-drift" : ""} accent="bg-status-drift"
             onClick={() => navigate("/execution/deliveries")} />
-          <Kpi label="Open flags" value={kpis.openFlags} accent="bg-slate-400" active={filters.hasFlags}
+          <Kpi label="Open flags" value={kpis.openFlags} accent="bg-status-locked" active={filters.hasFlags}
             onClick={() => setFilters((f) => ({ ...f, hasFlags: !f.hasFlags }))} />
-          <Kpi label="Prog actual/exp" value={`${fmtPct(kpis.weightedActual)}/${fmtPct(kpis.weightedExpected)}`} accent="bg-emerald-500" />
+          <Kpi label="Prog actual/exp" value={`${fmtPct(kpis.weightedActual)}/${fmtPct(kpis.weightedExpected)}`} accent="bg-status-ties" />
         </div>
       )}
 
       {/* Dashboard: charts + needs-attention */}
       {!isLoading && !isError && rows.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-3">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           <Card>
             <CardHeader className="pb-1 flex-row items-center justify-between space-y-0">
               <CardTitle className="text-sm">Sites by phase</CardTitle>
@@ -525,7 +537,7 @@ export default function ExecutionReviewBoard() {
                   >
                     {byPhaseData.map((d) => {
                       const active = effectivePhases.includes(d.phase);
-                      return <Cell key={d.phase} fill={active ? "#16A34A" : "#D1FAE5"} />;
+                      return <Cell key={d.phase} fill={active ? "var(--ee-status-ties)" : "#D1FAE5"} />;
                     })}
                     <LabelList dataKey="count" position="top" fontSize={10} fill="#64748b" />
                   </Bar>
@@ -555,7 +567,7 @@ export default function ExecutionReviewBoard() {
                       onClick={(d) => { const k = (d as { key?: string }).key; if (k) toggleSchedRag(k === "none" ? "all" : k); }}
                     >
                       {ragData.map((d) => (
-                        <Cell key={d.key} fill={RAG_COLORS[d.key]} opacity={filters.rag === "all" || filters.rag === d.key ? 1 : 0.3} />
+                        <Cell key={d.key} fill={RAG_CHART_FILL[d.key]} opacity={filters.rag === "all" || filters.rag === d.key ? 1 : 0.3} />
                       ))}
                     </Pie>
                     <Tooltip />
@@ -576,7 +588,7 @@ export default function ExecutionReviewBoard() {
                         onClick={() => toggleSchedRag(d.key === "none" ? "all" : d.key)}
                         data-testid={`execution-rag-legend-${d.key}`}
                       >
-                        <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: RAG_COLORS[d.key] }} />
+                        <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ background: RAG_CHART_FILL[d.key] }} />
                         <span className="truncate">{d.name}</span>
                         <span className="ml-auto tabular-nums font-medium">{d.value}</span>
                       </button>
@@ -592,17 +604,17 @@ export default function ExecutionReviewBoard() {
             <CardContent className="space-y-2 text-sm">
               <button className="w-full flex items-center justify-between rounded-md border px-3 py-2 hover:bg-muted/50"
                 onClick={() => setFilters((f) => ({ ...f, rag: "red" }))} data-testid="attention-behind">
-                <span className="inline-flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-600" /> Behind plan</span>
+                <span className="inline-flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-status-adverse" /> Behind plan</span>
                 <Badge variant={kpis.ragRed > 0 ? "destructive" : "secondary"}>{kpis.ragRed}</Badge>
               </button>
               <button className="w-full flex items-center justify-between rounded-md border px-3 py-2 hover:bg-muted/50"
                 onClick={() => navigate("/execution/deliveries")} data-testid="attention-deliveries">
-                <span className="inline-flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Overdue deliveries</span>
+                <span className="inline-flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-status-drift" /> Overdue deliveries</span>
                 <Badge variant="secondary">{kpis.overdueDeliveries}</Badge>
               </button>
               <button className="w-full flex items-center justify-between rounded-md border px-3 py-2 hover:bg-muted/50"
                 onClick={() => setFilters((f) => ({ ...f, hasFlags: true }))} data-testid="attention-flags">
-                <span className="inline-flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-slate-400" /> Open flags</span>
+                <span className="inline-flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-status-locked" /> Open flags</span>
                 <Badge variant="secondary">{kpis.openFlags}</Badge>
               </button>
             </CardContent>
@@ -611,54 +623,61 @@ export default function ExecutionReviewBoard() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2 mt-4">
-        <Input className="w-48" placeholder="Search site…" value={filters.search}
-          onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} data-testid="execution-search" />
-        <PhaseMultiSelect options={phases} selected={filters.phases} onChange={(v) => setFilters((f) => ({ ...f, phases: v }))} />
-        {filters.phases.length > 0 && (
-          <div className="flex items-center gap-1 flex-wrap">
-            {filters.phases.map((p) => (
-              <button
-                key={p}
-                onClick={() => togglePhase(p)}
-                className="inline-flex items-center gap-1 rounded-full border bg-emerald-50 border-emerald-200 text-emerald-700 px-2 py-0.5 text-xs hover:bg-emerald-100"
-                data-testid={`execution-phase-chip-${p}`}
-              >
-                {p}<span aria-hidden className="text-emerald-500">×</span>
-              </button>
-            ))}
+      <FilterBar>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input className="w-48" placeholder="Search site…" value={filters.search}
+              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} data-testid="execution-search" />
+            <PhaseMultiSelect options={phases} selected={filters.phases} onChange={(v) => setFilters((f) => ({ ...f, phases: v }))} />
+            <Select value={filters.rag} onValueChange={(v) => setFilters((f) => ({ ...f, rag: v }))}>
+              <SelectTrigger className="w-36"><SelectValue placeholder="Schedule RAG" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All RAG</SelectItem><SelectItem value="red">Red</SelectItem><SelectItem value="amber">Amber</SelectItem><SelectItem value="green">Green</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filters.pm} onValueChange={(v) => setFilters((f) => ({ ...f, pm: v }))}>
+              <SelectTrigger className="w-40"><SelectValue placeholder="PM" /></SelectTrigger>
+              <SelectContent><SelectItem value="all">All PMs</SelectItem>{pms.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
+            </Select>
+            <Button variant={filters.hasFlags ? "default" : "outline"} size="sm"
+              onClick={() => setFilters((f) => ({ ...f, hasFlags: !f.hasFlags }))} data-testid="execution-filter-flags">Has flags</Button>
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{filtered.length} of {rows.length}</span>
+              <Button variant={groupByPm ? "default" : "outline"} size="sm" onClick={() => setGroupByPm((v) => !v)} data-testid="execution-group-by-pm">Group by PM</Button>
+              <Button variant="outline" size="sm" onClick={handleExport} data-testid="execution-export" className="gap-1.5">
+                <Download className="w-4 h-4" /><span className="hidden sm:inline">Export</span>
+              </Button>
+            </div>
           </div>
-        )}
-        <Select value={filters.rag} onValueChange={(v) => setFilters((f) => ({ ...f, rag: v }))}>
-          <SelectTrigger className="w-36"><SelectValue placeholder="Schedule RAG" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All RAG</SelectItem><SelectItem value="red">Red</SelectItem><SelectItem value="amber">Amber</SelectItem><SelectItem value="green">Green</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={filters.pm} onValueChange={(v) => setFilters((f) => ({ ...f, pm: v }))}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="PM" /></SelectTrigger>
-          <SelectContent><SelectItem value="all">All PMs</SelectItem>{pms.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-        </Select>
-        <Button variant={filters.hasFlags ? "default" : "outline"} size="sm"
-          onClick={() => setFilters((f) => ({ ...f, hasFlags: !f.hasFlags }))} data-testid="execution-filter-flags">Has flags</Button>
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{filtered.length} of {rows.length}</span>
-          <Button variant={groupByPm ? "default" : "outline"} size="sm" onClick={() => setGroupByPm((v) => !v)} data-testid="execution-group-by-pm">Group by PM</Button>
-          <Button variant="outline" size="sm" onClick={handleExport} data-testid="execution-export" className="gap-1.5">
-            <Download className="w-4 h-4" /><span className="hidden sm:inline">Export</span>
-          </Button>
+          {/* Active-phase chips on their own row so they can't fragment the control line at mid widths */}
+          {filters.phases.length > 0 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              {filters.phases.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => togglePhase(p)}
+                  className="ee-chip ee-status-success gap-1 hover:opacity-80"
+                  data-testid={`execution-phase-chip-${p}`}
+                >
+                  {p}<span aria-hidden>×</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
+      </FilterBar>
 
       {/* Compact table */}
-      <Card className="mt-3">
+      <Card>
         <CardContent className="p-0 overflow-x-auto">
           {isLoading ? (
             <div className="p-4 space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
           ) : isError ? (
-            <div className="p-8 text-center text-sm text-muted-foreground" data-testid="execution-board-error">Could not load the board. <Button variant="link" onClick={() => refetch()}>Retry</Button></div>
+            <div data-testid="execution-board-error">
+              <PageError title="Could not load the board" message="The execution board failed to load." onRetry={() => refetch()} />
+            </div>
           ) : filtered.length === 0 ? (
-            <div className="p-8 text-center text-sm text-muted-foreground" data-testid="execution-board-empty">No active sites match these filters.</div>
+            <div className="ee-empty-state text-sm text-muted-foreground" data-testid="execution-board-empty">No active sites match these filters.</div>
           ) : (
             <table className="text-sm border-collapse" style={{ tableLayout: "fixed", width: columns.reduce((s, c) => s + colW(c), 0) }}>
               <colgroup>{columns.map((c) => <col key={c.key} style={{ width: colW(c) }} />)}</colgroup>
@@ -699,7 +718,7 @@ export default function ExecutionReviewBoard() {
           )}
         </CardContent>
       </Card>
-      <p className="mt-2 text-xs text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         <Badge variant="outline" className="mr-1">as imported</Badge>
         Schedule = actual%/expected%, duration-weighted from the latest tracker import. Flags = open/actioned.
       </p>
