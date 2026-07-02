@@ -75,6 +75,9 @@ tsc-errors.txt
 .migrations-drift-check/
 qa/reports/vitest-results.json
 
+# ── Generated reports (regenerate on demand; never commit) ───
+drift-report.json
+
 # -- Replit paste artefacts & DB dumps (never source) --
 attached_assets/*.png
 attached_assets/*.jpeg
