@@ -93,7 +93,7 @@ server/repositories/Data access layer — ALL db access goes through these
 server/bootstrap/   Startup orchestrator (runs additive migrations & seeds)
 server/lib/         Shared server utilities (api-error, logger, helpers)
 server/imports/     Smart Import v2 runtime (conflict policy, etc.)
-shared/schema/      Drizzle schema — 26 domain files (finance.ts, projects.ts, …)
+shared/schema/      Drizzle schema — 33 domain files (finance.ts, projects.ts, …)
 shared/schema.ts    Barrel re-export of shared/schema/* — DO NOT add tables here
 shared/             Shared types, permissions, roles, KPI defs, validators
 migrations/         Drizzle-managed SQL migrations (repo root — NOT server/)
