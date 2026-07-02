@@ -196,13 +196,17 @@ function fingerprint(pg: PgEnv): FinanceFingerprint {
     revLineCount: Number(psqlScalar(pg, `SELECT COUNT(*) FROM "normalized_revenue_lines";`, "rev count")),
     revAmountExVat: psqlScalar(
       pg,
-      `SELECT COALESCE(SUM("amount_ex_vat"), 0)::text FROM "normalized_revenue_lines";`,
+      // CAST to numeric: amount_ex_vat is decimal in the live schema but a
+      // pg_restore round-trip can surface it as text, so SUM(text) errors.
+      // Casting is a no-op on numeric and correct on the restored text column.
+      `SELECT COALESCE(SUM(CAST("amount_ex_vat" AS numeric)), 0)::text FROM "normalized_revenue_lines";`,
       "rev sum",
     ),
     costLineCount: Number(psqlScalar(pg, `SELECT COUNT(*) FROM "normalized_cost_lines";`, "cost count")),
     costAmountExVat: psqlScalar(
       pg,
-      `SELECT COALESCE(SUM("amount_ex_vat"), 0)::text FROM "normalized_cost_lines";`,
+      // CAST to numeric — see revAmountExVat above.
+      `SELECT COALESCE(SUM(CAST("amount_ex_vat" AS numeric)), 0)::text FROM "normalized_cost_lines";`,
       "cost sum",
     ),
     projectCount: Number(psqlScalar(pg, `SELECT COUNT(*) FROM "project_info";`, "project count")),
