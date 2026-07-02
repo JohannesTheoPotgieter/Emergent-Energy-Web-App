@@ -21,15 +21,11 @@ describe("finance route canonicalization", () => {
 
   it("retargets quick actions, tours, and EE info links to canonical finance paths", () => {
     const homeBrief = read("client/src/config/home-brief.ts");
-    const screenTours = read("client/src/data/screen-tours.ts");
     const walkthroughs = read("client/src/data/walkthroughs.ts");
     const eeInfo = read("client/src/pages/ee-info.tsx");
 
     expect(homeBrief).toContain('path: "/cos"');
     expect(homeBrief).not.toContain('path: "/cos-control"');
-
-    expect(screenTours).toContain('"/cos": {');
-    expect(screenTours).not.toContain('"/cos-control": {');
 
     expect(walkthroughs).not.toContain('targetPage: "/cos-control"');
     expect(walkthroughs).not.toContain('targetPage: "/revenue"');

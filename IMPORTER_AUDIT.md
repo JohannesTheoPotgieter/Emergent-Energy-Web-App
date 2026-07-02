@@ -380,7 +380,7 @@ invoice present, **invoice date 2026-05-15 in RED**.
 ### 4.4 Runnable reconciliation harness — `qa/audit/importer-canonical-recon.ts`
 
 A self-contained **exceljs-only** script (no DB, no app bootstrap) that, for each
-`attached_assets/*Tracker*` workbook (or a path you pass):
+`qa/fixtures/trackers/*` workbook (or a path you pass):
 
 1. locates `Expenditure Breakdown` and resolves columns **by header text** (mirroring the app);
 2. reads the `INVOICE RAISED DATE` **font colour** exactly as the app does (ARGB/theme,
@@ -395,7 +395,7 @@ It is intentionally independent of the app’s db-coupled modules so it runs wit
 `npm i exceljs`. To run in an environment that has deps:
 
 ```bash
-npx tsx qa/audit/importer-canonical-recon.ts                 # scans attached_assets/
+npx tsx qa/audit/importer-canonical-recon.ts                 # scans qa/fixtures/trackers/
 npx tsx qa/audit/importer-canonical-recon.ts path/to/Tracker.xlsx --as-at 2026-06-01
 ```
 

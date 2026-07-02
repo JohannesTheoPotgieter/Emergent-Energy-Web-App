@@ -37,7 +37,6 @@ export type AdminSurfaceId =
   | "kpi-traceability"
   | "recovery"
   | "database-migration"
-  | "document-types"
   | "email-linker-dev"
   | "lessons-learnt"
   | "handover-health"
@@ -170,13 +169,6 @@ export const ADMIN_SURFACES: AdminSurfaceMeta[] = [
     icon: Database,
   },
   // --- Document & Knowledge ---
-  {
-    id: "document-types",
-    label: "Document Types",
-    path: "/admin/document-types",
-    description: "Manage controlled document taxonomy and SharePoint root config.",
-    icon: FileText,
-  },
   {
     id: "email-linker-dev",
     label: "Email Auto-Linker (dev)",

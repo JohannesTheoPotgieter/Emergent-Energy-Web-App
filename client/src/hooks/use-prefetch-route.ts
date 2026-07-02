@@ -7,7 +7,6 @@ import { useCallback, useRef } from "react";
  */
 const PREFETCH_MAP: Record<string, () => Promise<unknown>> = {
   "/company-overview": () => import("@/pages/company-overview"),
-  "/dashboard": () => import("@/pages/dashboard"),
   "/project-lifecycle": () => import("@/pages/project-lifecycle"),
   "/projects": () => import("@/pages/projects-redirect"),
   "/cashflow": () => import("@/pages/cashflow"),

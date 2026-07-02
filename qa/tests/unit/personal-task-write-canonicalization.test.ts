@@ -145,7 +145,6 @@ describe("no active runtime mytoolTasks inserts remain (comprehensive scan)", ()
     "server/task-management-routes.ts",
     "server/ms-sync-routes.ts",
     "server/services/assignment-service.ts",
-    "server/services/personal-task-bridge.ts",
     "server/repositories/work-management-repository.ts",
     "server/routes/operational-tasks-routes.ts",
     "server/routes/planning-tasks-routes.ts",
@@ -176,7 +175,6 @@ describe("no active runtime mytoolTasks inserts remain (comprehensive scan)", ()
       "server/migration-finalize-routes.ts",
       "server/invoice-pattern-routes.ts",
       "server/lib/canonical-task-engine.ts",
-      "server/services/personal-task-bridge.ts",
     ]);
 
     // Scan runtime files for unexpected mytoolTasks references (inserts specifically)

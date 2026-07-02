@@ -93,7 +93,7 @@ server/repositories/Data access layer — ALL db access goes through these
 server/bootstrap/   Startup orchestrator (runs additive migrations & seeds)
 server/lib/         Shared server utilities (api-error, logger, helpers)
 server/imports/     Smart Import v2 runtime (conflict policy, etc.)
-shared/schema/      Drizzle schema — 26 domain files (finance.ts, projects.ts, …)
+shared/schema/      Drizzle schema — 33 domain files (finance.ts, projects.ts, …)
 shared/schema.ts    Barrel re-export of shared/schema/* — DO NOT add tables here
 shared/             Shared types, permissions, roles, KPI defs, validators
 migrations/         Drizzle-managed SQL migrations (repo root — NOT server/)
@@ -105,7 +105,6 @@ qa/release-gate.ts  Must pass before any release
 
 - `@/` → `client/src/`
 - `@shared/` → `shared/`
-- `@assets/` → `attached_assets/`
 
 ## Pointers to canonical guardrails
 
@@ -179,11 +178,13 @@ Three current vs deprecated surfaces agents currently miss:
 ## CI Rules
 
 - **Authoritative PR workflow:** `.github/workflows/pr-checks.yml` on
-  `pull_request` to `main` only. It runs:
-  `npm run ci:compile` → `npm run db:check` → `npm run test` → `npm run test:api`
-  → `npm run release:gate` (`SKIP_SMOKE_TESTS=true` in CI).
-- **Push workflow:** `.github/workflows/ci.yml` runs on `push` to `main` only
-  and mirrors the same gate logic for post-merge confidence.
+  `pull_request` to `main` only. It runs a single compile-and-unit gate (no DB):
+  `npm run ci:compile` (turbo lint + check + build, then `test:permission-contracts`)
+  → `npm run db:check` → `npm run check:agent-docs` → `npm run test`.
+  `test:api`, `test:smoke`, and `release:gate` are **not** run in CI — invoke
+  them locally (or via `npm run qa:full-proof`) before a substantial merge.
+- **Other workflow:** `.github/workflows/db-backup.yml` runs the daily prod
+  backup + tested-restore drill. There is no push-triggered `ci.yml`.
 - **Schema-drift guard** (`npm run db:check`) — runs `drizzle-kit generate`
   in a sandbox; fails any PR that edited `shared/schema/*.ts` without a
   matching new migration file.

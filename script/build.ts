@@ -4,34 +4,24 @@ import { rm, readFile, writeFile, mkdir, copyFile } from "fs/promises";
 import crypto from "crypto";
 import { execSync } from "child_process";
 
-// server deps to bundle to reduce openat(2) syscalls
-// which helps cold start times
+// server deps to bundle to reduce openat(2) syscalls, which helps cold start
+// times. Keep this list limited to packages actually present in package.json;
+// unmatched entries are silently ignored but mislead anyone auditing deps.
 const allowlist = [
-  "@google/generative-ai",
-  "axios",
   "connect-pg-simple",
-  "cors",
   "date-fns",
   "drizzle-orm",
   "drizzle-zod",
   "express",
-  "express-rate-limit",
   "express-session",
   "jsonwebtoken",
   "memorystore",
   "multer",
   "nanoid",
-  "nodemailer",
-  "openai",
   "passport",
   "passport-local",
   "pg",
-  "stripe",
-  "uuid",
-  "ws",
-  "xlsx",
   "zod",
-  "zod-validation-error",
 ];
 
 async function buildAll() {

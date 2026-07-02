@@ -235,7 +235,7 @@ release can ONLY be exercised in a postgres-backed environment with a
 real user session and a real Tracker workbook:
 
 1. **Real Tracker import smoke test.** Apply migrations 0042 + 0043 on
-   a postgres dev DB; upload `attached_assets/Mondi_Tracker_Rev02_*.xlsm`
+   a postgres dev DB; upload `qa/fixtures/trackers/Mondi_Tracker_Rev02_*.xlsm`
    through the wizard; commit; spot-check the new tables
    (`normalized_cost_line_actuals`, `tracker_project_metadata`,
    `tracker_revenue_summary`) and the new columns (`row_hash`,

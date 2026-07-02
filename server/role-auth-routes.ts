@@ -66,7 +66,7 @@ export async function seedRoleCredentials() {
         updatedBy: "system",
       });
     }
-    console.log("[ROLE-AUTH] Seeded role credentials from SEED_ADMIN_PASSWORD");
+    console.log("[ROLE-AUTH] Seeded role credentials from SEED_COO_ADMIN_PASSWORD / SEED_CEO_ADMIN_PASSWORD (or fallback default)");
   } catch (err: unknown) {
     console.error("[ROLE-AUTH] Error seeding role credentials:", (err instanceof Error ? err.message : String(err)));
     throw err;

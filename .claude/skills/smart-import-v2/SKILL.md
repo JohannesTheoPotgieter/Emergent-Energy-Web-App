@@ -10,7 +10,7 @@ description: Use when working on the Excel Smart Import v2 pipeline — parsing 
 | Status  | Files                                                     |
 |---------|-----------------------------------------------------------|
 | Current | `server/smart-import-routes.ts` (~163 KB) + `server/imports/` |
-| Current | Runs under the new routes in `server/routes/imports.routes.ts` / `server/routes/imports-admin-extracted-routes.ts` |
+| Current | Admin endpoints in `server/routes/imports-admin-extracted-routes.ts` |
 | Current | Docs: `docs/smart-import-v2-spec.md`, `-operator-guide.md`, `-known-limitations.md`, `-test-matrix.md`, `-spine-alignment.md` |
 | Legacy  | `server/excelParser.ts`                                   |
 | Legacy  | `server/importPipeline.ts`                                |

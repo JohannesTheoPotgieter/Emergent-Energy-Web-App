@@ -123,7 +123,7 @@ export const opportunities = pgTable("opportunities", {
    * it into this column (see `server/services/pipedrive-sync-service.ts`),
    * and the in-app opportunity form does not expose an owner picker.
    * Kept for schema stability; do not rely on it for reporting.
-   * Tracked as "structural fix #2" in docs/runbooks/pipedrive-integration-review-2026-04-15.md.
+   * Tracked as "structural fix #2" in docs/archive/runbooks/pipedrive-integration-review-2026-04-15.md.
    */
   dealOwnerUserId: integer("deal_owner_user_id").references(() => users.id, { onDelete: "set null" }),
   stage: text("stage").default("prospect"),              // 'prospect', 'qualification', 'proposal', 'negotiation', 'won', 'lost'
@@ -135,7 +135,7 @@ export const opportunities = pgTable("opportunities", {
    * @deprecated Not populated by any code path today. No UI field; not
    * written by the Pipedrive sync. Retained only so drizzle types stay
    * aligned with the physical column. Tracked in
-   * docs/runbooks/pd-data-trust-review-2026-04-15.md.
+   * docs/archive/runbooks/pd-data-trust-review-2026-04-15.md.
    */
   estimatedKwh: decimal("estimated_kwh", { precision: 15, scale: 2 }),
   /**
@@ -152,7 +152,7 @@ export const opportunities = pgTable("opportunities", {
    * compatibility with existing reads but is NOT maintained by any of
    * the handover code paths. New code must read handover state from
    * the `project_pd_pm_handover` table scoped to the related
-   * `project_info.id`. See docs/runbooks/pd-workflow-review-2026-04-15.md.
+   * `project_info.id`. See docs/archive/runbooks/pd-workflow-review-2026-04-15.md.
    */
   handoverReadiness: text("handover_readiness").default("not_ready"), // 'not_ready', 'in_preparation', 'awaiting_approval', 'ready', 'submitted', 'accepted', 'returned'
   commercialRisks: text("commercial_risks"),
