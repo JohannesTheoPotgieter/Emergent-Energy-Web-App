@@ -2,7 +2,7 @@
   "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
   "threshold": 1500,
   "buffer": 50,
-  "generated": "2026-06-30",
+  "generated": "2026-07-02",
   "files": [
     {
       "file": "server/departments/finance-routes.ts",
@@ -18,7 +18,7 @@
     },
     {
       "file": "server/smart-import-routes.ts",
-      "loc": 4052
+      "loc": 4056
     },
     {
       "file": "server/departments/priority-strategic-routes.ts",
@@ -34,7 +34,7 @@
     },
     {
       "file": "server/quality-routes.ts",
-      "loc": 3365
+      "loc": 3364
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
@@ -94,7 +94,7 @@
     },
     {
       "file": "client/src/pages/lifecycle-board.tsx",
-      "loc": 2082
+      "loc": 2076
     },
     {
       "file": "client/src/components/TaskDetailDrawer.tsx",
@@ -129,10 +129,6 @@
       "loc": 1750
     },
     {
-      "file": "client/src/pages/standups.tsx",
-      "loc": 1746
-    },
-    {
       "file": "server/routes/planning-tasks-routes.ts",
       "loc": 1727
     },
@@ -162,11 +158,7 @@
     },
     {
       "file": "client/src/pages/qm-dashboard.tsx",
-      "loc": 1632
-    },
-    {
-      "file": "client/src/components/tabs/ProjectPlanTab.tsx",
-      "loc": 1626
+      "loc": 1620
     },
     {
       "file": "server/departments/exco-routes.ts",

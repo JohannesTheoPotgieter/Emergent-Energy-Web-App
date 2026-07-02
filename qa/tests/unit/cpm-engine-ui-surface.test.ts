@@ -10,7 +10,9 @@ function readFile(relPath: string): string {
 
 describe("CPM engine API/UI visibility", () => {
   const routesSrc = readFile("server/routes/working-plan-routes.ts");
-  const uiSrc = readFile("client/src/components/tabs/ProjectPlanTab.tsx");
+  // The plan UI moved from the retired ProjectPlanTab to UnifiedPlanTab
+  // (the live plan tab); the CPM surface now lives there.
+  const uiSrc = readFile("client/src/components/tabs/UnifiedPlanTab.tsx");
 
   it("exposes CPM fields from working-plan API response", () => {
     expect(routesSrc).toContain("tasks: cpmResult.tasks");
@@ -20,16 +22,16 @@ describe("CPM engine API/UI visibility", () => {
     expect(routesSrc).toContain("warnings: cpmResult.warnings");
   });
 
-  it("reads CPM fields in ProjectPlanTab", () => {
-    expect(uiSrc).toContain("const tasks = workingPlan?.tasks || []");
-    expect(uiSrc).toContain("const criticalPath = workingPlan?.criticalPath || []");
-    expect(uiSrc).toContain("workingPlan?.hasCircularDependency");
+  it("reads CPM fields in UnifiedPlanTab", () => {
+    expect(uiSrc).toContain("hasCircularDependency");
+    expect(uiSrc).toContain("criticalTaskIds");
+    expect(uiSrc).toContain("slackById");
+    expect(uiSrc).toContain("projectFinish");
   });
 
   it("renders critical-path indicators and circular dependency warning in UI", () => {
-    expect(uiSrc).toContain("CRIT");
-    expect(uiSrc).toContain("task.isCritical");
-    expect(uiSrc).toContain("⚠ Circular dependency detected");
-    expect(uiSrc).toContain("selectedTask.slack");
+    expect(uiSrc).toContain("isCritical");
+    expect(uiSrc).toContain("showCriticalPath");
+    expect(uiSrc).toContain("Circular dependency detected");
   });
 });

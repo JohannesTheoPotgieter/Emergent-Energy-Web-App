@@ -99,16 +99,12 @@ describe("NCR integration into quality risk scoring", () => {
 });
 
 describe("misleading NCR dashboard is contained", () => {
-  it("quality-dashboard.tsx redirects to /quality instead of showing empty charts", () => {
-    const source = read("client/src/pages/quality/quality-dashboard.tsx");
-    // Must NOT contain the old charting components
-    expect(source).not.toContain("PieChart");
-    expect(source).not.toContain("BarChart");
-    expect(source).not.toContain("LineChart");
-    expect(source).not.toContain("openNcrsBySeverity");
-    expect(source).not.toContain("ncrTrend");
-    // Must redirect to /quality
-    expect(source).toContain('setLocation("/quality"');
+  it("the misleading quality-dashboard.tsx was removed entirely (redirect handled at the route level)", () => {
+    // Containment is now stronger than a redirect stub: the page was deleted.
+    // The /quality/dashboard -> /quality redirect lives in page-registry.ts,
+    // asserted by the next test.
+    const p = path.join(process.cwd(), "client/src/pages/quality/quality-dashboard.tsx");
+    expect(fs.existsSync(p)).toBe(false);
   });
 
   it("NCR page routes are registered as redirecting aliases", () => {

@@ -3,7 +3,6 @@ import { lazyWithRetry } from "@/lib/lazy-with-retry";
 
 const CompanyOverviewPage = lazyWithRetry(() => import("@/pages/company-overview"));
 const CompanyTeamPage = lazyWithRetry(() => import("@/pages/company-team"));
-const Dashboard = lazyWithRetry(() => import("@/pages/dashboard"));
 const CeoHomePage = lazyWithRetry(() => import("@/pages/ceo-home"));
 const CooHomePage = lazyWithRetry(() => import("@/pages/coo-home"));
 const SettingsHomePage = lazyWithRetry(() => import("@/pages/settings-home"));
@@ -96,7 +95,6 @@ const PdPmHandoverPage = lazyWithRetry(() => import("@/pages/pd-pm-handover-v2")
 const PmHandoverReviewPage = lazyWithRetry(() => import("@/pages/pm-handover-review"));
 const FinancialReviewQueuePage = lazyWithRetry(() => import("@/pages/financial-review-queue"));
 const HandoverControlPage = lazyWithRetry(() => import("@/pages/handover-control"));
-const ExceptionsPage = lazyWithRetry(() => import("@/pages/exceptions"));
 const PhaseTemplatesPage = lazyWithRetry(() => import("@/pages/phase-templates"));
 const ProjectCreatePage = lazyWithRetry(() => import("@/pages/project-create"));
 const DepartmentScoresPage = lazyWithRetry(() => import("@/pages/department-scores"));
@@ -176,7 +174,6 @@ const AdminIntegrationsPage = lazyWithRetry(() => import("@/pages/admin-integrat
 export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   CompanyOverviewPage,
   CompanyTeamPage,
-  Dashboard,
   ProjectLifecyclePage,
   ProjectsSummary,
   FinancialLinkingPage,
@@ -248,7 +245,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   PmHandoverReviewPage,
   FinancialReviewQueuePage,
   HandoverControlPage,
-  ExceptionsPage,
   PhaseTemplatesPage,
   ProjectCreatePage,
   DepartmentScoresPage,
