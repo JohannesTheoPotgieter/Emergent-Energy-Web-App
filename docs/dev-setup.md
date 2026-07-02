@@ -1,172 +1,97 @@
 # Developer Setup
 
-Quick start for working on the Emergent Energy web app. Pair this doc with
-`replit.md` for the full architecture overview and `setup-and-runbook.md` for
-runtime/operational notes.
+Quick start for working on the Emergent Energy web app. Pair with the root
+[`README.md`](../README.md), [`replit.md`](../replit.md) (architecture), and
+[`AGENT_GUARDRAILS.md`](./AGENT_GUARDRAILS.md) (the rules).
 
 ## Prerequisites
 
-- Node.js 20 (matches CI; see `.github/workflows/ci.yml`).
-- npm 10+ (ships with Node 20).
-- PostgreSQL 16 for any work touching the database (the dev fallback uses
-  `better-sqlite3`, but anything realistic needs Postgres).
-- Optional: Microsoft 365 dev tenant for SharePoint/Outlook integrations
-  (the mock connector is fine for most local work).
+- **Node.js 20 or 22** (Replit and CI pin Node 20; Node 22 works locally).
+  npm 10+ ships with both.
+- **PostgreSQL 16** only for work that needs a real database — the dev
+  fallback uses `better-sqlite3`, which is enough for most local work and all
+  unit tests.
+- Optional: a Microsoft 365 dev tenant for live SharePoint/Outlook work. Not
+  needed day-to-day — mock connectors cover it (see below).
 
-## First-time setup
-
-```bash
-npm ci --prefer-offline --no-audit
-cp .env.example .env   # then fill in DATABASE_URL, JWT_SECRET, SESSION_SECRET, etc.
-npm run db:push        # apply schema against $DATABASE_URL
-npm run dev            # Express + Vite middleware on port 5000
-```
-
-## Turborepo Remote Cache (shared with CI)
-
-PR #677 introduced Turborepo for `lint` / `check` / `build` / `test`. Remote
-cache extends that local task cache by sharing artifacts between dev machines
-and GitHub Actions:
-
-- A green build on your laptop warms CI for the next push.
-- A green CI run warms every other developer's next `turbo run`.
-- Typical compound speedup is ~30% on top of the local cache PR #677 already
-  delivers.
-
-The backend is **Vercel Remote Cache** (free tier, hosted, zero infra). We
-only use the cache — no Analytics, no other Vercel features.
-
-### Get your Vercel token
-
-1. Sign in at <https://vercel.com> with your work account.
-2. Make sure you're a member of the Emergent Energy Vercel team
-   (ask the COO/Eng admin to invite you if you aren't).
-3. Open <https://vercel.com/account/tokens> → **Create Token**.
-   - Scope: the Emergent Energy team.
-   - Expiration: pick the longest acceptable for your laptop.
-4. Copy the token once — Vercel will not show it again.
-
-### Configure the env vars
-
-Set both vars in your shell profile (or `~/.turbo/config.json` /
-`~/.turborc`). Either works; the env-var approach is the most reliable
-across shells, editors, and `npx` invocations.
+## First-time setup (zero-config)
 
 ```bash
-# ~/.zshrc or ~/.bashrc
-export TURBO_TOKEN="vercel_pat_xxx_your_token"
-export TURBO_TEAM="emergent-energy"   # the team slug, NOT the display name
+npm ci        # install pinned deps from package-lock.json
+npm run dev   # Express + Vite middleware on http://localhost:5000
 ```
 
-Reload your shell (`exec $SHELL -l`) and verify:
+No `.env` and no database are required:
+
+- **No `DATABASE_URL`** → the app uses a local SQLite fallback
+  (`server/db-config.ts` falls back only when `DATABASE_URL` is absent).
+- **No integration creds** → mock connector data is served for MS 365 /
+  QuickBooks / Pipedrive when `NODE_ENV !== "production"` (see
+  `server/lib/connector-mode.ts` and `server/mocks/*-fixtures.ts`), so every
+  integrated page works on a fresh clone.
+
+### Only if you need Postgres or a real integration locally
+
+Read the top of [`.env.example`](../.env.example) **before** creating a `.env`.
+Do **not** `cp .env.example .env` and uncomment the placeholder
+`DATABASE_URL`/`SESSION_SECRET`/`JWT_SECRET` — that forces Postgres mode against
+a bogus URL and breaks the zero-config path. Set only the vars you actually need:
 
 ```bash
-npx turbo run check --dry-run=json | head -20
-# Look for: "remoteCache": { "enabled": true, ... }
-
-npx turbo run check
-# First successful line should read:
-#   • Remote caching enabled
-# (instead of "• Remote caching disabled")
+# with a real DATABASE_URL exported/set in .env:
+npm run db:push   # sync shared/schema/*.ts to $DATABASE_URL (dev only; destructive)
+npm run db:setup  # db:push + seed users & reference data (needed for login)
 ```
-
-If you see `Remote caching disabled`, the token or team slug is wrong — check
-for typos and that the token hasn't expired.
-
-### Don't commit the token
-
-- `TURBO_TOKEN` is a personal credential. Never commit it, never paste it into
-  a PR description, never store it in `.env` (which is repo-tracked via
-  `.env.example`).
-- `.gitignore` already ignores `.env*`, but if you choose `~/.turbo/config.json`,
-  keep that outside the repo too.
-- Rotate the token from <https://vercel.com/account/tokens> if you suspect
-  exposure.
-
-### CI configuration
-
-CI passes `TURBO_TOKEN` and `TURBO_TEAM` from GitHub Secrets at the **job
-level** in both `.github/workflows/ci.yml` and `pr-checks.yml`. Repo admins
-need to add:
-
-| Secret name   | Value                              |
-| ------------- | ---------------------------------- |
-| `TURBO_TOKEN` | A Vercel team token (CI-scoped)    |
-| `TURBO_TEAM`  | The Vercel team slug (e.g. `emergent-energy`) |
-
-Until those secrets exist the workflows still pass — the env vars resolve to
-empty strings, Turbo silently disables remote cache, and the existing
-`actions/cache@v4` step (`.turbo` + `.eslintcache`) handles caching as
-before.
-
-### Fallback layers
-
-The cache strategy is layered so a remote-cache outage never blocks CI:
-
-1. **Remote cache** (Vercel) — shared between dev + CI when secrets are set.
-2. **GitHub Actions cache** (`actions/cache@v4` on `.turbo` + `.eslintcache`)
-   — branch-scoped fallback inside CI.
-3. **Local Turbo task cache** (`.turbo/`) — per-machine fallback for devs.
 
 ## Common commands
 
-| Command              | What it does                                          |
-| -------------------- | ----------------------------------------------------- |
-| `npm run dev`        | Express + Vite on port 5000                           |
-| `npm run check`      | Server + client TS check (cached by turbo)            |
-| `npm run check:client` | Client-only TS check (fastest)                      |
-| `npm run lint`       | ESLint flat config (cached by turbo)                  |
-| `npm run test`       | Vitest unit tests (cached by turbo)                   |
-| `npm run test:api`   | API tests via `script/run-with-app.ts` (uncacheable)  |
-| `npm run test:smoke` | Playwright smoke (all routes × all roles)             |
-| `npm run db:push`    | Apply enums + schema to `$DATABASE_URL`               |
+| Command                | What it does                                          |
+| ---------------------- | ----------------------------------------------------- |
+| `npm run dev`          | Express + Vite on port 5000                           |
+| `npm run check`        | Server + client TS check                              |
+| `npm run check:client` | Client-only TS check (fastest)                        |
+| `npm run lint`         | ESLint flat config                                    |
+| `npm run test`         | Vitest unit tests (no DB, no server)                  |
+| `npm run test:api`     | API tests via `script/run-with-app.ts` (boots server) |
+| `npm run test:smoke`   | Playwright smoke (all routes × all roles)             |
+| `npm run db:push`      | Apply schema to `$DATABASE_URL` (dev only; destructive) |
+| `npm run qa:full-proof`| Full local gate (check + api + smoke + gates) — slow  |
 
-Targeted single-test runs are recommended during iteration —
-`npm run qa:full-proof` is for release only.
+Iterate with targeted single-test runs; `qa:full-proof` is for release only.
+Turbo (`.turbo/`) caches `lint`/`check`/`build`/`test` locally — no remote
+cache or extra credentials are involved.
 
 ## Local Playwright (smoke tests)
 
-The smoke suite drives a real browser through every route as every test
-user. `script/run-with-app.ts` boots the Express server, waits for
-`/api/health`, runs Playwright, then shuts the server down — so most
-days you just run:
+`script/run-with-app.ts` boots Express, waits for `/api/health`, runs
+Playwright, then shuts the server down:
 
 ```bash
-npm run test:smoke:install   # one-time: pull the chromium browser binary
+# In this remote environment Chromium is preinstalled; locally, one-time:
+npm run test:smoke:install   # playwright install chromium
 npm run test:smoke           # boots app + runs the suite
 ```
 
-`test:smoke:install` runs `playwright install chromium` (and its
-required system deps when invoked under root on a Debian/Ubuntu image).
-Re-run after upgrading `@playwright/test`.
-
-### Pointing the suite at an already-running server
-
-If you already have `npm run dev` running and just want to iterate on a
-single spec, skip the auto-spawn wrapper:
+Iterate on one spec against an already-running `npm run dev`:
 
 ```bash
-# Assumes the server is reachable at http://localhost:5000
 npx playwright test -c qa/playwright.config.ts qa/tests/e2e/smoke.spec.ts
-```
-
-Open the HTML trace for a failed run:
-
-```bash
-npx playwright show-report qa/artifacts/e2e/report
+npx playwright show-report qa/artifacts/e2e/report   # open a failed run's trace
 ```
 
 ### Test users
 
-The suite logs in as four fixture users (see
-`qa/tests/e2e/smoke.spec.ts` `TEST_USERS`):
+The suite logs in as four fixture users (see `qa/tests/e2e/smoke.spec.ts`
+`TEST_USERS`). They exist in the seed data — run `npm run db:setup` against a
+fresh `DATABASE_URL` first.
 
-| Role key       | Username  | Password | App role               |
-| -------------- | --------- | -------- | ---------------------- |
-| `admin`        | johannes  | 2023     | COO_ADMIN              |
-| `pm`           | eon       | 2035     | PROJECT_MANAGER_SITE   |
-| `engineer`     | paul      | 2029     | ENGINEER               |
-| `qualityManager` | dean    | 2025     | QUALITY_MANAGER        |
+| Role key         | Username | Password | App role             |
+| ---------------- | -------- | -------- | -------------------- |
+| `admin`          | johannes | 2023     | COO_ADMIN            |
+| `pm`             | eon      | 2035     | PROJECT_MANAGER_SITE |
+| `engineer`       | paul     | 2029     | ENGINEER             |
+| `qualityManager` | dean     | 2025     | QUALITY_MANAGER      |
 
-These exist in the seed data. If your `DATABASE_URL` is fresh, run
-`npm run db:setup` first to seed users + reference data.
+> These are local seed/fixture credentials only. Production admin passwords are
+> set via `SEED_COO_ADMIN_PASSWORD` / `SEED_CEO_ADMIN_PASSWORD` — see
+> [`.env.example`](../.env.example).
