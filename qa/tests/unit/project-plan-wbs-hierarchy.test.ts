@@ -49,7 +49,7 @@ async function previewWorkbook(relPath: string, fileName: string) {
 describe("Project Plan — WBS hierarchy + plan-vs-actuals contract", () => {
   it("Corporate Park: every imported row has a WBS code and a derived indent level", async () => {
     const preview = await previewWorkbook(
-      "attached_assets/Corporate_Park_Tracker_1774355438863.xlsx",
+      "qa/fixtures/trackers/Corporate_Park_Tracker_1774355438863.xlsx",
       "Corporate_Park_Tracker.xlsx",
     );
     const tasks = preview.normalization.planTasks;
@@ -64,7 +64,7 @@ describe("Project Plan — WBS hierarchy + plan-vs-actuals contract", () => {
 
   it("derives parentTaskNo from the WBS code (last-dot-segment-stripped)", async () => {
     const preview = await previewWorkbook(
-      "attached_assets/Corporate_Park_Tracker_1774355438863.xlsx",
+      "qa/fixtures/trackers/Corporate_Park_Tracker_1774355438863.xlsx",
       "Corporate_Park_Tracker.xlsx",
     );
     const tasks = preview.normalization.planTasks;
@@ -91,7 +91,7 @@ describe("Project Plan — WBS hierarchy + plan-vs-actuals contract", () => {
 
   it("indentLevel tracks the dot-segment depth", async () => {
     const preview = await previewWorkbook(
-      "attached_assets/Corporate_Park_Tracker_1774355438863.xlsx",
+      "qa/fixtures/trackers/Corporate_Park_Tracker_1774355438863.xlsx",
       "Corporate_Park_Tracker.xlsx",
     );
     const tasks = preview.normalization.planTasks;
@@ -106,7 +106,7 @@ describe("Project Plan — WBS hierarchy + plan-vs-actuals contract", () => {
     // The normalizer nulls dangling parentTaskNo references; this test
     // is the safety net for that behaviour.
     const preview = await previewWorkbook(
-      "attached_assets/Corporate_Park_Tracker_1774355438863.xlsx",
+      "qa/fixtures/trackers/Corporate_Park_Tracker_1774355438863.xlsx",
       "Corporate_Park_Tracker.xlsx",
     );
     const tasks = preview.normalization.planTasks;
@@ -121,7 +121,7 @@ describe("Project Plan — WBS hierarchy + plan-vs-actuals contract", () => {
 
   it("plan + actual date fields land independently — actuals never overwrite plan", async () => {
     const preview = await previewWorkbook(
-      "attached_assets/Seshego_Circle_Tracker_1776431598036.xlsx",
+      "qa/fixtures/trackers/Seshego_Circle_Tracker_1776431598036.xlsx",
       "Seshego_Circle_Tracker.xlsx",
     );
     const tasks = preview.normalization.planTasks;
@@ -163,7 +163,7 @@ describe("Project Plan — WBS hierarchy + plan-vs-actuals contract", () => {
 
   it("percent-complete is normalised to the 0..1 scale", async () => {
     const preview = await previewWorkbook(
-      "attached_assets/Corporate_Park_Tracker_1774355438863.xlsx",
+      "qa/fixtures/trackers/Corporate_Park_Tracker_1774355438863.xlsx",
       "Corporate_Park_Tracker.xlsx",
     );
     const tasks = preview.normalization.planTasks;
@@ -179,7 +179,7 @@ describe("Project Plan — WBS hierarchy + plan-vs-actuals contract", () => {
     // or 1, which made every in-progress task look completely stuck or
     // already done. A real tracker has a mix.
     const preview = await previewWorkbook(
-      "attached_assets/Mondi_Tracker_Rev02_1778768350564.xlsm",
+      "qa/fixtures/trackers/Mondi_Tracker_Rev02_1778768350564.xlsm",
       "Mondi_Tracker_Rev02.xlsm",
     );
     const pcts = preview.normalization.planTasks
@@ -206,7 +206,7 @@ describe("Project Plan — WBS hierarchy + plan-vs-actuals contract", () => {
     // ("On track but not yet closed"); a regression that rescales it to
     // 9.99% or 100% would be a visible defect on every dashboard.
     const preview = await previewWorkbook(
-      "attached_assets/Mondi_Tracker_Rev02_1778768350564.xlsm",
+      "qa/fixtures/trackers/Mondi_Tracker_Rev02_1778768350564.xlsm",
       "Mondi_Tracker_Rev02.xlsm",
     );
     const target = preview.normalization.planTasks.find((t) => t.taskNo === "2");
@@ -224,7 +224,7 @@ describe("Project Plan — WBS hierarchy + plan-vs-actuals contract", () => {
     process.env.TZ = "Africa/Johannesburg";
     try {
       const preview = await previewWorkbook(
-        "attached_assets/Corporate_Park_Tracker_1774355438863.xlsx",
+        "qa/fixtures/trackers/Corporate_Park_Tracker_1774355438863.xlsx",
         "Corporate_Park_Tracker.xlsx",
       );
       const tasks = preview.normalization.planTasks;

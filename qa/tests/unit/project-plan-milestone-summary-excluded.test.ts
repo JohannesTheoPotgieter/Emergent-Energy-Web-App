@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
 
 import { runSmartImportPreview } from "../../../server/lib/import";
 
-const UNITRANS = "attached_assets/Unitrans_Brackenfell_Tracker_1779108373978.xlsm";
+const UNITRANS = "qa/fixtures/trackers/Unitrans_Brackenfell_Tracker_1779108373978.xlsm";
 
 // Labels that appear ONLY in the bottom Milestone summary table for the
 // Unitrans tracker (the rollup rows). None of these carry a WBS number.

@@ -23,7 +23,9 @@ import { runSmartImportPreview } from "../../../server/lib/import/index";
 
 const FIXTURE = path.join(
   process.cwd(),
-  "attached_assets",
+  "qa",
+  "fixtures",
+  "trackers",
   "Coega_Steels_Ph2_Tracker_1779108373976.xlsx",
 );
 

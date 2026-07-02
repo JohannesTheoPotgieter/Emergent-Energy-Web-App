@@ -79,9 +79,9 @@ qa/reports/vitest-results.json
 drift-report.json
 
 # -- Replit paste artefacts & DB dumps (never source) --
-attached_assets/*.png
-attached_assets/*.jpeg
-attached_assets/*.jpg
-attached_assets/*.zip
+# attached_assets/ was a Replit paste dump; it has been removed. Test-fixture
+# workbooks now live in qa/fixtures/trackers/. Ignore the whole directory so the
+# Replit paste workflow can never re-commit source data here again.
+attached_assets/
 *.dump
 qa/golden-oracle/.cache/

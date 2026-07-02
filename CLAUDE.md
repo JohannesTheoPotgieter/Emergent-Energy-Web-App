@@ -105,7 +105,6 @@ qa/release-gate.ts  Must pass before any release
 
 - `@/` → `client/src/`
 - `@shared/` → `shared/`
-- `@assets/` → `attached_assets/`
 
 ## Pointers to canonical guardrails
 

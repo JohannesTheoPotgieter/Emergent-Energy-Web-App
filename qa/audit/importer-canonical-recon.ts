@@ -24,7 +24,7 @@
  * app bootstrap — so it runs anywhere with deps installed.
  *
  * Usage (in an environment that has node_modules):
- *   npx tsx qa/audit/importer-canonical-recon.ts                       # scans attached_assets/*Tracker*
+ *   npx tsx qa/audit/importer-canonical-recon.ts                       # scans qa/fixtures/trackers/*
  *   npx tsx qa/audit/importer-canonical-recon.ts path/to/Tracker.xlsx  # one workbook
  *   npx tsx qa/audit/importer-canonical-recon.ts --as-at 2026-06-01 --fy-start 2025-09-01 --fy-end 2026-08-31
  *
@@ -334,13 +334,13 @@ async function main() {
   const targets: string[] = fileArgs.length
     ? fileArgs
     : (() => {
-        const dir = join(process.cwd(), "attached_assets");
+        const dir = join(process.cwd(), "qa", "fixtures", "trackers");
         if (!existsSync(dir)) return [];
         return readdirSync(dir).filter((f) => /tracker/i.test(f) && /\.(xlsx|xlsm)$/i.test(f) && !f.startsWith("~$") && !/conflicted copy/i.test(f)).map((f) => join(dir, f));
       })();
 
   if (!targets.length) {
-    console.error("No workbooks found. Pass a path or place *Tracker*.xlsx in attached_assets/.");
+    console.error("No workbooks found. Pass a path or place *Tracker*.xlsx in qa/fixtures/trackers/.");
     process.exit(1);
   }
 

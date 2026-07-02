@@ -21,7 +21,6 @@
         "!qa/_artifacts/**",
         "!test-results/**",
         "!dist/**",
-        "!attached_assets/**",
         "!docs/**"
       ],
       "outputs": []
@@ -44,7 +43,6 @@
         "!qa/_artifacts/**",
         "!test-results/**",
         "!dist/**",
-        "!attached_assets/**",
         "!docs/**"
       ],
       "outputs": [".eslintcache"]

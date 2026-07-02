@@ -32,7 +32,7 @@ async function previewWorkbook(
 describe("Project plan import contract", () => {
   it("maps Mondi single-date-source PLAN rows onto the actual dates too", async () => {
     const preview = await previewWorkbook(
-      "attached_assets/Mondi_Tracker_Rev02_1778768350564.xlsm",
+      "qa/fixtures/trackers/Mondi_Tracker_Rev02_1778768350564.xlsm",
       "Mondi_Tracker_Rev02.xlsm",
     );
 
@@ -57,7 +57,7 @@ describe("Project plan import contract", () => {
 
   it("continues to import Coega actual PLAN rows with actual dates intact", async () => {
     const preview = await previewWorkbook(
-      "attached_assets/Coega_Steels_Ph2_Tracker_1776431576865.xlsx",
+      "qa/fixtures/trackers/Coega_Steels_Ph2_Tracker_1776431576865.xlsx",
       "Coega_Steels_Ph2_Tracker.xlsx",
     );
 
@@ -123,7 +123,7 @@ describe("Re-import is self-healing for ANY project — stale learned mappings c
       .join("|");
 
   it("EE_STANDARD (Coega): actual % stays on the Status column under a stale learned mapping", async () => {
-    const rel = "attached_assets/Coega_Steels_Ph2_Tracker_1776431576865.xlsx";
+    const rel = "qa/fixtures/trackers/Coega_Steels_Ph2_Tracker_1776431576865.xlsx";
     const clean = await previewWorkbook(rel, "Coega_Steels_Ph2_Tracker.xlsx");
     const dirty = await previewWorkbook(rel, "Coega_Steels_Ph2_Tracker.xlsx", CORRUPT_LEARNED);
 
@@ -139,7 +139,7 @@ describe("Re-import is self-healing for ANY project — stale learned mappings c
   });
 
   it("MONDI_LEGACY (Mondi): actual % stays on the '% DONE' column under a stale learned mapping", async () => {
-    const rel = "attached_assets/Mondi_Tracker_Rev02_1778768350564.xlsm";
+    const rel = "qa/fixtures/trackers/Mondi_Tracker_Rev02_1778768350564.xlsm";
     const clean = await previewWorkbook(rel, "Mondi_Tracker_Rev02.xlsm");
     const dirty = await previewWorkbook(rel, "Mondi_Tracker_Rev02.xlsm", CORRUPT_LEARNED);
 

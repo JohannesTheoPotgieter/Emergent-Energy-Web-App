@@ -107,7 +107,7 @@ SHEET_DESCRIPTIONS = {
     "Documentation": "every .md file in the repo (excluding .agents/skills/).",
     "Skills": "agent skills under .agents/skills/.",
     "Public Assets": "static assets.",
-    "Attached Assets": "source data files uploaded to attached_assets/ (Excel, Word, PDF, images).",
+    "Attached Assets": "test-fixture tracker workbooks under qa/fixtures/trackers/ (Excel).",
     "Misc Artifacts": "tsc logs, DB backup dumps, Excel inspectors, test-results logs, legacy folders.",
 }
 
