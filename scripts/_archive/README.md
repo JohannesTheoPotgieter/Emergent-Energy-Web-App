@@ -24,3 +24,5 @@ If you need to recover one of these scripts:
 | `migrate-clickup-engineering.ts` | `data/clickup_engineering_export.xlsx` (one-time import) |
 | `pd-reset-import.ts` | manual PD ticket reset, March 2026 |
 | `pd-restore.ts` | rollback companion to `pd-reset-import.ts` |
+| `encrypt-existing-tokens.ts` | one-time MS-token encryption (was in `server/migrations/`) |
+| `remove-last-password-plain.ts` | one-time `role_credentials.last_password_plain` drop; superseded by `migrations/archive/20260346_drop_last_password_plain.sql` |

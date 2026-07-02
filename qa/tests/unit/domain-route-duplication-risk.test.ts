@@ -9,7 +9,9 @@ const TARGET_ROUTE_FILES = [
   // server/routes/engineering.routes.ts was a dead empty stub — deleted by
   // the engineer-function audit (see engineering-containment.test.ts H9).
   'server/quality-routes.ts',
-  'server/routes/quality.routes.ts',
+  // server/routes/quality.routes.ts was a dead empty stub — deleted by the
+  // handover cleanup (same pattern as engineering.routes.ts above). The
+  // "unmounted" assertions below still guard against re-adding a mount.
   'server/commissioning-routes.ts',
   'server/commissioning-dashboard-routes.ts',
 ] as const;
