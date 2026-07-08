@@ -17,6 +17,7 @@ import { recordAudit } from "./api/v2/services/audit-service";
 import { requireAuthoriserFor } from "./middleware/requireAuthoriserFor";
 import { validateBody } from "./middleware/validateBody";
 import { DEFAULT_QUERY_LIMIT } from "./lib/safe-query";
+import { buildNcrFieldUpdates } from "./lib/quality-ncr-update";
 import {
   getQualityHseScope,
   scopeAllowsProject,
@@ -274,17 +275,15 @@ export function registerQualityNcrRoutes(app: Express) {
           return res.status(400).json({ error: "invalid_transition", message: `Cannot transition ${current.status} -> ${next}` });
         }
         const user = getEffectiveUser(req);
+        // Task 0.2: distinguish `undefined` (field omitted → keep current)
+        // from an explicit `null` (clear the field). A `??` collapse made it
+        // impossible to un-assign an NCR or clear its due date. Only fields
+        // present in the validated body are written; nullable fields may be
+        // written through as null.
         const updates: any = {
-          title: body.title ?? current.title,
-          description: body.description ?? current.description,
-          severity: body.severity ?? current.severity,
           status: next as any,
-          rootCause: body.root_cause ?? current.rootCause,
-          correctiveAction: body.corrective_action ?? current.correctiveAction,
-          preventiveAction: body.preventive_action ?? current.preventiveAction,
-          assignedTo: body.assigned_to ?? current.assignedTo,
-          dueDate: body.due_date ?? current.dueDate,
           updatedAt: new Date(),
+          ...buildNcrFieldUpdates(body),
         };
         if (next === "closed" && current.status !== "closed") {
           updates.closedAt = new Date();
