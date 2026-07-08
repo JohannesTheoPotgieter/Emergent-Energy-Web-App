@@ -75,17 +75,19 @@ export function registerCommissioningRoutes(app: Express): void {
       const typeFilter = req.query.itemType as string | undefined;
       const VALID_ITEM_TYPES = new Set(["commissioning", "closeout", "handover", "punchlist", "inspection", "test"]);
       const safeTypeFilter = typeFilter && VALID_ITEM_TYPES.has(typeFilter) ? typeFilter : null;
-      let whereClause = `WHERE ci.project_id = ${projectId} AND ci.deleted_at IS NULL`;
-      if (safeTypeFilter) whereClause += ` AND ci.item_type = '${safeTypeFilter}'`;
 
-      const rows = await db.execute(sql.raw(`
+      // Parameterised — no string interpolation. The optional item-type filter
+      // is composed as a nested sql fragment so its value binds as a parameter.
+      const rows = await db.execute(sql`
         SELECT ci.*, u.name as owner_name, p.project_name
         FROM commissioning_items ci
         LEFT JOIN users u ON ci.owner_user_id = u.id
         LEFT JOIN project_info p ON ci.project_id = p.id
-        ${whereClause}
+        WHERE ci.project_id = ${projectId} AND ci.deleted_at IS NULL${
+          safeTypeFilter ? sql` AND ci.item_type = ${safeTypeFilter}` : sql``
+        }
         ORDER BY ci.category, ci.sort_order, ci.created_at
-      `));
+      `);
       const items = rowsFromResult(rows);
       res.json(items);
     } catch (err: unknown) {
@@ -99,13 +101,13 @@ export function registerCommissioningRoutes(app: Express): void {
     try {
       const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-      const rows = await db.execute(sql.raw(`
+      const rows = await db.execute(sql`
         SELECT ci.*, u.name as owner_name, p.project_name
         FROM commissioning_items ci
         LEFT JOIN users u ON ci.owner_user_id = u.id
         LEFT JOIN project_info p ON ci.project_id = p.id
         WHERE ci.id = ${id}
-      `));
+      `);
       const items = rowsFromResult(rows);
       if (items.length === 0) return res.status(404).json({ error: "Not found" });
       res.json(items[0]);
@@ -211,12 +213,14 @@ export function registerCommissioningRoutes(app: Express): void {
               return res.status(403).json({ error: "Evidence override requires authorized role." });
             }
 
-            await db.execute(sql.raw(`
+            // Parameterised — every value binds as a parameter, so the
+            // hand-rolled single-quote escaping is gone (§ 5 SQL safety).
+            await db.execute(sql`
               INSERT INTO evidence_override_records
                 (project_id, completion_type, source_type, source_ref, score_percent, threshold_percent, reason, authorized_by_user_id, authorized_by_name, authorized_by_role)
               VALUES
-                (${old.projectId}, 'commissioning_item_close', 'commissioning_item', '${id}', ${evidence.score}, ${evidence.threshold}, '${overrideReason.replace(/'/g, "''")}', ${user?.id || "NULL"}, ${user?.name ? `'${String(user.name).replace(/'/g, "''")}'` : "NULL"}, ${user?.role ? `'${String(user.role).replace(/'/g, "''")}'` : "NULL"})
-            `));
+                (${old.projectId}, 'commissioning_item_close', 'commissioning_item', ${String(id)}, ${evidence.score}, ${evidence.threshold}, ${overrideReason}, ${user?.id ?? null}, ${user?.name ?? null}, ${user?.role ?? null})
+            `);
 
             logAuditFromReq(req, {
               entityType: "project_timeline",
@@ -294,7 +298,10 @@ export function registerCommissioningRoutes(app: Express): void {
       const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
-      const rows = await db.execute(sql.raw(`
+      // Parameterised project id. The FILTER aggregate is Postgres-only (this
+      // endpoint never ran on the SQLite dev fallback), so the existing ::int
+      // casts are preserved to keep the response shape identical.
+      const rows = await db.execute(sql`
         SELECT
           category,
           item_type,
@@ -306,7 +313,7 @@ export function registerCommissioningRoutes(app: Express): void {
         WHERE project_id = ${projectId}
         GROUP BY category, item_type
         ORDER BY category
-      `));
+      `);
       const items = rowsFromResult(rows);
       res.json(items);
     } catch (err: unknown) {
