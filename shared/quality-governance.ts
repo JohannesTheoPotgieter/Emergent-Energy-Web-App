@@ -421,6 +421,8 @@ export interface QualityChecklistReadiness {
     reasons: string[];
   }>;
   openHighWarnings: number;
+  /** Open critical NCRs counted toward the gate (0 when the gate is off). */
+  openCriticalNcrCount: number;
   blockers: string[];
 }
 
@@ -437,6 +439,10 @@ export function evaluateChecklistHandoverReadiness(params: {
   itemNames?: string[];
   warnings?: QualityWarningLike[];
   riskAnswers?: QualityRiskAnswerLike[];
+  /** Task 3.5: open critical NCRs. Only blocks when the gate is enabled. */
+  openCriticalNcrCount?: number;
+  /** Task 3.5: opt-in gate — default off so existing callers are unchanged. */
+  criticalNcrGateEnabled?: boolean;
 }): QualityChecklistReadiness {
   const { items, itemNames, warnings, riskAnswers } = params;
   const blockers: string[] = [];
@@ -492,6 +498,14 @@ export function evaluateChecklistHandoverReadiness(params: {
     blockers.push(`${highTriggeredRisks} high-severity risk trigger(s) active`);
   }
 
+  // Task 3.5: opt-in gate — open critical NCRs block handover when enabled.
+  // Default off (no flag → no blocker), so existing callers are unchanged.
+  const openCriticalNcrCount = Math.max(0, Number(params.openCriticalNcrCount ?? 0));
+  const criticalNcrBlocks = params.criticalNcrGateEnabled === true && openCriticalNcrCount > 0;
+  if (criticalNcrBlocks) {
+    blockers.push(`${openCriticalNcrCount} open critical NCR(s)`);
+  }
+
   return {
     ready: blockers.length === 0,
     completionPercent,
@@ -499,6 +513,7 @@ export function evaluateChecklistHandoverReadiness(params: {
     totalComplete: completeCount,
     incompleteItems,
     openHighWarnings,
+    openCriticalNcrCount: criticalNcrBlocks ? openCriticalNcrCount : 0,
     blockers,
   };
 }

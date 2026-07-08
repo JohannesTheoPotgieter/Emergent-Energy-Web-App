@@ -2,7 +2,7 @@ import { Express, NextFunction, Request, Response } from "express";
 import { db } from "./db";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
-import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, isNull, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
@@ -29,6 +29,7 @@ import { canOverride } from "@shared/permissions/authoriser-matrix";
 import { evidenceOverrideRecords } from "@shared/schema";
 import { buildQcEvidenceOverrideRecord } from "./lib/quality-evidence-override";
 import { buildRiskAnswerUpdates } from "./lib/quality-risk-answer";
+import { getFeatureFlag } from "./lib/feature-flags";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
@@ -2339,6 +2340,22 @@ export function registerQualityRoutes(app: Express) {
       const userId = getUser(req).id;
       const context = await loadProjectQualityGovernanceContext(projectName, userId);
 
+      // Task 3.5: opt-in gate (default off). When enabled, open critical NCRs
+      // block handover readiness. Only queried when the flag is on.
+      const criticalNcrGateEnabled = await getFeatureFlag("quality_critical_ncr_handover_gate");
+      let openCriticalNcrCount = 0;
+      if (criticalNcrGateEnabled && context.project?.id) {
+        const criticalNcrs = await db
+          .select({ id: schema.ncrReports.id })
+          .from(schema.ncrReports)
+          .where(and(
+            eq(schema.ncrReports.projectId, context.project.id),
+            eq(schema.ncrReports.severity, "critical"),
+            notInArray(schema.ncrReports.status, ["closed", "waived"]),
+          ));
+        openCriticalNcrCount = criticalNcrs.length;
+      }
+
       res.json({
         projectId: context.project?.id || null,
         projectName,
@@ -2405,6 +2422,8 @@ export function registerQualityRoutes(app: Express) {
           itemNames: context.governanceItems.map((item: any) => item.itemName),
           warnings: context.warnings,
           riskAnswers: context.riskAnswers,
+          openCriticalNcrCount,
+          criticalNcrGateEnabled,
         }),
       });
     } catch (err) {
