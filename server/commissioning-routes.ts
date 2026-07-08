@@ -301,10 +301,10 @@ export function registerCommissioningRoutes(app: Express): void {
         SELECT
           category,
           item_type,
-          COUNT(*)::int as total,
-          COUNT(*) FILTER (WHERE status = 'closed' OR status = 'approved')::int as completed,
-          COUNT(*) FILTER (WHERE status = 'in_progress')::int as in_progress,
-          COUNT(*) FILTER (WHERE status = 'ready_for_review')::int as review
+          CAST(COUNT(*) AS int) as total,
+          CAST(COUNT(*) FILTER (WHERE status = 'closed' OR status = 'approved') AS int) as completed,
+          CAST(COUNT(*) FILTER (WHERE status = 'in_progress') AS int) as in_progress,
+          CAST(COUNT(*) FILTER (WHERE status = 'ready_for_review') AS int) as review
         FROM commissioning_items
         WHERE project_id = ${projectId}
         GROUP BY category, item_type

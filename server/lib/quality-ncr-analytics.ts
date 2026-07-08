@@ -93,7 +93,12 @@ export function computeNcrTrend(rows: TrendInputRow[]): NcrTrendPoint[] {
 
 export function csvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
-  const s = typeof value === "string" ? value : String(value);
+  let s = typeof value === "string" ? value : String(value);
+  // Neutralise spreadsheet formula injection: Excel / Sheets evaluate a cell
+  // that begins with = + - @ (or a leading tab / CR) as a formula. NCR title /
+  // project / assignee are free text, so prefix such a cell with a single
+  // quote before RFC-4180 quoting.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

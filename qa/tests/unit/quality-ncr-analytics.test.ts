@@ -88,6 +88,27 @@ describe("rowsToCsv", () => {
   it("prefixes a UTF-8 BOM for Excel", () => {
     expect(rowsToCsv(["A"], []).charCodeAt(0)).toBe(0xfeff);
   });
+
+  it("neutralises spreadsheet formula injection in user-controlled cells", () => {
+    const body = rowsToCsv(
+      ["Title"],
+      [
+        ['=HYPERLINK("http://evil","x")'],
+        ["+1+1"],
+        ["-2"],
+        ["@SUM(A1)"],
+        ["\tleadingtab"],
+      ],
+    ).replace(/^﻿/, "");
+    // Each dangerous cell is prefixed with a single quote so Excel/Sheets
+    // treats it as text; the leading = also forces RFC-4180 quoting via ".
+    expect(body).toContain(`"'=HYPERLINK(""http://evil"",""x"")"`);
+    expect(body).toContain("'+1+1");
+    expect(body).toContain("'-2");
+    expect(body).toContain("'@SUM(A1)");
+    // A plain title is untouched.
+    expect(rowsToCsv(["T"], [["Cracked busbar"]])).toContain("Cracked busbar");
+  });
 });
 
 describe("NCR analytics + export routes (source contract)", () => {

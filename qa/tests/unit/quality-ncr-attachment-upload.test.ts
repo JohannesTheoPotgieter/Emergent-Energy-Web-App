@@ -55,6 +55,14 @@ describe("NCR attachment upload endpoint", () => {
     expect(HANDLER).toContain("fileName");
   });
 
+  it("rejects dangerous link schemes (javascript:, data:) on the URL branch", () => {
+    // The link schema only permits https, site-relative, or Office/Graph deep
+    // links — so a stored link can't become a script sink in the UI later.
+    expect(SOURCE).toContain("NCR_LINK_SAFE_SCHEME");
+    expect(SOURCE).toMatch(/NCR_LINK_SAFE_SCHEME\s*=\s*\/\^\(https\?:/);
+    expect(SOURCE).toContain(".refine((u) => NCR_LINK_SAFE_SCHEME.test(u)");
+  });
+
   it("writes the row into ncr_attachments", () => {
     expect(HANDLER).toContain(".insert(ncrAttachments)");
     expect(HANDLER).toMatch(/ncrId:\s*id/);

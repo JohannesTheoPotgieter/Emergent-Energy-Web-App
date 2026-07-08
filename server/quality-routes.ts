@@ -1879,6 +1879,11 @@ export function registerQualityRoutes(app: Express) {
       // in the URL — otherwise a quality.edit holder could flip risk answers
       // for any project they don't work on.
       const urlProjectId = await resolveProjectIdByName(pName);
+      // Defence-in-depth: a scoped role (if ever granted quality:edit) may only
+      // answer risk questions on its assigned projects, matching the item routes.
+      if (urlProjectId != null && !scopeAllowsProject(await getQualityHseScope(req), urlProjectId)) {
+        return res.status(404).json({ error: "not_found" });
+      }
 
       // Resolve the target answer-row id. Either it was passed directly
       // (riskAnswerId) or we upsert by (checklistId, templateRiskQuestionId)

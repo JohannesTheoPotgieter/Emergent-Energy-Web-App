@@ -99,11 +99,21 @@ const ncrCommentSchema = z
   .strict();
 
 // Task 0.3: attachment via SharePoint / URL link (the non-file branch of the
-// upload route). Mirrors the QC evidence URL convention — a non-empty string,
-// not a strict URL, so relative /uploads paths and Graph deep links both pass.
+// upload route). Accepts an https link, a site-relative path (/uploads, /api),
+// or an Office/Graph deep link (ms-word:, ms-excel:, …). Dangerous schemes
+// (javascript:, data:, vbscript:, file:) are rejected so a stored link can't
+// become a script sink when later surfaced in the UI.
+const NCR_LINK_SAFE_SCHEME = /^(https?:\/\/|\/|ms-[a-z]+:)/i;
 const ncrLinkAttachmentSchema = z
   .object({
-    url: z.string().trim().min(1, "url required").max(2048),
+    url: z
+      .string()
+      .trim()
+      .min(1, "url required")
+      .max(2048)
+      .refine((u) => NCR_LINK_SAFE_SCHEME.test(u), {
+        message: "url must be an https link, a site-relative path, or an Office/Graph deep link",
+      }),
     name: z.string().trim().min(1).max(500).optional(),
   })
   .strict();
@@ -489,6 +499,12 @@ export function registerQualityNcrRoutes(app: Express) {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+      // R7: scope gate before delete, matching the other NCR mutations — 404
+      // (not 403) so a user with no access can't probe which ids exist.
+      const [target] = await db.select({ projectId: ncrReports.projectId }).from(ncrReports).where(eq(ncrReports.id, id)).limit(1);
+      if (!target) return res.status(404).json({ error: "not_found" });
+      const scope = await getQualityHseScope(req);
+      if (!scopeAllowsProject(scope, target.projectId)) return res.status(404).json({ error: "not_found" });
       // Children cascade via FK ON DELETE CASCADE.
       const [deleted] = await db.delete(ncrReports).where(eq(ncrReports.id, id)).returning();
       if (!deleted) return res.status(404).json({ error: "not_found" });
