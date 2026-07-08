@@ -22,32 +22,16 @@ import { requireAuthoriserFor } from "./middleware/requireAuthoriserFor";
 import { validateBody } from "./middleware/validateBody";
 import { DEFAULT_QUERY_LIMIT } from "./lib/safe-query";
 import { buildNcrFieldUpdates } from "./lib/quality-ncr-update";
+import { canTransition, NCR_TERMINAL_STATUSES } from "./lib/quality-ncr-state-machine";
 import {
   getQualityHseScope,
   scopeAllowsProject,
   scopedProjectIdsArray,
 } from "./services/quality-hse-scope";
 
-/**
- * NCR state machine. Forward-only chain (`open → investigating →
- * corrective_action → verification → closed`) with one exit branch
- * `waived` reachable from any non-terminal state when an authorised
- * user records a waiver reason. § T3-2 (Plan v3) added the `waived`
- * branch — playbook § 5.10 implies authorised waivers are rare-but-
- * possible.
- */
-const STATUS_ORDER = ["open", "investigating", "corrective_action", "verification", "closed"] as const;
-const TERMINAL = new Set(["closed", "waived"]);
-
-function canTransition(from: string, to: string): boolean {
-  if (from === to) return true;
-  if (TERMINAL.has(from)) return false;
-  if (to === "waived") return true;
-  const fromIdx = STATUS_ORDER.indexOf(from as any);
-  const toIdx = STATUS_ORDER.indexOf(to as any);
-  if (fromIdx < 0 || toIdx < 0) return false;
-  return toIdx === fromIdx + 1;
-}
+// NCR state-machine rules (canTransition + terminal set) live in the pure,
+// unit-tested module ./lib/quality-ncr-state-machine — single source of truth.
+const TERMINAL = NCR_TERMINAL_STATUSES;
 
 /**
  * Compatibility shim: pre-Plan-v3 callers (e.g., bootstrap, server boot)

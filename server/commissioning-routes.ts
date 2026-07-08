@@ -8,6 +8,11 @@ import { jwtAuth, requireAuth, getEffectiveUser, type AuthenticatedUser } from "
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
 import { z } from "zod";
 import { parseIntParam } from "./lib/req-params";
+import {
+  canTransitionCommissioning,
+  isCommissioningStartBlocked,
+  isHandoverPackStageComplete,
+} from "./lib/commissioning-state-machine";
 
 const COMMISSIONING_STATUSES = ['not_started', 'in_progress', 'ready_for_review', 'approved', 'closed'] as const;
 
@@ -46,16 +51,8 @@ async function isHandoverPackComplete(projectId: number): Promise<{ complete: bo
     .where(and(eq(projectEngStages.projectId, projectId), ilike(engStageTemplates.name, '%Handover Pack%')));
   if (stages.length === 0) return { complete: false, stageName: "Handover Pack", status: "not_found" };
   const stage = stages[0];
-  return { complete: stage.status === "complete", stageName: stage.name, status: stage.status };
+  return { complete: isHandoverPackStageComplete(stage.status), stageName: stage.name, status: stage.status };
 }
-
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  not_started: ['in_progress'],
-  in_progress: ['ready_for_review', 'not_started'],
-  ready_for_review: ['approved', 'in_progress'],
-  approved: ['closed'],
-  closed: [],
-};
 
 function rowsFromResult(result: unknown): Record<string, unknown>[] {
   if (Array.isArray(result)) return result;
@@ -169,15 +166,14 @@ export function registerCommissioningRoutes(app: Express): void {
       }
 
       if (parsed.data.status !== undefined && parsed.data.status !== old.status) {
-        const allowed = VALID_TRANSITIONS[old.status] || [];
-        if (!allowed.includes(parsed.data.status)) {
+        if (!canTransitionCommissioning(old.status, parsed.data.status)) {
           return res.status(400).json({ error: `Cannot transition from ${old.status} to ${parsed.data.status}` });
         }
 
-        // Gate: commissioning cannot progress until Handover Pack stage is complete
+        // Gate: commissioning cannot start until the Handover Pack stage is complete.
         if (old.status === "not_started" && parsed.data.status === "in_progress") {
           const hp = await isHandoverPackComplete(old.projectId);
-          if (!hp.complete) {
+          if (isCommissioningStartBlocked(old.status, parsed.data.status, hp.complete)) {
             return res.status(400).json({
               error: "Commissioning cannot start until the Engineering Handover Pack stage is complete.",
               handoverPack: hp,
