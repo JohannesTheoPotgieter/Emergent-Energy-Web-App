@@ -27,6 +27,7 @@ import { logAuditFromReq } from "./audit-logger";
 import { recordAudit } from "./api/v2/services/audit-service";
 import { canOverride } from "@shared/permissions/authoriser-matrix";
 import { evidenceOverrideRecords } from "@shared/schema";
+import { buildQcEvidenceOverrideRecord } from "./lib/quality-evidence-override";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
@@ -1338,20 +1339,24 @@ export function registerQualityRoutes(app: Express) {
                   });
                 }
                 const overrideUser = getUser(req);
-                const projectIdForOverride = (existing as any).projectId ?? null;
+                // Task 0.1: qc_item_instance has NO project_id column — the
+                // previous `(existing as any).projectId` was always null, so
+                // this insert never ran. Resolve the project id through the
+                // checklist FK instead.
+                const projectIdForOverride = await resolveProjectIdForItemInstance(itemId);
                 if (projectIdForOverride != null) {
-                  await db.insert(evidenceOverrideRecords).values({
-                    projectId: projectIdForOverride,
-                    completionType: "qc_item_pass",
-                    sourceType: "qc_item_instance",
-                    sourceRef: String(itemId),
-                    scorePercent: evidenceRows.length > 0 ? 100 : 0,
-                    thresholdPercent: 100,
-                    reason: qcOverrideReason,
-                    authorizedByUserId: overrideUser.id,
-                    authorizedByName: overrideUser.name ?? null,
-                    authorizedByRole: getUserRole(req) ?? null,
-                  });
+                  await db.insert(evidenceOverrideRecords).values(
+                    buildQcEvidenceOverrideRecord({
+                      projectId: projectIdForOverride,
+                      itemInstanceId: itemId,
+                      completionType: "qc_item_pass",
+                      evidenceCount: evidenceRows.length,
+                      reason: qcOverrideReason,
+                      authorizedByUserId: overrideUser.id,
+                      authorizedByName: overrideUser.name ?? null,
+                      authorizedByRole: getUserRole(req) ?? null,
+                    }),
+                  );
                 }
                 await recordAudit({
                   actorRole: getUserRole(req) ?? "UNKNOWN",
@@ -1482,20 +1487,22 @@ export function registerQualityRoutes(app: Express) {
                 });
               }
               const overrideUser = getUser(req);
-              const projectIdForOverride = (existing as any).projectId ?? null;
+              // Task 0.1: resolve project id via the checklist FK — the item
+              // instance has no project_id column of its own.
+              const projectIdForOverride = await resolveProjectIdForItemInstance(itemId);
               if (projectIdForOverride != null) {
-                await db.insert(evidenceOverrideRecords).values({
-                  projectId: projectIdForOverride,
-                  completionType: "qc_item_approve",
-                  sourceType: "qc_item_instance",
-                  sourceRef: String(itemId),
-                  scorePercent: evidenceRows.length > 0 ? 100 : 0,
-                  thresholdPercent: 100,
-                  reason: approveOverrideReason,
-                  authorizedByUserId: overrideUser.id,
-                  authorizedByName: overrideUser.name ?? null,
-                  authorizedByRole: getUserRole(req) ?? null,
-                });
+                await db.insert(evidenceOverrideRecords).values(
+                  buildQcEvidenceOverrideRecord({
+                    projectId: projectIdForOverride,
+                    itemInstanceId: itemId,
+                    completionType: "qc_item_approve",
+                    evidenceCount: evidenceRows.length,
+                    reason: approveOverrideReason,
+                    authorizedByUserId: overrideUser.id,
+                    authorizedByName: overrideUser.name ?? null,
+                    authorizedByRole: getUserRole(req) ?? null,
+                  }),
+                );
               }
               await recordAudit({
                 actorRole: getUserRole(req) ?? "UNKNOWN",
