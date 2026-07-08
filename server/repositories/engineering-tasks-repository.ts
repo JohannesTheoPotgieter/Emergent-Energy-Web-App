@@ -41,9 +41,10 @@ import {
 } from "../lib/task-workflow-guard";
 import { recordAudit } from "../api/v2/services/audit-service";
 import { createNotification } from "../services/notification-service";
-import { listManagedDocumentsByProject } from "./managed-documents-repository";
+import { listManagedDocumentsByProject, getManagedDocumentById } from "./managed-documents-repository";
+import { getProjectDocumentLink } from "./project-document-register-repository";
 import { isTaskComplete } from "@shared/task-status";
-import { conflict, notFound, badRequest } from "../lib/api-error";
+import { ApiError, conflict, notFound, badRequest } from "../lib/api-error";
 import { runInTransaction } from "../lib/drizzle-helpers";
 import {
   derivePlanLink,
@@ -502,11 +503,37 @@ export async function getDocumentCandidatesForTask(taskId: number): Promise<Docu
   return docs.map((d) => ({ id: d.id, name: d.name, path: d.path }));
 }
 
+const DOCUMENT_PROJECT_MISMATCH = (message: string): ApiError =>
+  new ApiError(400, "DOCUMENT_PROJECT_MISMATCH", message);
+
 export async function linkDocumentToTask(
   taskId: number,
   input: { managedDocumentId?: number | null; projectDocumentLinkId?: number | null; linkRole?: string },
   actorId: number,
 ): Promise<WorkItemDocumentLinkRow | null> {
+  const task = await getEngineeringTask(taskId);
+  if (!task) throw notFound("Task");
+
+  // Project-scope guard (Batch 1): a linked document/link must belong to the
+  // task's own project. Without this a document from another project could
+  // satisfy the Done-gate. Enforced here (single chokepoint) so no caller can
+  // bypass it. Coded ApiError so the client can surface a targeted message.
+  if (task.projectId == null) {
+    throw DOCUMENT_PROJECT_MISMATCH("Assign the task to a project before linking a document.");
+  }
+  if (input.managedDocumentId != null) {
+    const doc = await getManagedDocumentById(input.managedDocumentId);
+    if (!doc || doc.projectId !== task.projectId) {
+      throw DOCUMENT_PROJECT_MISMATCH("That document isn't available on this task's project.");
+    }
+  }
+  if (input.projectDocumentLinkId != null) {
+    const link = await getProjectDocumentLink(task.projectId, input.projectDocumentLinkId);
+    if (!link) {
+      throw DOCUMENT_PROJECT_MISMATCH("That document link isn't available on this task's project.");
+    }
+  }
+
   const rows = await db
     .insert(workItemDocumentLinks)
     .values({
@@ -518,8 +545,10 @@ export async function linkDocumentToTask(
     })
     .onConflictDoNothing()
     .returning();
-  // Unique (workItemId, managedDocumentId): an empty result means this document
-  // is already linked to the task — signal the route to return 409, not 500.
+  // Bare onConflictDoNothing() covers BOTH unique targets — (workItemId,
+  // managedDocumentId) and the partial (workItemId, projectDocumentLinkId)
+  // index. An empty result means this document is already linked to the task
+  // — signal the route to return 409, not a duplicate row (or 500).
   if (rows.length === 0) return null;
   const row = rows[0];
   await recordAudit({

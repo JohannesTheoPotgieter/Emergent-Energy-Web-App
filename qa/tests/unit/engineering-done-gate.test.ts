@@ -4,6 +4,7 @@ import {
   requiresDocumentLink,
   DOCUMENT_OUTPUT_TASK_TYPE_TAGS,
   ENGINEERING_DELIVERY_TASK_TYPE_TAGS,
+  DONE_GATE_OUTPUT_LINK_ROLE,
   isEngineeringTaskTypeTag,
   isSeamTaskTypeTag,
 } from "@shared/engineering/delivery-task-catalog";
@@ -40,6 +41,12 @@ describe("engineering delivery task catalog", () => {
     expect(isEngineeringTaskTypeTag("nope")).toBe(false);
     expect(isSeamTaskTypeTag("construction_snag")).toBe(true);
     expect(isSeamTaskTypeTag("ifc_pack")).toBe(false);
+  });
+
+  it("names 'output' as the only link role that satisfies the Done-gate", () => {
+    // Single source of truth shared by both context-builder query paths in
+    // task-workflow-guard.ts — an 'evidence'/'reference' link must NOT unblock Done.
+    expect(DONE_GATE_OUTPUT_LINK_ROLE).toBe("output");
   });
 });
 

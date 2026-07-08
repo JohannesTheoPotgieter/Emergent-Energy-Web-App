@@ -297,15 +297,9 @@ export function registerEngineeringTasksRoutes(app: Express): void {
       if (!parsedId.success) throw badRequest("Invalid task id");
       const body = req.body as z.infer<typeof linkDocSchema>;
       try {
-        const task = await tasksRepo.getEngineeringTask(parsedId.data);
-        if (!task) throw notFound("Task");
-        // Only allow linking a managed document that lives on the task's project.
-        if (body.managedDocumentId != null) {
-          const candidates = await tasksRepo.getDocumentCandidatesForTask(parsedId.data);
-          if (!candidates.some((c) => c.id === body.managedDocumentId)) {
-            throw badRequest("That document isn't available on this task's project.");
-          }
-        }
+        // The repository is the single chokepoint: it resolves the task, enforces
+        // that the managed document / project-document link belongs to the task's
+        // own project (coded DOCUMENT_PROJECT_MISMATCH), and dedupes on conflict.
         const link = await tasksRepo.linkDocumentToTask(parsedId.data, body, actorId(req));
         if (!link) throw conflict("This document is already linked to the task.");
         res.status(201).json({ link });

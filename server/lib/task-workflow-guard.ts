@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { hasDeliverableRequirementFlag } from "@shared/task-deliverable-requirement";
-import { requiresDocumentLink } from "@shared/engineering/delivery-task-catalog";
+import { requiresDocumentLink, DONE_GATE_OUTPUT_LINK_ROLE } from "@shared/engineering/delivery-task-catalog";
 import { normalizeStatus } from "@shared/utils/status-normalization";
 import { db } from "../db";
 import { workItems, taskDeliverables, workItemDocumentLinks } from "@shared/schema";
@@ -61,9 +61,14 @@ export async function buildTaskWorkflowContext(taskId: number, fallbackCurrentSt
     .where(eq(taskDeliverables.workItemId, taskId))
     .limit(1);
 
+  // Only an 'output' link satisfies the Done-gate — an 'evidence'/'reference'
+  // link must NOT unblock Done (Batch 1: the linkRole filter was missing).
   const [documentLink] = await db.select({ id: workItemDocumentLinks.id })
     .from(workItemDocumentLinks)
-    .where(eq(workItemDocumentLinks.workItemId, taskId))
+    .where(and(
+      eq(workItemDocumentLinks.workItemId, taskId),
+      eq(workItemDocumentLinks.linkRole, DONE_GATE_OUTPUT_LINK_ROLE),
+    ))
     .limit(1);
 
   const deliverableRequired = hasDeliverableRequirementFlag(task || {});
@@ -101,9 +106,13 @@ export async function buildTaskWorkflowContextsForIds(taskIds: number[]): Promis
     .from(taskDeliverables)
     .where(inArray(taskDeliverables.workItemId, taskIds));
 
+  // Only 'output' links count toward the Done-gate (mirrors the single-task path).
   const documentLinks = await db.select({ workItemId: workItemDocumentLinks.workItemId })
     .from(workItemDocumentLinks)
-    .where(inArray(workItemDocumentLinks.workItemId, taskIds));
+    .where(and(
+      inArray(workItemDocumentLinks.workItemId, taskIds),
+      eq(workItemDocumentLinks.linkRole, DONE_GATE_OUTPUT_LINK_ROLE),
+    ));
 
   const hasDeliverable = new Set<number>(deliverables.map((d: { workItemId: number }) => d.workItemId));
   const hasDocumentLink = new Set<number>(documentLinks.map((d: { workItemId: number }) => d.workItemId));

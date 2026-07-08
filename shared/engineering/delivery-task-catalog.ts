@@ -49,6 +49,15 @@ export const DOCUMENT_OUTPUT_TASK_TYPE_TAGS = [
 
 const DOCUMENT_OUTPUT_SET: ReadonlySet<string> = new Set(DOCUMENT_OUTPUT_TASK_TYPE_TAGS);
 
+/**
+ * The single link role that satisfies the Done-gate. A document-output task
+ * reaches Done only when it has a `work_item_document_links` row with this
+ * role — an `evidence` or `reference` link does NOT unblock Done. Shared by
+ * both context-builder query paths in `server/lib/task-workflow-guard.ts` so
+ * the single-task and bulk paths can't drift.
+ */
+export const DONE_GATE_OUTPUT_LINK_ROLE = "output" as const;
+
 export function isEngineeringTaskTypeTag(v: string | null | undefined): v is EngineeringTaskTypeTag {
   return v != null && (ENGINEERING_TASK_TYPE_TAGS as readonly string[]).includes(v);
 }

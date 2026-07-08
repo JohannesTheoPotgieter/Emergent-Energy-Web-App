@@ -458,6 +458,13 @@ export const workItemDocumentLinks = pgTable("work_item_document_links", {
   workItemIdx: index("work_item_document_links_work_item_idx").on(table.workItemId),
   managedDocumentIdx: index("work_item_document_links_managed_document_idx").on(table.managedDocumentId),
   uqWorkItemManagedDoc: unique("uq_work_item_document_link").on(table.workItemId, table.managedDocumentId),
+  // Partial unique so a project-document link can't be attached to the same task
+  // twice. A plain unique on (workItemId, projectDocumentLinkId) wouldn't dedupe
+  // managedDocument-only rows (projectDocumentLinkId NULL, and NULLs are distinct
+  // in Postgres), so scope the uniqueness to non-null projectDocumentLinkId rows.
+  uqWorkItemProjectDocLink: uniqueIndex("uq_work_item_project_doc_link")
+    .on(table.workItemId, table.projectDocumentLinkId)
+    .where(sql`${table.projectDocumentLinkId} IS NOT NULL`),
 }));
 export const insertWorkItemDocumentLinkSchema = createInsertSchema(workItemDocumentLinks).omit({ id: true, createdAt: true } as any);
 export type InsertWorkItemDocumentLink = z.infer<typeof insertWorkItemDocumentLinkSchema>;
