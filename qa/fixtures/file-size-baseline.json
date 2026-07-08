@@ -34,7 +34,7 @@
     },
     {
       "file": "server/quality-routes.ts",
-      "loc": 3364
+      "loc": 3449
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
@@ -158,7 +158,7 @@
     },
     {
       "file": "client/src/pages/qm-dashboard.tsx",
-      "loc": 1620
+      "loc": 1693
     },
     {
       "file": "server/departments/exco-routes.ts",
