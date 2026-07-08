@@ -40,15 +40,19 @@ function getNotificationEntityPath(notification: Notification): string | null {
   const id = String(notification.entityId);
   if (!id) return null;
 
+  // Map entity types to real registered routes. The older mappings
+  // (`/approvals/:id`, `/finance/invoices/:id`, `/procurement/po/:id`,
+  // `/projects/:id`) all 404'd because none were registered; keep this in
+  // lockstep with NotificationBell.getNotificationEntityPath.
   switch (notification.entityType) {
     case "approval":
-      return `/approvals/${id}`;
+      return `/pm/approvals?id=${encodeURIComponent(id)}`;
     case "invoice":
-      return `/finance/invoices/${id}`;
+      return `/finance/qb-reconciliation?invoice=${encodeURIComponent(id)}`;
     case "po":
-      return `/procurement/po/${id}`;
+      return `/po-approval-board?id=${encodeURIComponent(id)}`;
     case "project":
-      return `/projects/${id}`;
+      return `/project/id/${encodeURIComponent(id)}`;
     default:
       return null;
   }
@@ -80,7 +84,7 @@ export default function InboxPage() {
   const [, navigate] = useLocation();
   const qc = useQueryClient();
 
-  const { data: listData, isLoading } = useQuery<{ notifications: Notification[] }>({
+  const { data: listData, isLoading } = useQuery<{ notifications: Notification[]; unreadCount: number }>({
     queryKey: ["notifications-list-full"],
     queryFn: () => engFetch("/api/notifications?limit=100"),
     staleTime: 5_000,
@@ -93,7 +97,9 @@ export default function InboxPage() {
     return items;
   }, [items, filter]);
 
-  const unreadCount = items.filter((n) => !n.isRead).length;
+  // Authoritative count from the server (covers the whole inbox, not just the
+  // ≤100 loaded rows). Fall back to the local count before the first response.
+  const unreadCount = listData?.unreadCount ?? items.filter((n) => !n.isRead).length;
 
   const grouped = useMemo(() => {
     const today = new Date();

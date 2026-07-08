@@ -16,6 +16,14 @@ import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { createNotification } from "./notification-service";
 
+/**
+ * These sweeps re-run every 15 min (notification-trigger-scheduler). A persistent
+ * breach (still-overdue snag, still-pending approval) should nag at most once per
+ * day, not every tick — so poller notifications throttle for 24h rather than the
+ * 10-min default used for event-driven fires. Tune here to change the nag cadence.
+ */
+const RECURRING_TRIGGER_THROTTLE_MINUTES = 24 * 60;
+
 export interface NotificationTriggerResult {
   trigger: string;
   count: number;
@@ -77,6 +85,7 @@ async function notifyOverdueSnags(): Promise<{ count: number; notified: number }
         projectId: row.project_id,
         relatedEntityType: "snag",
         relatedEntityId: row.id,
+        throttleMinutes: RECURRING_TRIGGER_THROTTLE_MINUTES,
       });
       if (n) notified++;
     } catch { /* throttled or failed — skip */ }
@@ -90,6 +99,7 @@ async function notifyOverdueApprovals(): Promise<{ count: number; notified: numb
     FROM approvals a
     WHERE a.status = 'pending'
       AND a.requested_at < NOW() - INTERVAL '3 days'
+      AND a.deleted_at IS NULL
       AND a.assigned_approver IS NOT NULL
     LIMIT 50
   `);
@@ -105,6 +115,7 @@ async function notifyOverdueApprovals(): Promise<{ count: number; notified: numb
         projectId: row.project_id,
         relatedEntityType: "approval",
         relatedEntityId: row.id,
+        throttleMinutes: RECURRING_TRIGGER_THROTTLE_MINUTES,
       });
       if (n) notified++;
     } catch { /* throttled */ }
@@ -134,6 +145,7 @@ async function notifyUpcomingInspections(): Promise<{ count: number; notified: n
         projectId: row.project_id,
         relatedEntityType: "site_inspection",
         relatedEntityId: row.id,
+        throttleMinutes: RECURRING_TRIGGER_THROTTLE_MINUTES,
       });
       if (n) notified++;
     } catch { /* throttled */ }
@@ -149,6 +161,7 @@ async function notifyLateProcurementDeliveries(): Promise<{ count: number; notif
     WHERE pi.delivery_status IN ('ordered', 'shipped')
       AND pi.delivery_expected_date < CURRENT_DATE
       AND pi.delivery_actual_date IS NULL
+      AND pi.deleted_at IS NULL
       AND p.pm_user_id IS NOT NULL
     LIMIT 50
   `);
@@ -164,6 +177,7 @@ async function notifyLateProcurementDeliveries(): Promise<{ count: number; notif
         projectId: row.project_id,
         relatedEntityType: "procurement_item",
         relatedEntityId: row.id,
+        throttleMinutes: RECURRING_TRIGGER_THROTTLE_MINUTES,
       });
       if (n) notified++;
     } catch { /* throttled */ }
@@ -194,6 +208,7 @@ async function notifyStalledHandovers(): Promise<{ count: number; notified: numb
         projectId: row.project_id,
         relatedEntityType: "handover_pack",
         relatedEntityId: row.id,
+        throttleMinutes: RECURRING_TRIGGER_THROTTLE_MINUTES,
       });
       if (n) notified++;
     } catch { /* throttled */ }

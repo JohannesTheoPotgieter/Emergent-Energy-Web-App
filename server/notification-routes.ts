@@ -20,9 +20,36 @@ export function registerNotificationRoutes(app: Express) {
         .orderBy(desc(notifications.createdAt))
         .limit(limit);
 
-      const unreadCount = rows.filter((r: any) => !r.isRead).length;
+      // Surface the entity reference the client's "View" link reads. createNotification
+      // packs it into changeDetails as {entityType, entityId}; without hoisting it to
+      // top-level fields the client always sees undefined and the link never renders.
+      const enriched = rows.map((r: any) => {
+        let entityType: string | null = null;
+        let entityId: number | null = null;
+        if (r.changeDetails) {
+          try {
+            const parsed = JSON.parse(r.changeDetails);
+            if (parsed && typeof parsed === "object") {
+              if (typeof parsed.entityType === "string") entityType = parsed.entityType;
+              if (typeof parsed.entityId === "number") entityId = parsed.entityId;
+            }
+          } catch {
+            // Malformed/legacy changeDetails — leave the entity ref unset.
+          }
+        }
+        return { ...r, entityType, entityId };
+      });
 
-      res.json({ notifications: rows, unreadCount });
+      // Authoritative unread count for the whole inbox, not just the fetched window
+      // (a user with more unread than `limit` would otherwise see an undercount that
+      // disagrees with the bell badge).
+      const unreadResult = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(notifications)
+        .where(and(eq(notifications.recipientUserId, user.id), eq(notifications.isRead, false)));
+      const unreadCount = Number(unreadResult[0]?.count ?? 0);
+
+      res.json({ notifications: enriched, unreadCount });
     } catch (err: unknown) {
       throw err;
     }

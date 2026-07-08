@@ -29,7 +29,9 @@ export const standupMoodEnum = pgEnum('standup_mood', ['great', 'good', 'okay', 
 
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),
-  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
+  // NOT NULL, so a user delete must cascade the rows away — "set null" would
+  // violate the constraint and block deleting any user who has notifications.
+  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   eventType: text("event_type").notNull(),
   title: text("title").notNull(),
   body: text("body"),
@@ -57,7 +59,8 @@ export type Notification = typeof notifications.$inferSelect;
 
 export const notificationThrottle = pgTable("notification_throttle", {
   id: serial("id").primaryKey(),
-  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
+  // NOT NULL — cascade on user delete (same reasoning as notifications above).
+  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   eventType: text("event_type").notNull(),
   entityType: text("entity_type").notNull(),
   entityId: integer("entity_id").notNull(),

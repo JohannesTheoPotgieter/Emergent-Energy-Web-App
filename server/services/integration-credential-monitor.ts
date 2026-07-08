@@ -105,7 +105,10 @@ export async function sweepCredentialExpiries(
         expiresAt,
       });
       await dispatchAlert({
-        alertTarget: integration.alertTarget ?? null,
+        // Fall back to COO_ADMIN (the owner) when a connector row has no explicit
+        // alertTarget — otherwise the dispatcher resolves zero recipients and the
+        // expiry alert is silently dropped, letting a credential lapse unnoticed.
+        alertTarget: integration.alertTarget ?? "COO_ADMIN",
         eventType: copy.eventType,
         title: copy.title,
         body: copy.body,

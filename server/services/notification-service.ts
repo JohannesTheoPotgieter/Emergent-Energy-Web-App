@@ -1,6 +1,9 @@
 import { db } from "../db";
 import { notifications, notificationThrottle } from "@shared/schema";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, gt } from "drizzle-orm";
+
+/** Default throttle window: dedupes near-simultaneous event-driven fires (e.g. a double-click). */
+const DEFAULT_THROTTLE_MINUTES = 10;
 
 interface CreateNotificationParams {
   recipientUserId: number;
@@ -12,6 +15,14 @@ interface CreateNotificationParams {
   linkedTaskId?: number;
   relatedEntityType?: string;
   relatedEntityId?: number;
+  /**
+   * Minutes to suppress a duplicate (recipient, eventType, entity) notification.
+   * Defaults to 10 — right for de-duping near-simultaneous event-driven fires.
+   * Recurring pollers MUST pass a window longer than their sweep interval, or a
+   * persistent condition re-notifies the same user on every tick (see
+   * notification-triggers.ts).
+   */
+  throttleMinutes?: number;
 }
 
 /**
@@ -19,8 +30,10 @@ interface CreateNotificationParams {
  * Returns the created notification or null if throttled.
  */
 export async function createNotification(params: CreateNotificationParams) {
-  // Throttle: don't send duplicate notifications within 10 minutes
+  // Throttle: don't re-send the same (recipient, event, entity) within the window.
   if (params.relatedEntityType && params.relatedEntityId) {
+    const throttleMinutes = params.throttleMinutes ?? DEFAULT_THROTTLE_MINUTES;
+    const throttleCutoff = new Date(Date.now() - throttleMinutes * 60_000);
     const recent = await db
       .select()
       .from(notificationThrottle)
@@ -29,7 +42,7 @@ export async function createNotification(params: CreateNotificationParams) {
         eq(notificationThrottle.eventType, params.eventType),
         eq(notificationThrottle.entityType, params.relatedEntityType),
         eq(notificationThrottle.entityId, params.relatedEntityId),
-        sql`${notificationThrottle.lastSentAt} > NOW() - INTERVAL '10 minutes'`,
+        gt(notificationThrottle.lastSentAt, throttleCutoff),
       ))
       .limit(1);
 
