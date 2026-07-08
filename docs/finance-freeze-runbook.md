@@ -284,7 +284,7 @@ of the other sections), clear the alert so the inbox reflects reality.
 
 **When:** after any intervention (reconnect, secret rotation, restore), or any
 time you want fresh proof the frozen numbers still tie out. The integrity guard
-re-runs the **golden**, **cross-surface**, and **reconciliation** proofs
+re-runs the **cross-surface** and **reconciliation** proofs
 read-only against production and pages the owner on any drift.
 
 > 🚫 The integrity check is **read-only**. It never writes finance data and never
@@ -313,8 +313,7 @@ read-only against production and pages the owner on any drift.
 # In-app admin endpoint (preferred — runs in the live app context):
 #   POST /api/admin/finance/observability/run-integrity   (admin only)
 #
-# Or the offline verifiers (need a finance Postgres connection):
-npm run verify:golden
+# Or the offline verifier (needs a finance Postgres connection):
 npm run verify:finance
 ```
 
@@ -346,7 +345,7 @@ for the finance surface until an operator applies the drift-repair migration
 
 On the **1st of each month** the app emails/Teams the owner a roll-up:
 integrations (green / secret-expiry countdown), job health, data freshness,
-integrity (golden + cross-surface), and any alerts in the period — the owner's
+integrity (cross-surface + reconciliation), and any alerts in the period — the owner's
 "is the ring-fence still holding?" signal. Scheduled in
 `server/bootstrap/finance-integrity-guard-scheduler.ts`; you can also send one on
 demand from **Finance Health → Send digest now**.

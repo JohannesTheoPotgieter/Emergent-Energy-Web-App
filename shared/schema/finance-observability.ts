@@ -14,10 +14,10 @@
  *                             is completely dead and recording nothing else.
  *
  *   finance_integrity_runs  — one row per weekly integrity-guard run
- *                             (verify:golden + verify:finance, read-only
- *                             against prod). The freeze's safety net: since
- *                             the finance code is frozen, this catches DATA /
- *                             integration drift a human needs to know about.
+ *                             (verify:finance cross-surface + reconciliation,
+ *                             read-only against prod). The freeze's safety net:
+ *                             since the finance code is frozen, this catches
+ *                             DATA / integration drift a human needs to know about.
  *
  * Both are additive and observability-only — they hold NO finance figures and
  * gate NO finance computation. Read paths stay the canonical single read path.
@@ -113,7 +113,8 @@ export const financeIntegrityRuns = pgTable("finance_integrity_runs", {
   finishedAt: timestamp("finished_at"),
   /** Roll-up outcome across all checks. */
   status: text("status").notNull(),
-  /** verify:golden (golden fixture tie) outcome. */
+  /** Deprecated — retained nullable for historical rows; the golden-oracle
+   *  check was removed, so new runs leave this null. */
   goldenStatus: text("golden_status"),
   /** verify:finance cross-surface equality outcome. */
   crossSurfaceStatus: text("cross_surface_status"),

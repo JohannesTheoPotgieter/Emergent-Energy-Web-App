@@ -1,8 +1,8 @@
 /**
  * Weekly finance integrity-guard scheduler + monthly digest.
  *
- * Runs the read-only integrity guard (verify:golden + verify:finance in-process
- * against prod) on a weekly cadence — the freeze's safety net (R4) — and sends
+ * Runs the read-only integrity guard (verify:finance in-process against prod)
+ * on a weekly cadence — the freeze's safety net (R4) — and sends
  * the monthly finance-health digest (R5). Also runs a heartbeat sweep at each
  * weekly tick as a backstop in case the 30-min watchdog itself stopped.
  *

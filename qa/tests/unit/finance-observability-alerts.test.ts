@@ -191,8 +191,7 @@ describe("weekly integrity guard", () => {
       runType: "manual",
       deps: {
         getDbMode: () => "postgres",
-        runGolden: async () => ({ outcome: "drift", driftCount: 3, detail: { sample: [] } }),
-        runCrossSurface: async () => ({ outcome: "pass", driftCount: 0, detail: {} }),
+        runCrossSurface: async () => ({ outcome: "drift", driftCount: 3, detail: { sample: [] } }),
         runReconciliation: async () => ({ outcome: "pass", driftCount: 0, detail: {} }),
         persistRun: async (row) => {
           persistedStatus = row.status as string;
@@ -222,7 +221,6 @@ describe("weekly integrity guard", () => {
     const result = await runFinanceIntegrityGuard({
       deps: {
         getDbMode: () => "postgres",
-        runGolden: async () => ({ outcome: "pass", driftCount: 0, detail: {} }),
         runCrossSurface: async () => ({ outcome: "pass", driftCount: 0, detail: {} }),
         runReconciliation: async () => ({ outcome: "pass", driftCount: 0, detail: {} }),
         persistRun: async () => 1,

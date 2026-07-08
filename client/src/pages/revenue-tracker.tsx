@@ -3,8 +3,8 @@
  *
  * Answer-first: "What revenue have we recognised this FY vs plan?" The headline
  * reads the CANONICAL FYTD recognition (company-overview executiveSummary —
- * getCanonicalProjectTotals § 3.3, the same figure Finance Home and the golden
- * oracle use). The drill table below breaks the tracker's monthly recognition
+ * getCanonicalProjectTotals § 3.3, the same figure Finance Home uses). The
+ * drill table below breaks the tracker's monthly recognition
  * down FY → month → project → line → invoice. Presentation only — every figure
  * comes from the canonical endpoints; no formula or number is computed here.
  */
@@ -179,8 +179,8 @@ export default function RevenueTrackerPage() {
     },
   });
 
-  // Canonical FYTD recognised revenue — the SAME figure as Finance Home and the
-  // golden oracle (executiveSummary.revenueVsTarget = getCanonicalProjectTotals
+  // Canonical FYTD recognised revenue — the SAME figure as Finance Home
+  // (executiveSummary.revenueVsTarget = getCanonicalProjectTotals
   // § 3.3, FY-windowed incl. the open month).
   const overviewQuery = useQuery<CompanyOverviewResponse>({
     queryKey: ['/api/company-overview'],
@@ -342,7 +342,7 @@ export default function RevenueTrackerPage() {
 
       <p className="mt-2 mb-3 text-[11px] text-muted-foreground">
         Headline is FYTD recognition (canonical § 3.3, incl. the open month) — the same figure as
-        Finance Home and the golden oracle. The monthly <span className="font-medium">Realised</span> column
+        Finance Home. The monthly <span className="font-medium">Realised</span> column
         below is the tracker&apos;s per-month recognition in closed months, so its sum is lower than the headline.
       </p>
 

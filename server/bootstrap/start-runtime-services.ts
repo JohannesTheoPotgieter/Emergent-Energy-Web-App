@@ -175,7 +175,7 @@ export async function startRuntimeServices(options: {
 
   // Finance observability — the freeze's monitoring. The watchdog runs the
   // dead-man's-switch heartbeat sweep + data-freshness/drift sweep + error-rate
-  // check every ~30 min; the integrity guard runs verify:golden/verify:finance
+  // check every ~30 min; the integrity guard runs verify:finance
   // weekly (read-only) and the monthly digest. Both Postgres-only.
   if (!isSqlite) {
     try {
