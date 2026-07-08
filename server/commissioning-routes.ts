@@ -1,7 +1,7 @@
 import { Express, Request, Response } from "express";
 import { db } from "./db";
 import { eq, and, sql, ilike } from "drizzle-orm";
-import { commissioningItems, projectEngStages, engStageTemplates, approvals } from "@shared/schema";
+import { commissioningItems, projectEngStages, engStageTemplates, approvals, projectInfo, ADMIN_ROLES, normalizeRoleForPermissions } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth, getEffectiveUser, type AuthenticatedUser } from "./auth-context";
@@ -13,6 +13,48 @@ import {
   isCommissioningStartBlocked,
   isHandoverPackStageComplete,
 } from "./lib/commissioning-state-machine";
+import {
+  BESS_ITEM_TYPE,
+  BESS_CATEGORY,
+  BESS_SEVEN_CHECKS,
+  bessItemCloseBlockedReason,
+  bessSevenCheckProgress,
+  isBessCommissioningItem,
+} from "./lib/bess-seven-check";
+
+/** Roles allowed to countersign a BESS 7-check item (Construction Manager + admins). */
+function canCountersignBess(role: string | null | undefined): boolean {
+  const normalized = normalizeRoleForPermissions(role ?? "");
+  if (normalized == null) return false;
+  return normalized === "CONSTRUCTION_MANAGER" || (ADMIN_ROLES as readonly string[]).includes(normalized);
+}
+
+/**
+ * Idempotently ensure the seven BESS checks exist for a project. Matches on
+ * (projectId, itemType, title) so re-running never duplicates a check.
+ * Returns the count inserted.
+ */
+async function ensureBessSevenCheck(projectId: number): Promise<number> {
+  const existing = await db
+    .select({ title: commissioningItems.title })
+    .from(commissioningItems)
+    .where(and(eq(commissioningItems.projectId, projectId), eq(commissioningItems.itemType, BESS_ITEM_TYPE)));
+  const existingTitles = new Set(existing.map((e: { title: string }) => e.title));
+  const missing = BESS_SEVEN_CHECKS.filter((c) => !existingTitles.has(c.title));
+  if (missing.length === 0) return 0;
+  await db.insert(commissioningItems).values(
+    missing.map((c, i) => ({
+      projectId,
+      itemType: BESS_ITEM_TYPE,
+      title: c.title,
+      description: c.description,
+      category: BESS_CATEGORY,
+      status: "not_started" as const,
+      sortOrder: BESS_SEVEN_CHECKS.findIndex((x) => x.key === c.key) >= 0 ? BESS_SEVEN_CHECKS.findIndex((x) => x.key === c.key) : i,
+    })),
+  );
+  return missing.length;
+}
 
 const COMMISSIONING_STATUSES = ['not_started', 'in_progress', 'ready_for_review', 'approved', 'closed'] as const;
 
@@ -181,6 +223,13 @@ export function registerCommissioningRoutes(app: Express): void {
           }
         }
 
+        // BESS 7-check: an item may only close once the Construction Manager
+        // has countersigned the Engineering-Lead sign-off.
+        const bessCloseBlock = bessItemCloseBlockedReason(old, parsed.data.status);
+        if (bessCloseBlock) {
+          return res.status(400).json({ error: bessCloseBlock });
+        }
+
         updates.status = parsed.data.status;
 
         if (parsed.data.status === 'approved' || parsed.data.status === 'closed') {
@@ -257,6 +306,16 @@ export function registerCommissioningRoutes(app: Express): void {
         action: "update",
         changesJson: { before: { status: old.status }, after: { status: result[0].status }, updates: parsed.data },
       });
+
+      // BESS 7-check: the COO is copied on every check closure.
+      if (isBessCommissioningItem(result[0]) && result[0].status === "closed" && old.status !== "closed") {
+        logAuditFromReq(req, {
+          entityType: "commissioning_item",
+          entityId: String(id),
+          action: "bess.closure.coo_notified",
+          changesJson: { title: result[0].title, projectId: result[0].projectId, note: "COO notified of BESS 7-check item closure" },
+        });
+      }
 
       res.json(result[0]);
     } catch (err: unknown) {
@@ -396,6 +455,120 @@ export function registerCommissioningRoutes(app: Express): void {
       res.json(evidence);
     } catch (err: unknown) {
       res.status(500).json({ error: "Failed to evaluate evidence" });
+    }
+  });
+
+  // ===================== BESS 7-check =====================
+
+  // Return the BESS 7-check for a project: whether it applies (is_bess_hybrid),
+  // the seven items, and the sign-off progress.
+  app.get("/api/commissioning/project/:projectId/bess-seven-check", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
+    try {
+      const projectId = parseIntParam(req.params.projectId);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
+      const [project] = await db
+        .select({ isBessHybrid: projectInfo.isBessHybrid })
+        .from(projectInfo)
+        .where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const items = await db
+        .select()
+        .from(commissioningItems)
+        .where(and(
+          eq(commissioningItems.projectId, projectId),
+          eq(commissioningItems.itemType, BESS_ITEM_TYPE),
+          sql`${commissioningItems.deletedAt} IS NULL`,
+        ))
+        .orderBy(commissioningItems.sortOrder);
+
+      res.json({
+        applies: project.isBessHybrid === true,
+        progress: bessSevenCheckProgress(items),
+        items,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Commissioning] BESS get error:", message);
+      res.status(500).json({ error: "Failed to fetch BESS 7-check" });
+    }
+  });
+
+  // Seed the 7 checks for a BESS/hybrid project (idempotent). Only applies to
+  // projects flagged is_bess_hybrid.
+  app.post("/api/commissioning/project/:projectId/bess-seven-check/seed", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
+    try {
+      const projectId = parseIntParam(req.params.projectId);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
+      const [project] = await db
+        .select({ isBessHybrid: projectInfo.isBessHybrid })
+        .from(projectInfo)
+        .where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (project.isBessHybrid !== true) {
+        return res.status(400).json({ error: "Project is not flagged as BESS/hybrid; the 7-check does not apply." });
+      }
+
+      const inserted = await ensureBessSevenCheck(projectId);
+      const items = await db
+        .select()
+        .from(commissioningItems)
+        .where(and(
+          eq(commissioningItems.projectId, projectId),
+          eq(commissioningItems.itemType, BESS_ITEM_TYPE),
+          sql`${commissioningItems.deletedAt} IS NULL`,
+        ))
+        .orderBy(commissioningItems.sortOrder);
+      logAuditFromReq(req, {
+        entityType: "commissioning_item",
+        entityId: String(projectId),
+        action: "bess.seven_check.seeded",
+        changesJson: { projectId, inserted },
+      });
+      res.status(inserted > 0 ? 201 : 200).json({ inserted, progress: bessSevenCheckProgress(items), items });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Commissioning] BESS seed error:", message);
+      res.status(500).json({ error: "Failed to seed BESS 7-check" });
+    }
+  });
+
+  // Construction-Manager countersignature on a BESS check (required before the
+  // item may close). Eng Lead signs off via the normal approval flow first.
+  app.post("/api/commissioning/:id/countersign", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = parseIntParam(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+      const [item] = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
+      if (!item) return res.status(404).json({ error: "Not found" });
+      if (!isBessCommissioningItem(item)) {
+        return res.status(400).json({ error: "Countersignature only applies to BESS 7-check items." });
+      }
+      const user = getEffectiveUser(req);
+      if (!canCountersignBess(user?.role)) {
+        return res.status(403).json({ error: "Only the Construction Manager (or an admin) may countersign a BESS check." });
+      }
+      // Eng-Lead sign-off first: the item must have reached approved.
+      if (item.status !== "approved" && item.status !== "closed") {
+        return res.status(400).json({ error: "The Engineering Lead must approve the check before it can be countersigned." });
+      }
+
+      const [updated] = await db
+        .update(commissioningItems)
+        .set({ countersignedByUserId: user?.id ?? null, countersignedAt: new Date(), updatedAt: new Date() })
+        .where(eq(commissioningItems.id, id))
+        .returning();
+      logAuditFromReq(req, {
+        entityType: "commissioning_item",
+        entityId: String(id),
+        action: "bess.countersigned",
+        changesJson: { title: item.title, projectId: item.projectId },
+      });
+      res.json(updated);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Commissioning] BESS countersign error:", message);
+      res.status(500).json({ error: "Failed to countersign BESS check" });
     }
   });
 }

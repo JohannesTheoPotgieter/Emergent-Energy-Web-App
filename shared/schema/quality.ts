@@ -261,13 +261,17 @@ export const commissioningItems = pgTable("commissioning_items", {
   gateId: text("gate_id"),
   category: text("category"),
   sortOrder: integer("sort_order").default(0),
+  // Construction-Manager countersignature (BESS 7-check sign-off chain).
+  // Eng Lead approves the item; the CM countersigns before it may close.
+  countersignedByUserId: integer("countersigned_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  countersignedAt: timestamp("countersigned_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   completedAt: timestamp("completed_at"),
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
 });
-export const insertCommissioningItemSchema = createInsertSchema(commissioningItems).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true, deletedAt: true, deletedBy: true } as any);
+export const insertCommissioningItemSchema = createInsertSchema(commissioningItems).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true, deletedAt: true, deletedBy: true, countersignedByUserId: true, countersignedAt: true } as any);
 export type InsertCommissioningItem = z.infer<typeof insertCommissioningItemSchema>;
 export type CommissioningItem = typeof commissioningItems.$inferSelect;
 
