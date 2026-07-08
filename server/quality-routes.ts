@@ -125,6 +125,63 @@ async function resolveProjectIdForItemInstance(itemInstanceId: number): Promise<
   return typeof value === "number" ? value : null;
 }
 
+type QualityDb = NodePgDatabase<typeof schema>;
+
+/**
+ * Backfill any item-instances / risk-answers that the checklist's template
+ * gained after the checklist was created. Idempotent — inserts only the
+ * missing rows. Task 0.6: this used to run as a side effect inside the
+ * checklist GET (a read that wrote). It now lives here and runs from the
+ * create/sync POST path only, so a `quality:view` GET performs no writes.
+ */
+async function backfillMissingChecklistRows(
+  tx: QualityDb,
+  checklistId: number,
+  templateId: number,
+): Promise<{ itemsAdded: number; riskAnswersAdded: number }> {
+  const tplPhases = await tx
+    .select({ id: qcTemplatePhase.id })
+    .from(qcTemplatePhase)
+    .where(eq(qcTemplatePhase.templateId, templateId));
+  const tplPhaseIds = tplPhases.map((p: { id: number }) => p.id);
+  const tplGroups = tplPhaseIds.length
+    ? await tx.select({ id: qcTemplateGroup.id }).from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, tplPhaseIds))
+    : [];
+  const tplGroupIds = tplGroups.map((g: { id: number }) => g.id);
+  const tplItems = tplGroupIds.length
+    ? await tx.select({ id: qcTemplateItem.id }).from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, tplGroupIds))
+    : [];
+
+  const existingItems = await tx
+    .select({ templateItemId: qcItemInstance.templateItemId })
+    .from(qcItemInstance)
+    .where(eq(qcItemInstance.checklistId, checklistId));
+  const existingItemIds = new Set(existingItems.map((i: { templateItemId: number }) => i.templateItemId));
+  const missingTplItems = tplItems.filter((ti: { id: number }) => !existingItemIds.has(ti.id));
+  if (missingTplItems.length > 0) {
+    await tx.insert(qcItemInstance).values(
+      missingTplItems.map((ti: { id: number }) => ({ checklistId, templateItemId: ti.id })),
+    );
+  }
+
+  const tplRiskQs = tplPhaseIds.length
+    ? await tx.select({ id: qcTemplateRiskQuestion.id }).from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, tplPhaseIds))
+    : [];
+  const existingRisks = await tx
+    .select({ templateRiskQuestionId: qcRiskAnswer.templateRiskQuestionId })
+    .from(qcRiskAnswer)
+    .where(eq(qcRiskAnswer.checklistId, checklistId));
+  const existingRiskIds = new Set(existingRisks.map((r: { templateRiskQuestionId: number }) => r.templateRiskQuestionId));
+  const missingRiskQs = tplRiskQs.filter((rq: { id: number }) => !existingRiskIds.has(rq.id));
+  if (missingRiskQs.length > 0) {
+    await tx.insert(qcRiskAnswer).values(
+      missingRiskQs.map((rq: { id: number }) => ({ checklistId, templateRiskQuestionId: rq.id })),
+    );
+  }
+
+  return { itemsAdded: missingTplItems.length, riskAnswersAdded: missingRiskQs.length };
+}
+
 const requireAdminOrEpm = requireRoleCanonical([
   "COO_ADMIN",
   "CEO_ADMIN",
@@ -883,39 +940,12 @@ export function registerQualityRoutes(app: Express) {
         });
       }
 
-      let itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
-      let riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
-
-      // Backfill: an existing checklist may have been created when its template
-      // had no items/risk-questions seeded. Re-create any missing rows so the
-      // dashboard shows the current template content rather than an empty list.
-      // Safe to run on GET because it only fires for checklists that already
-      // exist (the user already passed `quality.view`).
-      if (checklist.templateId) {
-        const tplPhases = await db.select({ id: qcTemplatePhase.id }).from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, checklist.templateId));
-        const tplPhaseIds = tplPhases.map((p: any) => p.id);
-        const tplGroups = tplPhaseIds.length ? await db.select({ id: qcTemplateGroup.id }).from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, tplPhaseIds)) : [];
-        const tplGroupIds = tplGroups.map((g: any) => g.id);
-        const tplItems = tplGroupIds.length ? await db.select({ id: qcTemplateItem.id }).from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, tplGroupIds)) : [];
-        const existingItemIds = new Set(itemInstances.map((i: any) => i.templateItemId));
-        const missingTplItems = tplItems.filter((ti: any) => !existingItemIds.has(ti.id));
-        if (missingTplItems.length > 0) {
-          await db.insert(qcItemInstance).values(
-            missingTplItems.map((ti: any) => ({ checklistId: checklist.id, templateItemId: ti.id }))
-          );
-          itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
-        }
-
-        const tplRiskQs = tplPhaseIds.length ? await db.select({ id: qcTemplateRiskQuestion.id }).from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, tplPhaseIds)) : [];
-        const existingRiskIds = new Set(riskAnswers.map((r: any) => r.templateRiskQuestionId));
-        const missingRiskQs = tplRiskQs.filter((rq: any) => !existingRiskIds.has(rq.id));
-        if (missingRiskQs.length > 0) {
-          await db.insert(qcRiskAnswer).values(
-            missingRiskQs.map((rq: any) => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id }))
-          );
-          riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
-        }
-      }
+      // Task 0.6: this GET is read-only. Backfill of item-instances /
+      // risk-answers that a template gained after checklist creation now runs
+      // in the create/sync POST path (backfillMissingChecklistRows), so a
+      // `quality:view` GET performs no inserts.
+      const itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
+      const riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
 
       const itemIds = itemInstances.map((i: any) => i.id);
       const evidence = itemIds.length ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, itemIds), isNull(qcItemEvidence.deletedAt))) : [];
@@ -990,6 +1020,13 @@ export function registerQualityRoutes(app: Express) {
           const existing = await tx.select().from(qcChecklist).where(eq(qcChecklist.projectId, project.id));
           if (existing.length > 0) {
             const checklist = existing.sort((l: any, r: any) => r.id - l.id)[0];
+            // Task 0.6: sync-on-open. An existing checklist may predate template
+            // items/risk-questions added later. Backfill the missing rows here
+            // (inside the tx + advisory lock) instead of on GET, so opening the
+            // Quality page never writes but "Start / open" heals a stale checklist.
+            if (checklist.templateId) {
+              await backfillMissingChecklistRows(tx, checklist.id, checklist.templateId);
+            }
             return { created: false as const, checklist };
           }
 

@@ -338,8 +338,11 @@ export default function QmDashboardPage() {
 
 
   const startQmMutation = useMutation<ProjectChecklistResponse, Error, string>({
+    // Task 0.6: starting a quality process is a create, not a read. POST to the
+    // idempotent create/sync endpoint (returns the existing checklist if one is
+    // already there) rather than a GET that used to write.
     mutationFn: (projectName: string) =>
-      qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/checklist`),
+      qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/checklist`, { method: "POST" }),
     onSuccess: (data, projectName) => {
       queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
       const resolvedProjectName = data?.checklist?.projectName || projectName;
