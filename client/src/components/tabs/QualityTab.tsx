@@ -418,10 +418,17 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   });
 
   const updateRiskMutation = useMutation({
-    mutationFn: async ({ riskAnswerId, updates }: { riskAnswerId: number; updates: any }) => {
+    // Task 1.4: answer either an existing answer row (riskAnswerId) or a
+    // question that has no seeded answer yet (templateRiskQuestionId +
+    // checklistId → server upserts).
+    mutationFn: async ({ riskAnswerId, templateRiskQuestionId, updates }: { riskAnswerId?: number; templateRiskQuestionId?: number; updates: any }) => {
+      const checklistId = checklistData?.checklist?.id ?? null;
+      const identity = riskAnswerId != null
+        ? { riskAnswerId }
+        : { templateRiskQuestionId, checklistId };
       const res = await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/risk-answer`, {
         method: "POST",
-        body: JSON.stringify({ riskAnswerId, ...updates }),
+        body: JSON.stringify({ ...identity, ...updates }),
       });
       if (!res.ok) throw new Error("Failed to update risk answer");
       return res.json();
@@ -2078,22 +2085,28 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                   <div className="border-t divide-y">
                     {selectedPhaseRiskQs.map((rq: any) => {
                       const answer = getRiskAnswer(rq.id);
+                      // Task 1.4: a question with no seeded answer row is still
+                      // answerable — target the existing row by id, or upsert by
+                      // the template question id.
+                      const submitRisk = (updates: any) =>
+                        updateRiskMutation.mutate(
+                          answer?.id != null
+                            ? { riskAnswerId: answer.id, updates }
+                            : { templateRiskQuestionId: rq.id, updates },
+                        );
                       return (
                         <div key={rq.id} className="px-4 py-3 space-y-2" data-testid={`risk-question-${rq.id}`}>
                           <div className="flex items-start gap-2">
                             <Badge className={getRiskSeverityColor(rq.severity)} variant="outline">{rq.severity}</Badge>
                             <p className="text-sm font-medium">{rq.questionText}</p>
                           </div>
-                          {canEdit && answer && (
+                          {canEdit && (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 ml-6">
                               {rq.responseType === "yesno" ? (
                                 <SearchableSelect
-                                  value={formatRiskYesNo(answer.answerYesno)}
+                                  value={formatRiskYesNo(answer?.answerYesno)}
                                   onValueChange={(val) =>
-                                    updateRiskMutation.mutate({
-                                      riskAnswerId: answer.id,
-                                      updates: { answerYesno: parseRiskYesNo(val === "unanswered" ? null : val) },
-                                    })
+                                    submitRisk({ answerYesno: parseRiskYesNo(val === "unanswered" ? null : val) })
                                   }
                                   placeholder="Select answer..."
                                   triggerClassName="h-8 text-xs"
@@ -2114,14 +2127,11 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                   // server data and mutating per keystroke fired a
                                   // save on every key and the refetch overwrote the
                                   // field mid-typing (lost characters).
-                                  defaultValue={answer.answerNumber ?? ""}
+                                  defaultValue={answer?.answerNumber ?? ""}
                                   onBlur={(e) => {
                                     const next = e.target.value === "" ? null : Number(e.target.value);
-                                    if (next !== (answer.answerNumber ?? null)) {
-                                      updateRiskMutation.mutate({
-                                        riskAnswerId: answer.id,
-                                        updates: { answerNumber: next },
-                                      });
+                                    if (next !== (answer?.answerNumber ?? null)) {
+                                      submitRisk({ answerNumber: next });
                                     }
                                   }}
                                   data-testid={`input-risk-number-${rq.id}`}
@@ -2131,13 +2141,10 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                   className="text-xs"
                                   placeholder="Enter response..."
                                   rows={2}
-                                  defaultValue={answer.answerText || ""}
+                                  defaultValue={answer?.answerText || ""}
                                   onBlur={(e) => {
-                                    if (e.target.value !== (answer.answerText || "")) {
-                                      updateRiskMutation.mutate({
-                                        riskAnswerId: answer.id,
-                                        updates: { answerText: e.target.value },
-                                      });
+                                    if (e.target.value !== (answer?.answerText || "")) {
+                                      submitRisk({ answerText: e.target.value });
                                     }
                                   }}
                                   data-testid={`input-risk-text-${rq.id}`}

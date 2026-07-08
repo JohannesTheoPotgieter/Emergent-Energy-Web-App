@@ -28,6 +28,7 @@ import { recordAudit } from "./api/v2/services/audit-service";
 import { canOverride } from "@shared/permissions/authoriser-matrix";
 import { evidenceOverrideRecords } from "@shared/schema";
 import { buildQcEvidenceOverrideRecord } from "./lib/quality-evidence-override";
+import { buildRiskAnswerUpdates } from "./lib/quality-risk-answer";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
@@ -676,13 +677,21 @@ const createItemSchema = z.object({
 }).strict();
 
 const riskAnswerSchema = z.object({
-  riskAnswerId: z.number().int().positive(),
+  // Task 1.4: either target an existing answer row by id, OR upsert by
+  // (checklistId, templateRiskQuestionId) so a question that has no seeded
+  // answer row can still be answered from the UI.
+  riskAnswerId: z.number().int().positive().optional(),
+  checklistId: z.number().int().positive().optional(),
+  templateRiskQuestionId: z.number().int().positive().optional(),
   answerYesno: z.boolean().nullable().optional(),
   answerText: z.string().nullable().optional(),
   answerNumber: z.number().nullable().optional(),
   answerValue: z.enum(["yes", "no"]).optional(),
   notes: z.string().nullable().optional(),
-}).strict();
+}).strict().refine(
+  (data) => data.riskAnswerId != null || (data.checklistId != null && data.templateRiskQuestionId != null),
+  { message: "Provide riskAnswerId, or both checklistId and templateRiskQuestionId" },
+);
 
 const warningEventSchema = z.object({
   note: z.string().nullable().optional(),
@@ -1860,64 +1869,96 @@ export function registerQualityRoutes(app: Express) {
     try {
       const {
         riskAnswerId,
-        answerYesno,
-        answerText,
+        checklistId,
+        templateRiskQuestionId,
         answerNumber,
-        answerValue,
-        notes,
       } = req.body;
       const pName = decodeURIComponent(String(req.params.projectName));
 
       // F21: confirm the risk answer's checklist belongs to the project named
       // in the URL — otherwise a quality.edit holder could flip risk answers
       // for any project they don't work on.
-      const [answer] = await db
-        .select({ checklistId: qcRiskAnswer.checklistId })
-        .from(qcRiskAnswer)
-        .where(eq(qcRiskAnswer.id, riskAnswerId));
-      if (!answer) return res.status(404).json({ error: "risk_answer_not_found" });
-      const [checklist] = await db
-        .select({ projectId: qcChecklist.projectId })
-        .from(qcChecklist)
-        .where(eq(qcChecklist.id, answer.checklistId));
       const urlProjectId = await resolveProjectIdByName(pName);
-      if (!checklist || !urlProjectId || checklist.projectId !== urlProjectId) {
-        return res.status(403).json({
-          error: "project_scope_mismatch",
-          message: "Risk answer does not belong to the project named in the URL.",
+
+      // Resolve the target answer-row id. Either it was passed directly
+      // (riskAnswerId) or we upsert by (checklistId, templateRiskQuestionId)
+      // for a question with no seeded answer row (Task 1.4).
+      let targetRiskAnswerId: number;
+      if (riskAnswerId != null) {
+        const [answer] = await db
+          .select({ checklistId: qcRiskAnswer.checklistId })
+          .from(qcRiskAnswer)
+          .where(eq(qcRiskAnswer.id, riskAnswerId));
+        if (!answer) return res.status(404).json({ error: "risk_answer_not_found" });
+        const [checklist] = await db
+          .select({ projectId: qcChecklist.projectId })
+          .from(qcChecklist)
+          .where(eq(qcChecklist.id, answer.checklistId));
+        if (!checklist || !urlProjectId || checklist.projectId !== urlProjectId) {
+          return res.status(403).json({
+            error: "project_scope_mismatch",
+            message: "Risk answer does not belong to the project named in the URL.",
+          });
+        }
+        targetRiskAnswerId = riskAnswerId;
+      } else {
+        const [checklist] = await db
+          .select({ projectId: qcChecklist.projectId, templateId: qcChecklist.templateId })
+          .from(qcChecklist)
+          .where(eq(qcChecklist.id, checklistId));
+        if (!checklist || !urlProjectId || checklist.projectId !== urlProjectId) {
+          return res.status(403).json({
+            error: "project_scope_mismatch",
+            message: "Checklist does not belong to the project named in the URL.",
+          });
+        }
+        // Defence: the risk question must belong to the checklist's template.
+        const [rq] = await db
+          .select({ id: qcTemplateRiskQuestion.id })
+          .from(qcTemplateRiskQuestion)
+          .innerJoin(qcTemplatePhase, eq(qcTemplateRiskQuestion.templatePhaseId, qcTemplatePhase.id))
+          .where(and(
+            eq(qcTemplateRiskQuestion.id, templateRiskQuestionId),
+            eq(qcTemplatePhase.templateId, checklist.templateId),
+          ));
+        if (!rq) return res.status(400).json({ error: "risk_question_not_in_template" });
+
+        // Find-or-create inside a tx + advisory lock keyed on the natural
+        // pair so two concurrent first-answers can't insert duplicate rows.
+        targetRiskAnswerId = await db.transaction(async (tx: QualityDb) => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`qc_risk_answer:${checklistId}:${templateRiskQuestionId}`}))`);
+          const [existingAns] = await tx
+            .select({ id: qcRiskAnswer.id })
+            .from(qcRiskAnswer)
+            .where(and(
+              eq(qcRiskAnswer.checklistId, checklistId),
+              eq(qcRiskAnswer.templateRiskQuestionId, templateRiskQuestionId),
+            ));
+          if (existingAns) return existingAns.id;
+          const [inserted] = await tx
+            .insert(qcRiskAnswer)
+            .values({ checklistId, templateRiskQuestionId })
+            .returning({ id: qcRiskAnswer.id });
+          return inserted.id;
         });
       }
 
-      const normalizedAnswerYesno =
-        answerYesno !== undefined
-          ? answerYesno
-          : answerValue === "yes"
-            ? true
-            : answerValue === "no"
-              ? false
-              : answerValue === "unanswered" || answerValue == null
-                ? null
-                : undefined;
-      const normalizedAnswerText = answerText !== undefined ? answerText : notes;
+      const answerUpdates = buildRiskAnswerUpdates(req.body);
+      const updates: any = { lastUpdatedBy: getUser(req).id, lastUpdatedAt: new Date(), ...answerUpdates };
 
-      const updates: any = { lastUpdatedBy: getUser(req).id, lastUpdatedAt: new Date() };
-      if (normalizedAnswerYesno !== undefined) updates.answerYesno = normalizedAnswerYesno;
-      if (normalizedAnswerText !== undefined) updates.answerText = normalizedAnswerText;
-      if (answerNumber !== undefined) updates.answerNumber = answerNumber;
-
-      const [updated] = await db.update(qcRiskAnswer).set(updates).where(eq(qcRiskAnswer.id, riskAnswerId)).returning();
+      const [updated] = await db.update(qcRiskAnswer).set(updates).where(eq(qcRiskAnswer.id, targetRiskAnswerId)).returning();
       recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
 
 
       logAuditFromReq(req, {
         entityType: "qc_risk_answer",
-        entityId: String(riskAnswerId),
+        entityId: String(targetRiskAnswerId),
         action: "update",
         projectName: pName,
         changesJson: {
           description: "Risk answer updated",
-          answerYesno: normalizedAnswerYesno,
-          answerText: normalizedAnswerText,
+          answerYesno: answerUpdates.answerYesno,
+          answerText: answerUpdates.answerText,
           answerNumber,
         },
       });
