@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import {
   AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield,
   AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2, Send, Loader2,
-  CheckCircle2, Upload, Paperclip, ExternalLink, UserPlus, SquareCheck,
+  CheckCircle2, Upload, Paperclip, ExternalLink, UserPlus, SquareCheck, Camera,
   Ban, FileWarning, ClipboardCheck, PackagePlus,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -68,6 +68,13 @@ function formatRiskYesNo(value: boolean | null | undefined): string {
   if (value === true) return "yes";
   if (value === false) return "no";
   return "unanswered";
+}
+
+// Task 3.1: treat an evidence URL as a photo when it points at an image file,
+// so site-inspection captures render as inline thumbnails.
+function isImageEvidenceUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return /\.(png|jpe?g|gif|webp|heic|heif|bmp)(\?.*)?$/i.test(url);
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string; btnClass: string; icon: string }> = {
@@ -241,6 +248,9 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   const [evidenceUploading, setEvidenceUploading] = useState<number | null>(null);
   const [evidenceUploadState, setEvidenceUploadState] = useState<Record<number, { state: "uploading" | "uploaded" | "failed" | "too_large"; message: string }>>({});
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  // Task 3.1: separate camera input so the mobile "Take photo" button opens the
+  // rear camera directly (capture="environment") for on-site evidence.
+  const cameraInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   // Database-driven RBAC per AGENT_GUARDRAILS § 5 / § 8.2. The previous
   // hard-coded role list (`['admin','COO_ADMIN','CEO_ADMIN']` + QUALITY_MANAGER
@@ -1857,7 +1867,18 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                         <div className="space-y-1.5 mb-3">
                                           {itemEvidence.map((ev: any) => (
                                             <div key={ev.id} className="flex items-center gap-2 text-xs bg-muted rounded-lg border p-2.5" data-testid={`evidence-${ev.id}`}>
-                                              <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                              {isImageEvidenceUrl(ev.evidenceUrl) ? (
+                                                <a href={ev.evidenceUrl} target="_blank" rel="noopener noreferrer" className="shrink-0" data-testid={`evidence-thumb-${ev.id}`}>
+                                                  <img
+                                                    src={ev.evidenceUrl}
+                                                    alt={ev.evidenceNote || "Evidence photo"}
+                                                    loading="lazy"
+                                                    className="w-10 h-10 rounded object-cover border"
+                                                  />
+                                                </a>
+                                              ) : (
+                                                <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                              )}
                                               <span className="flex-1 truncate">{ev.evidenceNote || ev.evidenceUrl}</span>
                                               {ev.evidenceUrl && (
                                                 <a href={ev.evidenceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 p-0.5" data-testid={`view-evidence-${ev.id}`}>
@@ -1915,6 +1936,33 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                             </div>
                                           )}
                                         </div>
+                                      )}
+                                      {canEdit && (
+                                        <>
+                                          {/* Task 3.1: mobile/site camera capture — opens the rear camera. */}
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            capture="environment"
+                                            className="hidden"
+                                            ref={(el) => { cameraInputRefs.current[instance.id] = el; }}
+                                            onChange={(e) => {
+                                              const file = e.target.files?.[0];
+                                              if (file) handleEvidenceFileUpload(instance.id, file);
+                                              e.target.value = "";
+                                            }}
+                                            data-testid={`evidence-camera-input-${instance.id}`}
+                                          />
+                                          <button
+                                            type="button"
+                                            className="mt-2 inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700"
+                                            onClick={() => cameraInputRefs.current[instance.id]?.click()}
+                                            disabled={evidenceUploading === instance.id}
+                                            data-testid={`evidence-camera-btn-${instance.id}`}
+                                          >
+                                            <Camera className="w-3.5 h-3.5" /> Take photo
+                                          </button>
+                                        </>
                                       )}
                                       {evidenceUploadState[instance.id] && (
                                         <div

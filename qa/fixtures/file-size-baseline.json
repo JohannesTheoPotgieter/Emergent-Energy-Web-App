@@ -34,7 +34,7 @@
     },
     {
       "file": "server/quality-routes.ts",
-      "loc": 3449
+      "loc": 3511
     },
     {
       "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
@@ -82,7 +82,7 @@
     },
     {
       "file": "client/src/components/tabs/QualityTab.tsx",
-      "loc": 2184
+      "loc": 2239
     },
     {
       "file": "server/departments/opportunities-routes.ts",
