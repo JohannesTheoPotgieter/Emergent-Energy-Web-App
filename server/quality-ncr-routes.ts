@@ -3,9 +3,14 @@ import { z } from "zod";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
-import { and, desc, eq, isNull, inArray } from "drizzle-orm";
+import { and, desc, eq, isNull, inArray, notInArray } from "drizzle-orm";
 import { db } from "./db";
 import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
+import {
+  computeNcrAging,
+  computeNcrTrend,
+  rowsToCsv,
+} from "./lib/quality-ncr-analytics";
 import {
   ncrReports,
   ncrAttachments,
@@ -116,6 +121,18 @@ const ncrAttachmentUpload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: allowedFileFilter,
 });
+
+const NCR_EXPORT_HEADER = [
+  "ID",
+  "Project",
+  "Title",
+  "Severity",
+  "Status",
+  "Assignee",
+  "Due Date",
+  "Created",
+  "Closed",
+];
 
 const ncrListQuerySchema = z
   .object({
@@ -234,6 +251,105 @@ export function registerQualityNcrRoutes(app: Express) {
         res.status(500).json({ error: "Failed to create NCR report" });
       }
     });
+
+  // Analytics — aging buckets + status/severity trend, project-scoped.
+  // Registered before the /:id route so "analytics" isn't captured as an id.
+  app.get("/api/quality/ncrs/analytics", requireAuth, requirePermission("quality", "view"), async (req: Request, res: Response) => {
+    try {
+      const scope = await getQualityHseScope(req);
+      const scopedIds = scopedProjectIdsArray(scope);
+      const emptyAging = { "0-7": 0, "8-30": 0, "30+": 0, total: 0 };
+      if (scopedIds !== null && scopedIds.length === 0) {
+        return res.json({ aging: emptyAging, trend: [], byStatus: {}, bySeverity: {} });
+      }
+      const scopeFilter = scopedIds !== null ? inArray(ncrReports.projectId, scopedIds) : undefined;
+      const nonTerminal = notInArray(ncrReports.status, ["closed", "waived"]);
+
+      // Aging is measured over the still-open worklist only.
+      const openRows = await db
+        .select({ createdAt: ncrReports.createdAt, status: ncrReports.status, severity: ncrReports.severity })
+        .from(ncrReports)
+        .where(scopeFilter ? and(nonTerminal, scopeFilter) : nonTerminal);
+      const aging = computeNcrAging(openRows, new Date());
+
+      // Trend covers every scoped NCR, bucketed by raise month.
+      const allRows = await db
+        .select({ createdAt: ncrReports.createdAt, status: ncrReports.status, severity: ncrReports.severity })
+        .from(ncrReports)
+        .where(scopeFilter);
+      const trend = computeNcrTrend(allRows);
+
+      const byStatus: Record<string, number> = {};
+      const bySeverity: Record<string, number> = {};
+      for (const r of openRows) {
+        byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
+        bySeverity[r.severity] = (bySeverity[r.severity] ?? 0) + 1;
+      }
+      res.json({ aging, trend, byStatus, bySeverity });
+    } catch (err) {
+      console.error("[QualityNCR] Failed to compute analytics:", err);
+      res.status(500).json({ error: "Failed to compute NCR analytics" });
+    }
+  });
+
+  // Export — the NCR register as CSV, honouring the same filters + scope as
+  // the list route. Registered before /:id.
+  app.get("/api/quality/ncrs/export", requireAuth, requirePermission("quality", "view"), async (req: Request, res: Response) => {
+    try {
+      const parsed = ncrListQuerySchema.safeParse(req.query);
+      if (!parsed.success) return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+      const { status, severity, projectId } = parsed.data;
+
+      const sendCsv = (dataRows: unknown[][]) => {
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", 'attachment; filename="ncr-register.csv"');
+        res.send(rowsToCsv(NCR_EXPORT_HEADER, dataRows));
+      };
+
+      const scope = await getQualityHseScope(req);
+      const scopedIds = scopedProjectIdsArray(scope);
+      if (scopedIds !== null && scopedIds.length === 0) return sendCsv([]);
+      if (projectId && !scopeAllowsProject(scope, projectId)) return sendCsv([]);
+
+      const filters: any[] = [];
+      if (status) filters.push(eq(ncrReports.status, status as any));
+      if (severity) filters.push(eq(ncrReports.severity, severity as any));
+      if (projectId) filters.push(eq(ncrReports.projectId, projectId));
+      if (scopedIds !== null) filters.push(inArray(ncrReports.projectId, scopedIds));
+      const where = filters.length > 0 ? and(...filters) : undefined;
+
+      const rows = await db
+        .select({ ncr: ncrReports, assigneeName: users.name, projectName: projectInfo.projectName })
+        .from(ncrReports)
+        .leftJoin(users, eq(users.id, ncrReports.assignedTo))
+        .leftJoin(projectInfo, eq(projectInfo.id, ncrReports.projectId))
+        .where(where)
+        .orderBy(desc(ncrReports.updatedAt));
+
+      const toIso = (v: Date | null) => (v instanceof Date ? v.toISOString() : v ?? "");
+      const dataRows = rows.map((r: { ncr: typeof ncrReports.$inferSelect; assigneeName: string | null; projectName: string | null }) => [
+        r.ncr.id,
+        r.projectName ?? "",
+        r.ncr.title,
+        r.ncr.severity,
+        r.ncr.status,
+        r.assigneeName ?? "",
+        r.ncr.dueDate ?? "",
+        toIso(r.ncr.createdAt),
+        toIso(r.ncr.closedAt),
+      ]);
+      logAuditFromReq(req, {
+        entityType: "ncr_report",
+        entityId: "register",
+        action: "export",
+        changesJson: { count: dataRows.length, filters: { status, severity, projectId } },
+      });
+      sendCsv(dataRows);
+    } catch (err) {
+      console.error("[QualityNCR] Failed to export NCR register:", err);
+      res.status(500).json({ error: "Failed to export NCR register" });
+    }
+  });
 
   // Get one.
   app.get("/api/quality/ncrs/:id", requireAuth, requirePermission("quality", "view"), async (req: Request, res: Response) => {

@@ -56,6 +56,7 @@ import {
   User,
   XCircle,
   Trash2,
+  Download,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ActionBar } from "@/components/guidance/ActionBar";
@@ -164,6 +165,13 @@ interface NcrListItem {
   createdAt: string;
   updatedAt: string;
   assigneeName: string | null;
+}
+
+interface NcrAnalytics {
+  aging: { "0-7": number; "8-30": number; "30+": number; total: number };
+  trend: Array<{ month: string; total: number; byStatus: Record<string, number>; bySeverity: Record<string, number> }>;
+  byStatus: Record<string, number>;
+  bySeverity: Record<string, number>;
 }
 
 interface QualityDashboardSummary {
@@ -305,6 +313,42 @@ export default function QmDashboardPage() {
     staleTime: 10_000,
     retry: 1,
   });
+
+  // NCR analytics — aging buckets + status/severity trend (Task 1.2).
+  // Source: GET /api/quality/ncrs/analytics (server/quality-ncr-routes.ts).
+  const { data: ncrAnalytics } = useQuery<NcrAnalytics>({
+    queryKey: ["quality-ncrs", "analytics"],
+    queryFn: () => qFetch("/api/quality/ncrs/analytics"),
+    staleTime: 30_000,
+  });
+
+  // Export the NCR register as CSV. qFetch parses JSON, so fetch the raw blob
+  // with the auth header here and trigger a browser download.
+  const [ncrExporting, setNcrExporting] = useState(false);
+  const exportNcrRegister = async () => {
+    setNcrExporting(true);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch("/api/quality/ncrs/export", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ncr-register.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({ title: "Export failed", description: err instanceof Error ? err.message : "Could not export the NCR register.", variant: "destructive" });
+    } finally {
+      setNcrExporting(false);
+    }
+  };
 
   // Consolidated quality items for governance overview
   const { data: allQualityItems = [] } = useQuery<any[]>({
@@ -691,7 +735,33 @@ export default function QmDashboardPage() {
                 {openNcrs.length}
               </Badge>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto h-7 gap-1.5 text-xs"
+              onClick={exportNcrRegister}
+              disabled={ncrExporting}
+              data-testid="btn-export-ncrs"
+            >
+              {ncrExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              Export
+            </Button>
           </CardTitle>
+          {/* Aging tiles (Task 1.2) — non-terminal NCRs bucketed by age. */}
+          {ncrAnalytics?.aging && ncrAnalytics.aging.total > 0 && (
+            <div className="grid grid-cols-3 gap-2 mt-3" data-testid="qm-ncr-aging">
+              {([
+                { key: "0-7", label: "0–7 days", tone: "text-emerald-600" },
+                { key: "8-30", label: "8–30 days", tone: "text-amber-600" },
+                { key: "30+", label: "30+ days", tone: "text-status-adverse" },
+              ] as const).map((b) => (
+                <div key={b.key} className="rounded-lg border bg-background px-3 py-2 text-center" data-testid={`qm-ncr-aging-${b.key}`}>
+                  <p className={`text-lg font-semibold ${b.tone}`}>{ncrAnalytics.aging[b.key]}</p>
+                  <p className="text-[11px] text-muted-foreground">{b.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </CardHeader>
         <CardContent className="pt-0">
           {ncrsLoading ? (
