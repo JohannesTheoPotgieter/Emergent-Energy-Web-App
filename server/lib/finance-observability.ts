@@ -90,7 +90,7 @@ export const FINANCE_JOBS: readonly FinanceJobDescriptor[] = [
     key: "finance-integrity-guard",
     displayName: "Weekly finance integrity guard",
     impact:
-      "The freeze's safety net stopped running — data/integration drift against the golden oracle would go undetected.",
+      "The freeze's safety net stopped running — cross-surface / reconciliation drift under the freeze would go undetected.",
     expectedIntervalMs: 7 * DAY,
     graceMs: 2 * DAY,
     alertTarget: COO,

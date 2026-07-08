@@ -84,4 +84,3 @@ drift-report.json
 # Replit paste workflow can never re-commit source data here again.
 attached_assets/
 *.dump
-qa/golden-oracle/.cache/

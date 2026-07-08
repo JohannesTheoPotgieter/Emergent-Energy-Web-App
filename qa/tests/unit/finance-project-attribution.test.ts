@@ -17,9 +17,8 @@ import {
   type ProjectNameMap,
 } from "../../../server/lib/finance/project-name-resolver";
 
-// The 5 golden projects — project_info.id -> canonical project_name
-// (qa/fixtures/golden-trackers-5.json, source.files).
-const GOLDEN: ReadonlyArray<[number, string]> = [
+// Five known delivery projects — project_info.id -> canonical project_name.
+const PROJECTS: ReadonlyArray<[number, string]> = [
   [8, "Coega Steels Ph2"],
   [7, "De Drift"],
   [19, "Mondi"],
@@ -28,14 +27,14 @@ const GOLDEN: ReadonlyArray<[number, string]> = [
 ];
 
 describe("finance project attribution — names resolve from project_info.id only", () => {
-  const nameMap: ProjectNameMap = new Map(GOLDEN);
+  const nameMap: ProjectNameMap = new Map(PROJECTS);
 
   it("id=19 resolves to Mondi (the canonical project_info name)", () => {
     expect(resolveProjectName(19, nameMap)).toBe("Mondi");
   });
 
-  it("every golden project resolves to its canonical name by id", () => {
-    for (const [id, name] of GOLDEN) {
+  it("every project resolves to its canonical name by id", () => {
+    for (const [id, name] of PROJECTS) {
       expect(resolveProjectName(id, nameMap)).toBe(name);
     }
   });
