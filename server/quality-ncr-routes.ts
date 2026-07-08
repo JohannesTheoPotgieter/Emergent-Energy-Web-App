@@ -1,7 +1,11 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
+import multer from "multer";
+import path from "node:path";
+import fs from "node:fs";
 import { and, desc, eq, isNull, inArray } from "drizzle-orm";
 import { db } from "./db";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import {
   ncrReports,
   ncrAttachments,
@@ -104,6 +108,30 @@ const ncrCommentSchema = z
     comment: z.string().trim().min(1).max(5000),
   })
   .strict();
+
+// Task 0.3: attachment via SharePoint / URL link (the non-file branch of the
+// upload route). Mirrors the QC evidence URL convention — a non-empty string,
+// not a strict URL, so relative /uploads paths and Graph deep links both pass.
+const ncrLinkAttachmentSchema = z
+  .object({
+    url: z.string().trim().min(1, "url required").max(2048),
+    name: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
+// Task 0.3: NCR file attachments. Mirrors the QM-approval multer config in
+// quality-routes.ts — sanitised filenames, 50 MB cap, allowlisted types, and
+// the same Bearer-gated /uploads static subtree.
+const ncrAttachmentUploadsDir = path.join(process.cwd(), "uploads", "ncr-attachments");
+if (!fs.existsSync(ncrAttachmentUploadsDir)) fs.mkdirSync(ncrAttachmentUploadsDir, { recursive: true });
+const ncrAttachmentUpload = multer({
+  storage: multer.diskStorage({
+    destination: ncrAttachmentUploadsDir,
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${sanitizeFilename(file.originalname)}`),
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: allowedFileFilter,
+});
 
 const ncrListQuerySchema = z
   .object({
@@ -401,6 +429,76 @@ export function registerQualityNcrRoutes(app: Express) {
         res.status(500).json({ error: "Failed to add comment" });
       }
     });
+
+  // Attachment upload (Task 0.3). Supports both a multipart file upload and a
+  // SharePoint/URL link — the same dual shape QC evidence supports. Multipart
+  // requests populate `req.file`; JSON requests carry `{ url, name? }`. Both
+  // land in ncr_attachments so the get-one route surfaces them.
+  app.post(
+    "/api/quality/ncrs/:id/attachments",
+    requireAuth,
+    requirePermission("quality", "edit"),
+    ncrAttachmentUpload.single("file"),
+    async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+        const user = getEffectiveUser(req);
+        if (!user) return res.status(401).json({ error: "auth_required" });
+
+        // R7: same scope gate as the sibling NCR routes — 404 (not 403) so a
+        // user with no access can't probe which NCR ids exist.
+        const [target] = await db
+          .select({ projectId: ncrReports.projectId })
+          .from(ncrReports)
+          .where(eq(ncrReports.id, id))
+          .limit(1);
+        if (!target) return res.status(404).json({ error: "not_found" });
+        const scope = await getQualityHseScope(req);
+        if (!scopeAllowsProject(scope, target.projectId)) return res.status(404).json({ error: "not_found" });
+
+        const file = req.file;
+        let filePath: string;
+        let fileName: string;
+        if (file) {
+          filePath = `/uploads/ncr-attachments/${file.filename}`;
+          const providedName = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+          fileName = providedName || file.originalname;
+        } else {
+          const parsed = ncrLinkAttachmentSchema.safeParse(req.body);
+          if (!parsed.success) {
+            return res.status(400).json({ error: "invalid_input", details: parsed.error.flatten() });
+          }
+          filePath = parsed.data.url;
+          fileName = parsed.data.name?.trim() || parsed.data.url;
+        }
+
+        const [created] = await db
+          .insert(ncrAttachments)
+          .values({ ncrId: id, filePath, fileName, uploadedBy: user.id })
+          .returning();
+
+        logAuditFromReq(req, {
+          entityType: "ncr_report",
+          entityId: String(id),
+          action: "update",
+          changesJson: { description: "NCR attachment added", fileName, kind: file ? "file" : "link" },
+        });
+        await recordAudit({
+          actorRole: (user as any)?.role,
+          userId: user.id,
+          entityType: "ncr_report",
+          entityId: String(id),
+          action: "ADD_NCR_ATTACHMENT",
+          changesJson: { projectId: target.projectId, kind: file ? "file" : "link", fileName },
+        });
+        res.status(201).json({ ok: true, attachment: created });
+      } catch (err) {
+        console.error("[QualityNCR] Failed to add attachment:", err);
+        res.status(500).json({ error: "Failed to add attachment" });
+      }
+    },
+  );
 
   // /api/quality/dashboard is owned by quality-routes.ts.
 }
