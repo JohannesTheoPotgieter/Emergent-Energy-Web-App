@@ -6,10 +6,10 @@
 // (no N+1), mirroring computeAllProjectPlanPills.
 //
 // HARD: this layer is READ-ONLY against the canonical/finance surfaces it
-// reads (normalized_plan_tasks, project_plan, procurement_items,
-// counterparties, project_eng_*, snags). It NEVER writes them. The schedule
-// backbone is read VERBATIM from the latest import run per project
-// (normalized_plan_tasks) — NOT via plan-rollup-service (owner decision
+// reads (work_items, project_plan, procurement_items, counterparties,
+// project_eng_*, snags). It NEVER writes them. The schedule backbone is read
+// VERBATIM from work_items (the canonical Plan-tab table, PM/ENG/QUALITY
+// workstreams) per project — NOT via plan-rollup-service (owner decision
 // 2026-06-19).
 // ============================================================
 
@@ -353,6 +353,7 @@ export class ExecutionBoardRepository {
         and(
           inArray(procurementItems.projectId, projectIds),
           notInArray(procurementItems.status, ["received", "invoiced", "closed"]),
+          isNull(procurementItems.deletedAt),
         ),
       );
   }
@@ -474,7 +475,7 @@ export class ExecutionBoardRepository {
         dueDate: snags.dueDate,
       })
       .from(snags)
-      .where(inArray(snags.projectId, projectIds));
+      .where(and(inArray(snags.projectId, projectIds), isNull(snags.deletedAt)));
   }
 
   /** Set of projectIds that have at least one QC plan link. */
