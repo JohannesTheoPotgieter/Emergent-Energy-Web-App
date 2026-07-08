@@ -129,6 +129,32 @@ async function resolveProjectIdForItemInstance(itemInstanceId: number): Promise<
 type QualityDb = NodePgDatabase<typeof schema>;
 
 /**
+ * Recompute warnings and, on failure, record an observable audit event
+ * instead of swallowing the error in a fire-and-forget `.catch(console.error)`
+ * (Task 2.2). Callers that need read-after-write consistency `await` this;
+ * others `void` it but the failure is still surfaced.
+ */
+async function recomputeWarningsObservable(projectName: string): Promise<void> {
+  try {
+    await recalculateWarnings(projectName);
+  } catch (err: any) {
+    console.error("[Quality][ALERT] Warning recalculation failed:", err?.message || err);
+    try {
+      await recordAudit({
+        actorRole: "SYSTEM",
+        entityType: "qc_warning_recompute",
+        entityId: projectName,
+        action: "WARNING_RECOMPUTE_FAILED",
+        projectName,
+        changesJson: { error: err?.message || String(err) },
+      });
+    } catch {
+      // Audit is best-effort — never let observability mask the original flow.
+    }
+  }
+}
+
+/**
  * Backfill any item-instances / risk-answers that the checklist's template
  * gained after the checklist was created. Idempotent — inserts only the
  * missing rows. Task 0.6: this used to run as a side effect inside the
@@ -1454,7 +1480,7 @@ export function registerQualityRoutes(app: Express) {
 
       const assignments = await getAssignmentsForEntity("quality_item", itemId, "ASSIGNEE");
       const pName = decodeURIComponent(String(req.params.projectName));
-      recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      await recomputeWarningsObservable(pName);
 
       // Refresh dashboard metrics for this project
       db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, pName)).limit(1)
@@ -1498,6 +1524,10 @@ export function registerQualityRoutes(app: Express) {
         ? req.body.override_reason.trim()
         : "";
       const approveOverrideAllowed = approveOverrideReason.length > 0 && canOverride(getUserRole(req) ?? "", "quality");
+      // Task 2.2: defer the evidence-override insert so it runs in the SAME
+      // transaction as the item update — a mid-sequence failure rolls back both.
+      let deferredOverride: ReturnType<typeof buildQcEvidenceOverrideRecord> | null = null;
+      let deferredOverrideAudit: Parameters<typeof recordAudit>[0] | null = null;
       if (approved) {
         if (existing && (existing.qmStatus === "review" || existing.qmStatus === "fail")) {
           const role = getUserRole(req);
@@ -1537,27 +1567,26 @@ export function registerQualityRoutes(app: Express) {
               // instance has no project_id column of its own.
               const projectIdForOverride = await resolveProjectIdForItemInstance(itemId);
               if (projectIdForOverride != null) {
-                await db.insert(evidenceOverrideRecords).values(
-                  buildQcEvidenceOverrideRecord({
-                    projectId: projectIdForOverride,
-                    itemInstanceId: itemId,
-                    completionType: "qc_item_approve",
-                    evidenceCount: evidenceRows.length,
-                    reason: approveOverrideReason,
-                    authorizedByUserId: overrideUser.id,
-                    authorizedByName: overrideUser.name ?? null,
-                    authorizedByRole: getUserRole(req) ?? null,
-                  }),
-                );
+                // Task 2.2: capture the payload; the insert runs in the tx below.
+                deferredOverride = buildQcEvidenceOverrideRecord({
+                  projectId: projectIdForOverride,
+                  itemInstanceId: itemId,
+                  completionType: "qc_item_approve",
+                  evidenceCount: evidenceRows.length,
+                  reason: approveOverrideReason,
+                  authorizedByUserId: overrideUser.id,
+                  authorizedByName: overrideUser.name ?? null,
+                  authorizedByRole: getUserRole(req) ?? null,
+                });
               }
-              await recordAudit({
+              deferredOverrideAudit = {
                 actorRole: getUserRole(req) ?? "UNKNOWN",
                 userId: overrideUser.id,
                 entityType: "qc_item_instance",
                 entityId: String(itemId),
                 action: "OVERRIDE_EVIDENCE_REQUIRED",
                 changesJson: { override_applied: true, reason: approveOverrideReason, evidenceCount: evidenceRows.length },
-              });
+              };
             }
           }
         }
@@ -1581,9 +1610,18 @@ export function registerQualityRoutes(app: Express) {
         updates.approvalComment = comment?.trim() ? comment.trim() : null;
       }
 
-      const [updated] = await db.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
+      // Task 2.2: override insert + item update run in one transaction so a
+      // mid-sequence failure rolls back cleanly (no orphan override record).
+      const updated = await db.transaction(async (tx: QualityDb) => {
+        if (deferredOverride) {
+          await tx.insert(evidenceOverrideRecords).values(deferredOverride);
+        }
+        const [row] = await tx.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
+        return row;
+      });
+      if (deferredOverrideAudit) await recordAudit(deferredOverrideAudit);
       const pName = decodeURIComponent(String(req.params.projectName));
-      recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      await recomputeWarningsObservable(pName);
 
       // Refresh dashboard metrics for this project
       db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, pName)).limit(1)
@@ -1731,7 +1769,7 @@ export function registerQualityRoutes(app: Express) {
         { projectName }
       );
 
-      recalculateWarnings(projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      await recomputeWarningsObservable(projectName);
 
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName, changesJson: { description: "Sent for approval", approverUserId } });
@@ -1853,7 +1891,7 @@ export function registerQualityRoutes(app: Express) {
         await tx.delete(qcItemInstance).where(eq(qcItemInstance.id, itemId));
       });
 
-      recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      await recomputeWarningsObservable(pName);
 
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "delete", projectName: pName, changesJson: { description: "Quality item deleted" } });
@@ -1952,7 +1990,7 @@ export function registerQualityRoutes(app: Express) {
       const updates: any = { lastUpdatedBy: getUser(req).id, lastUpdatedAt: new Date(), ...answerUpdates };
 
       const [updated] = await db.update(qcRiskAnswer).set(updates).where(eq(qcRiskAnswer.id, targetRiskAnswerId)).returning();
-      recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      await recomputeWarningsObservable(pName);
 
 
       logAuditFromReq(req, {
@@ -2115,7 +2153,7 @@ export function registerQualityRoutes(app: Express) {
       const [link] = await db.insert(qcPlanLink).values({
         projectName, planItemId, itemInstanceId: itemInstanceId || null, phaseId: phaseId || null, linkType: linkType || "phase_task",
       }).returning();
-      recalculateWarnings(projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      await recomputeWarningsObservable(projectName);
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(link.id), action: "create", projectName, changesJson: { description: "Plan link created", planItemId } });
       res.json(link);
     } catch (err) {
@@ -2132,7 +2170,7 @@ export function registerQualityRoutes(app: Express) {
       // R1: scoped roles only delete links for their assigned projects.
       if (deletedLink && !(await assertProjectAccessByName(req, res, deletedLink.projectName))) return;
       await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseIntParam(req.params.linkId)));
-      if (deletedLink) recalculateWarnings(deletedLink.projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      if (deletedLink) await recomputeWarningsObservable(deletedLink.projectName);
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.linkId), action: "delete", projectName: deletedLink?.projectName, changesJson: { description: "Plan link deleted" } });
       res.json({ success: true });
     } catch (err) {

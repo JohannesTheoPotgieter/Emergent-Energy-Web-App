@@ -75,7 +75,8 @@ describe("risk-answer route — upsert path (Task 1.4)", () => {
     // The handler body around the risk-answer write must recalc warnings.
     const idx = server.indexOf('"/api/quality/project/:projectName/risk-answer"');
     const block = server.slice(idx, idx + 6000);
-    expect(block).toContain("recalculateWarnings(pName)");
+    // Task 2.2 renamed the call to the observable, awaited helper.
+    expect(block).toContain("recomputeWarningsObservable(pName)");
   });
 });
 
