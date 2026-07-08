@@ -46,7 +46,7 @@ export function startOfDay(d: Date): Date {
   return x;
 }
 
-/** Tolerant parser for the text dates stored in normalized_plan_tasks. */
+/** Tolerant parser for the text dates stored in work_items. */
 export function parsePlanDate(s: string | null | undefined): Date | null {
   if (!s) return null;
   const t = String(s).trim();
@@ -64,16 +64,10 @@ export function diffDays(a: Date, b: Date): number {
 }
 
 /**
- * Expected progress as of `today`, derived from a task's ACTUAL start→end
- * dates — the live, deterministic replacement for the Excel "Expected Status"
- * column.
- *
- * Owner decision 2026-06-23: expected progress is measured against the ACTUAL
- * timeline (when the task really started / is due to finish), not the original
- * plan. The tracker's Expected Status is a volatile (TODAY-based) formula whose
- * Excel cache goes stale on save; we compute it ourselves instead — the linear
- * fraction of the actual start→end span elapsed, clamped to [0,1]. Returns null
- * when the actual dates are missing so the caller can fall back.
+ * Linear elapsed fraction of a `start`→`end` span as of `today`, clamped to
+ * [0,1]. A pure, timeline-agnostic helper — the caller decides which dates to
+ * pass (planned vs actual). Returns null when either date is missing so the
+ * caller can fall back.
  *
  *   today >= end                     → 1   (completion checked first so a
  *                                            same-day milestone reads 100%)
@@ -99,16 +93,42 @@ export function expectedProgressFromDates(
 }
 
 /**
- * Return the tasks with `expectedPctComplete` replaced by the date-derived
- * expected progress (0–1), computed from each task's ACTUAL start→end dates, so
- * every downstream read — schedule snapshot, RAG, workstream summaries and the
- * detail EXP% column — is live and never depends on the Excel formula cache.
- * When a task has no actual dates we keep the imported value so nothing is lost.
- * ACT% (pct_complete) is never touched — it stays verbatim from the tracker.
+ * Live expected-progress fraction (0–1) for a single leaf task, the
+ * deterministic replacement for the Excel "Expected Status" column (whose
+ * TODAY-based cache goes stale on save).
+ *
+ * Owner decision (live-schedule): expected % is measured against the PLANNED
+ * timeline and advances with TODAY, so an in-progress task's expected value is
+ * live rather than the frozen imported number.
+ *
+ *   1. complete (ACT% ≥ 100 or an actual-end date exists)  → 1
+ *   2. else planned start & end exist                      → time-linear
+ *      fraction of the planned span elapsed as of today, clamped [0,1]
+ *      (the actual start substitutes only when the planned start is missing;
+ *      the denominator's end is always the planned end)
+ *   3. else                                                → null (caller keeps
+ *      the imported expectedPctComplete, then 0 downstream)
+ */
+export function liveExpectedFraction(t: PlanTask, today: Date): number | null {
+  const complete = (pctTo100(t.pctComplete) ?? 0) >= 100 || parsePlanDate(t.actualEndDate) != null;
+  if (complete) return 1;
+  // Planned span, with the actual start as a fallback only when the planned
+  // start is blank; the end is always the planned end (no actual-end fallback —
+  // an actual end means the task is already "complete" above).
+  return expectedProgressFromDates(t.startDate ?? t.actualStartDate, t.endDate, today);
+}
+
+/**
+ * Return the tasks with `expectedPctComplete` replaced by the live, date-derived
+ * expected progress (0–1) per {@link liveExpectedFraction}, so every downstream
+ * read — schedule snapshot, RAG, workstream summaries and the detail EXP% column
+ * — is live and never depends on the Excel formula cache. When a task has no
+ * usable planned dates we keep the imported value so nothing is lost. ACT%
+ * (pct_complete) is never touched — it stays verbatim from the tracker.
  */
 export function withComputedExpected(tasks: PlanTask[], today: Date): PlanTask[] {
   return tasks.map((t) => {
-    const computed = expectedProgressFromDates(t.actualStartDate, t.actualEndDate, today);
+    const computed = liveExpectedFraction(t, today);
     return computed == null ? t : { ...t, expectedPctComplete: computed };
   });
 }
@@ -208,6 +228,20 @@ export function deliveryRag(date: Date | null, today: Date, done: boolean): Sche
   if (d < 0) return "red";
   if (d <= 7) return "amber";
   return "green";
+}
+
+/**
+ * Canonical "is this delivery overdue" test — the single definition shared by
+ * the board's Overdue-deliveries KPI and the program Deliveries list so both
+ * agree. A delivery is overdue when it is NOT complete and its anchor date is
+ * strictly before today. `date` is the row's canonical anchor: `neededBy`
+ * (task-start → task-end → required-date) for procurement orders, and the
+ * target/actual date for milestone and plan-task deliveries.
+ */
+export function isDeliveryOverdue(row: { date: string | null; complete: boolean }, today: Date): boolean {
+  if (row.complete) return false;
+  const d = parsePlanDate(row.date);
+  return d != null && diffDays(d, today) < 0;
 }
 
 export interface NextDelivery {
@@ -374,6 +408,49 @@ export function summarizeQuality(rows: SnagRow[], hasQcp: boolean, today: Date):
     else rag = "green";
   }
   return { openTotal: open.length, critical, major, minor, observation, overdue, hasQcp, rag };
+}
+
+// ─────────────── real Eng/Quality module → board WorkstreamSummary ────────────
+// The board's Eng/QA columns render a WorkstreamSummary (rag + complete/total).
+// When a project has real Engineering (project_eng_stages) or Quality (snags)
+// module data we surface THAT instead of the plan-workstream rollup; these pure
+// mappers shape the module summaries into the same WorkstreamSummary the columns
+// already render, so no client/type change is needed. RAG reuses the dedicated
+// summarizeEngineering / summarizeQuality signals.
+
+/** Real engineering module (stages + open tasks) as a board WorkstreamSummary. */
+export function engineeringWorkstreamFromModule(stages: EngStageRow[], openTasks: number): WorkstreamSummary {
+  const s = summarizeEngineering(stages, openTasks);
+  return {
+    total: s.total,
+    complete: s.complete,
+    inProgress: s.inProgress,
+    notStarted: Math.max(0, s.total - s.complete - s.inProgress),
+    actualPct: null,
+    expectedPct: null,
+    variance: null,
+    rag: s.rag,
+    hasPlan: s.total > 0 || openTasks > 0,
+  };
+}
+
+/** Real quality module (snags + QCP link) as a board WorkstreamSummary. The
+ *  "complete/total" the column shows reads as closed-snags / all-snags. */
+export function qualityWorkstreamFromModule(rows: SnagRow[], hasQcp: boolean, today: Date): WorkstreamSummary {
+  const q = summarizeQuality(rows, hasQcp, today);
+  const total = rows.length;
+  const inProgress = rows.filter((s) => (s.status ?? "open") === "in_progress").length;
+  return {
+    total,
+    complete: total - q.openTotal, // resolved / verified / closed
+    inProgress,
+    notStarted: Math.max(0, q.openTotal - inProgress),
+    actualPct: null,
+    expectedPct: null,
+    variance: null,
+    rag: q.rag,
+    hasPlan: total > 0 || hasQcp,
+  };
 }
 
 // ──────────────────────────── critical path (date-driven) ────────────────────
