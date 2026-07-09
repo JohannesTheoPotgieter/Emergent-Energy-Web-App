@@ -698,36 +698,40 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     return true;
   };
 
+  // Task 3.4: single filter predicate shared by the Action-Centre drill-down
+  // (chip counts) and the in-phase item list (shouldShowItem). Previously the
+  // drill-down used an incomplete copy that returned false for overdue / fail /
+  // unassigned, so a card could show a count the drill-down couldn't reproduce.
+  const matchesQualityFilter = (instance: any, filter: string): boolean => {
+    if (filter === "all") return true;
+    if (filter === "unassigned") return !instance.primaryAssignment;
+    if (filter === "overdue") {
+      const status = getItemQmStatus(instance);
+      if (status === "pass" || status === "na") return false;
+      const dueDate = instance.endDate || instance.scheduledDate;
+      if (!dueDate) return false;
+      const due = new Date(String(dueDate).split("T")[0] + "T00:00:00").getTime();
+      return due < new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
+    }
+    if (filter === "evidence_gap") {
+      if (instance.isApplicable === false) return false;
+      const ti = (checklistData?.templateItems || []).find((t: any) => t.id === instance.templateItemId);
+      return !!ti?.isEvidenceRequired && (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === instance.id).length === 0;
+    }
+    if (filter === "handover_blocking") return isHandoverBlockingItem(instance);
+    if (filter === "critical_contributors") return isCriticalContributorItem(instance);
+    if (filter === "actionable_for_approval") return isActionableForApprovalItem(instance);
+    return getItemQmStatus(instance) === filter;
+  };
+
   // Drill-down items across ALL phases (matches badge counts). When the user
   // has not opened a chip drill-down (chipConfig === null) or data is still
   // loading (checklistData === undefined) this short-circuits to an empty
   // array — keeping the hook call itself unconditional.
   const drillDownInstances = useMemo(() => {
     if (!chipConfig || !checklistData) return [];
-    const filterValue = chipConfig.filter;
     const allInst = checklistData.itemInstances || [];
-    const tplItems = checklistData.templateItems || [];
-    const evid = checklistData.evidence || [];
-    return allInst.filter((instance: any) => {
-      if (filterValue === "evidence_gap") {
-        if (instance.isApplicable === false) return false;
-        const ti = tplItems.find((t: any) => t.id === instance.templateItemId);
-        return ti?.isEvidenceRequired && evid.filter((e: any) => e.itemInstanceId === instance.id).length === 0;
-      }
-      if (filterValue === "handover_blocking") {
-        return isHandoverBlockingItem(instance);
-      }
-      if (filterValue === "critical_contributors") {
-        return isCriticalContributorItem(instance);
-      }
-      if (filterValue === "actionable_for_approval") {
-        return isActionableForApprovalItem(instance);
-      }
-      if (filterValue === "review") {
-        return getItemQmStatus(instance) === "review";
-      }
-      return false;
-    });
+    return allInst.filter((instance: any) => matchesQualityFilter(instance, chipConfig.filter));
   }, [chipConfig, checklistData]);
 
   const drillDownInPhase = useMemo(() => {
@@ -829,33 +833,9 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     t.taskNo && t.highLevelProgramme && t.taskNo !== "No." && t.highLevelProgramme !== "HIGH LEVEL PROGRAMME"
   );
 
-  const shouldShowItem = (instance: any) => {
-    if (statusFilter === "all") return true;
-    if (statusFilter === "unassigned") return !instance.primaryAssignment;
-    if (statusFilter === "overdue") {
-      const status = getItemQmStatus(instance);
-      if (status === "pass" || status === "na") return false;
-      const dueDate = instance.endDate || instance.scheduledDate;
-      if (!dueDate) return false;
-      const due = new Date(String(dueDate).split("T")[0] + "T00:00:00").getTime();
-      return due < new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
-    }
-    if (statusFilter === "evidence_gap") {
-      if (instance.isApplicable === false) return false;
-      const ti = (checklistData?.templateItems || []).find((t: any) => t.id === instance.templateItemId);
-      return ti?.isEvidenceRequired && (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === instance.id).length === 0;
-    }
-    if (statusFilter === "handover_blocking") {
-      return isHandoverBlockingItem(instance);
-    }
-    if (statusFilter === "critical_contributors") {
-      return isCriticalContributorItem(instance);
-    }
-    if (statusFilter === "actionable_for_approval") {
-      return isActionableForApprovalItem(instance);
-    }
-    return getItemQmStatus(instance) === statusFilter;
-  };
+  // Task 3.4: reuse the single shared predicate so the item list and the
+  // Action-Centre chip counts can never diverge.
+  const shouldShowItem = (instance: any) => matchesQualityFilter(instance, statusFilter);
 
   const selectedPhase = phases.find((p: any) => p.id === selectedPhaseId);
   const selectedPhaseProgress = selectedPhaseId ? getPhaseProgress(selectedPhaseId) : null;
