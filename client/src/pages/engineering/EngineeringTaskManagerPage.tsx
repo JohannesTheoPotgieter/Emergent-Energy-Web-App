@@ -53,6 +53,7 @@ import {
   ENGINEERING_SEAM_TASK_TYPE_TAGS,
   ENGINEERING_TASK_TYPE_LABELS,
   SEAM_RECIPIENT_ROLE_LABEL,
+  DONE_GATE_OUTPUT_LINK_ROLE,
   requiresDocumentLink,
   type EngineeringDeliveryTaskTypeTag,
   type EngineeringSeamTaskTypeTag,
@@ -925,9 +926,13 @@ export default function EngineeringTaskManagerPage({
           open
           taskId={gate.task.id}
           checkedOutDocId={checkedOutByTask[gate.task.id] ?? null}
+          requiresOutputDocument={requiresDocumentLink(gate.task.taskTypeTag)}
           onProceed={() => proceedGate()}
           onCancel={closeGate}
           onError={gateError}
+          // Deep-link to the document link flow: open the task drawer (where the
+          // Done-gate banner's "Link a document" CTA lives) for this task.
+          onNeedsDocument={() => setSelectedId(gate.task.id)}
         />
       ) : null}
     </PageShell>
@@ -1151,7 +1156,12 @@ function TaskDrawer({
     enabled: open,
   });
   const links = useMemo(() => docsQuery.data?.links ?? [], [docsQuery.data]);
-  const docGated = task != null && requiresDocumentLink(task.taskTypeTag) && links.length === 0;
+  // Mirror the server Done-gate exactly: only a linkRole='output' document
+  // satisfies it. An 'evidence'/'reference' link does NOT unblock Done, so the
+  // affordance must key off the presence of an OUTPUT link, not any link
+  // (Batch 1 aligned the server; Batch 8 aligns the UI so the two never diverge).
+  const hasOutputLink = links.some((l) => l.linkRole === DONE_GATE_OUTPUT_LINK_ROLE);
+  const docGated = task != null && requiresDocumentLink(task.taskTypeTag) && !hasOutputLink;
 
   const candidatesQuery = useQuery<{ candidates: DocumentCandidate[] }>({
     queryKey: ["/api/engineering/tasks", taskId, "document-candidates"],
@@ -1297,7 +1307,10 @@ function TaskDrawer({
                   </SelectTrigger>
                   <SelectContent>
                     {TASK_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>
+                      // Proactively disable Complete while the Done-gate is
+                      // unsatisfied (no output document) — mirrors the server so
+                      // the user links first instead of hitting a 409.
+                      <SelectItem key={s} value={s} disabled={docGated && s === "complete"}>
                         {getTaskStatusLabel(s)}
                       </SelectItem>
                     ))}
@@ -1305,14 +1318,32 @@ function TaskDrawer({
                 </Select>
                 {docGated ? (
                   <div
-                    className="ee-status-warning flex items-start gap-2 rounded-md border p-2 text-xs"
+                    className="ee-status-warning flex flex-col gap-2 rounded-md border p-2 text-xs"
                     data-testid="done-gate-banner"
                   >
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    <span>
-                      This task produces a document. Moving to In Progress, Needs Approval, or Complete will prompt
-                      you to check it out, submit it for review, or finalise it.
-                    </span>
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>
+                        This task can't be marked <span className="font-medium">Complete</span> until its output
+                        document is linked. Link the file this task produces, then set the status.
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1 self-start"
+                      onClick={() => setBrowseOpen(true)}
+                      disabled={task.projectId == null}
+                      data-testid="done-gate-link-doc"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Link a document
+                    </Button>
+                    {task.projectId == null ? (
+                      <span className="text-[11px] text-muted-foreground">
+                        This task has no project, so there is no document folder to browse.
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
