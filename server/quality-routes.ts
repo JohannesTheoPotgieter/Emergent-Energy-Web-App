@@ -2461,8 +2461,11 @@ export function registerQualityRoutes(app: Express) {
 
       let filtered = allInstances;
       if (projectFilter) {
+        // Task 3.2: case/whitespace-insensitive project match (was a strict
+        // `===`, so "Project A" wouldn't match "project a ").
+        const normalizedFilter = normalizeProjectName(projectFilter);
         const matchingChecklistIds = allChecklists
-          .filter((cl: any) => cl.projectName === projectFilter)
+          .filter((cl: any) => normalizeProjectName(cl.projectName) === normalizedFilter)
           .map((cl: any) => cl.id);
         filtered = filtered.filter((i: any) => matchingChecklistIds.includes(i.checklistId));
       }
