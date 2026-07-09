@@ -855,6 +855,13 @@
       "when": 1783511851882,
       "tag": "0121_drop_notification_and_observability_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1783576021599,
+      "tag": "0122_board_finance_targets",
+      "breakpoints": true
     }
   ]
 }
