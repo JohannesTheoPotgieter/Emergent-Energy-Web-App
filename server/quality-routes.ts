@@ -62,6 +62,11 @@ import {
   mergeProjectRow as repoMergeProjectRow,
   type MergedProjectRow,
 } from "./repositories/quality-repository";
+import {
+  loadScopedChecklists,
+  loadScopedItemInstances,
+  loadScopedRiskAnswers,
+} from "./repositories/quality-dashboard-repository";
 
 // F30: post-mortem red-flag threshold. Below this the project is flagged as
 // requiring a follow-up review. Lives here (vs hard-coded in the handler)
@@ -2440,12 +2445,17 @@ export function registerQualityRoutes(app: Express) {
       // R1: scoped roles see only items on their assigned projects.
       const scope = await getQualityHseScope(req);
       const scopedNames = scopedProjectNamesArray(scope);
+      const scopedIds = scopedProjectIdsArray(scope);
       if (scopedNames !== null && scopedNames.length === 0) return res.json([]);
       if (projectFilter && !scopeAllowsProjectName(scope, projectFilter)) return res.json([]);
       const statusFilter = req.query.status as string | undefined;
 
-      const allInstances = await db.select().from(qcItemInstance);
-      const allChecklists = await db.select().from(qcChecklist);
+      // Task 2.1: scope the reads by project id (qc_checklist.project_id is NOT
+      // NULL). A scoped role loads only its projects' checklists + instances
+      // instead of the whole table; the same scope filter is re-applied in JS
+      // below, so the output is unchanged.
+      const allChecklists = await loadScopedChecklists(scopedIds);
+      const allInstances = await loadScopedItemInstances(scopedIds, allChecklists.map((cl: any) => cl.id));
 
       const checklistMap = new Map<number, QcChecklistRow>(allChecklists.map((cl: any) => [cl.id, cl]));
 
@@ -2562,7 +2572,9 @@ export function registerQualityRoutes(app: Express) {
       const scopedIdsForChecklists = scopedProjectIdsArray(scope);
       const scopedNamesForChecklists = scopedProjectNamesArray(scope);
       if (scopedIdsForChecklists !== null && scopedIdsForChecklists.length === 0) return res.json([]);
-      const allChecklistsRaw = await db.select().from(qcChecklist);
+      // Task 2.1: scope the checklist read by project id (scoped roles load
+      // only their own); the id-or-name JS scope filter below is unchanged.
+      const allChecklistsRaw = await loadScopedChecklists(scopedIdsForChecklists);
       const allChecklists = allChecklistsRaw.filter((c: typeof allChecklistsRaw[number]) => c.projectId != null || c.projectName != null);
       const allProjectRows = await db.select().from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
@@ -2611,8 +2623,10 @@ export function registerQualityRoutes(app: Express) {
       }
 
       const allPlanLinks = await db.select().from(qcPlanLink);
-      const allItems = await db.select().from(qcItemInstance);
-      const allRiskAnswers = await db.select().from(qcRiskAnswer);
+      // Task 2.1: scope the item + risk-answer reads by the loaded checklists.
+      const scopedChecklistIdsForItems = allChecklists.map((c: any) => c.id);
+      const allItems = await loadScopedItemInstances(scopedIdsForChecklists, scopedChecklistIdsForItems);
+      const allRiskAnswers = await loadScopedRiskAnswers(scopedIdsForChecklists, scopedChecklistIdsForItems);
       const riskQuestionIds = uniqueNumberList(allRiskAnswers.map((answer: any) => answer.templateRiskQuestionId));
       const riskQuestions: QcTemplateRiskQuestionRow[] = riskQuestionIds.length > 0
         ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, riskQuestionIds))
@@ -2820,7 +2834,9 @@ export function registerQualityRoutes(app: Express) {
           blockedHandovers: 0, atRiskProjects: 0, topRiskProjects: [], outstandingPostmortems: [],
         });
       }
-      const allChecklistsRawUnfiltered = await db.select().from(qcChecklist);
+      // Task 2.1: scope the checklist read by project id; the id-or-name JS
+      // scope filter below is unchanged (now refines an already-scoped set).
+      const allChecklistsRawUnfiltered = await loadScopedChecklists(dashboardScopedIds);
       const allowedNamesNorm = dashboardScopedNames === null ? null : new Set(dashboardScopedNames.map((n) => normalizeProjectName(n)));
       const allowedIds = dashboardScopedIds === null ? null : new Set(dashboardScopedIds);
       const allChecklistsRaw = allowedIds === null
@@ -2834,8 +2850,10 @@ export function registerQualityRoutes(app: Express) {
       const allWarnings = allowedNamesNorm === null
         ? allWarningsRaw
         : allWarningsRaw.filter((w: any) => allowedNamesNorm.has(normalizeProjectName(w.projectName)));
-      const allItems = await db.select().from(qcItemInstance);
-      const allRiskAnswers = await db.select().from(qcRiskAnswer);
+      // Task 2.1: scope item + risk-answer reads by the scoped checklist ids.
+      const dashboardScopedChecklistIds = allChecklists.map((c: any) => c.id);
+      const allItems = await loadScopedItemInstances(dashboardScopedIds, dashboardScopedChecklistIds);
+      const allRiskAnswers = await loadScopedRiskAnswers(dashboardScopedIds, dashboardScopedChecklistIds);
       const riskQuestionIds = uniqueNumberList(allRiskAnswers.map((answer: any) => answer.templateRiskQuestionId));
       const riskQuestions: QcTemplateRiskQuestionRow[] = riskQuestionIds.length > 0
         ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, riskQuestionIds))
