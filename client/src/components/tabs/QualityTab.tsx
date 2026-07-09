@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { getRiskSeverityColor, formatDateOnly } from "@/lib/quality-ui-helpers";
+import { RiskQuestionsPanel } from "@/components/tabs/quality/RiskQuestionsPanel";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,18 +51,6 @@ function getPhaseColor(phaseKey: string) {
   return PHASE_COLORS[phaseKey] || PHASE_COLORS["planning_design"];
 }
 
-
-function parseRiskYesNo(value: string | null | undefined): boolean | null {
-  if (value === "yes") return true;
-  if (value === "no") return false;
-  return null;
-}
-
-function formatRiskYesNo(value: boolean | null | undefined): string {
-  if (value === true) return "yes";
-  if (value === false) return "no";
-  return "unanswered";
-}
 
 // Task 3.1: treat an evidence URL as a photo when it points at an image file,
 // so site-inspection captures render as inline thumbnails.
@@ -2116,112 +2105,14 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
             })}
           </div>
 
-          {selectedPhaseRiskQs.length > 0 && (
-            <Card className="overflow-hidden">
-              <Collapsible open={showRiskQuestions} onOpenChange={setShowRiskQuestions}>
-                <CollapsibleTrigger asChild>
-                  <div className="flex items-center gap-3 cursor-pointer hover:bg-muted/30 px-4 py-3 transition-colors" data-testid="risk-questions-toggle">
-                    {showRiskQuestions ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
-                    <span className="text-sm font-semibold flex-1">Risk Questions</span>
-                    <Badge variant="outline" className="text-[10px]">{selectedPhaseRiskQs.length}</Badge>
-                  </div>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="border-t divide-y">
-                    {selectedPhaseRiskQs.map((rq: any) => {
-                      const answer = getRiskAnswer(rq.id);
-                      // Task 1.4: a question with no seeded answer row is still
-                      // answerable — target the existing row by id, or upsert by
-                      // the template question id.
-                      const submitRisk = (updates: any) =>
-                        updateRiskMutation.mutate(
-                          answer?.id != null
-                            ? { riskAnswerId: answer.id, updates }
-                            : { templateRiskQuestionId: rq.id, updates },
-                        );
-                      return (
-                        <div key={rq.id} className="px-4 py-3 space-y-2" data-testid={`risk-question-${rq.id}`}>
-                          <div className="flex items-start gap-2">
-                            <Badge className={getRiskSeverityColor(rq.severity)} variant="outline">{rq.severity}</Badge>
-                            <p className="text-sm font-medium">{rq.questionText}</p>
-                          </div>
-                          {canEdit && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 ml-6">
-                              {rq.responseType === "yesno" ? (
-                                <SearchableSelect
-                                  value={formatRiskYesNo(answer?.answerYesno)}
-                                  onValueChange={(val) =>
-                                    submitRisk({ answerYesno: parseRiskYesNo(val === "unanswered" ? null : val) })
-                                  }
-                                  placeholder="Select answer..."
-                                  triggerClassName="h-8 text-xs"
-                                  data-testid={`select-risk-answer-${rq.id}`}
-                                  options={[
-                                    { value: "unanswered", label: "Unanswered" },
-                                    { value: "yes", label: "Yes" },
-                                    { value: "no", label: "No" },
-                                  ]}
-                                />
-                              ) : rq.responseType === "number" ? (
-                                <Input
-                                  type="number"
-                                  step="any"
-                                  className="h-8 text-xs"
-                                  placeholder="Enter number..."
-                                  // Uncontrolled + commit-on-blur: binding value to
-                                  // server data and mutating per keystroke fired a
-                                  // save on every key and the refetch overwrote the
-                                  // field mid-typing (lost characters).
-                                  defaultValue={answer?.answerNumber ?? ""}
-                                  onBlur={(e) => {
-                                    const next = e.target.value === "" ? null : Number(e.target.value);
-                                    if (next !== (answer?.answerNumber ?? null)) {
-                                      submitRisk({ answerNumber: next });
-                                    }
-                                  }}
-                                  data-testid={`input-risk-number-${rq.id}`}
-                                />
-                              ) : (
-                                <Textarea
-                                  className="text-xs"
-                                  placeholder="Enter response..."
-                                  rows={2}
-                                  defaultValue={answer?.answerText || ""}
-                                  onBlur={(e) => {
-                                    if (e.target.value !== (answer?.answerText || "")) {
-                                      submitRisk({ answerText: e.target.value });
-                                    }
-                                  }}
-                                  data-testid={`input-risk-text-${rq.id}`}
-                                />
-                              )}
-                            </div>
-                          )}
-                          {!canEdit && answer && (
-                            <div className="text-xs space-y-1 ml-6">
-                              <p>
-                                <span className="font-medium">Answer:</span>{" "}
-                                {rq.responseType === "yesno"
-                                  ? formatRiskYesNo(answer.answerYesno) === "unanswered"
-                                    ? "Unanswered"
-                                    : formatRiskYesNo(answer.answerYesno) === "yes"
-                                      ? "Yes"
-                                      : "No"
-                                  : rq.responseType === "number"
-                                    ? (answer.answerNumber ?? "Unanswered")
-                                    : (answer.answerText || "Unanswered")}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            </Card>
-          )}
+          <RiskQuestionsPanel
+            riskQuestions={selectedPhaseRiskQs}
+            getRiskAnswer={getRiskAnswer}
+            canEdit={canEdit}
+            open={showRiskQuestions}
+            onOpenChange={setShowRiskQuestions}
+            onSubmit={(payload) => updateRiskMutation.mutate(payload)}
+          />
         </div>
       )}
 

@@ -34,6 +34,18 @@ export function formatDateOnly(value: string | null | undefined): string {
   return new Date(y, m - 1, d).toLocaleDateString();
 }
 
+export function parseRiskYesNo(value: string | null | undefined): boolean | null {
+  if (value === "yes") return true;
+  if (value === "no") return false;
+  return null;
+}
+
+export function formatRiskYesNo(value: boolean | null | undefined): string {
+  if (value === true) return "yes";
+  if (value === false) return "no";
+  return "unanswered";
+}
+
 /** Canonical severity → badge classes. Distinct per level (high/medium/low). */
 export function getRiskSeverityColor(severity: string): string {
   switch (severity?.toLowerCase()) {
