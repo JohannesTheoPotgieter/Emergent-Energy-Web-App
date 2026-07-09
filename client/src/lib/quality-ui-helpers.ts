@@ -1,0 +1,39 @@
+/**
+ * Shared Quality UI helpers (Task 3.3 consolidation).
+ *
+ * Previously each Quality surface carried its own copy of `qFetch` and a
+ * divergent `getRiskSeverityColor` (QualityTab collapsed medium+low to amber;
+ * QualityWarningsPanel used orange/yellow). Both now live here so severity
+ * badges read consistently and the fetch wrapper has one implementation.
+ */
+
+/** Authenticated fetch that returns the parsed JSON body (throws on !ok). */
+export async function qFetch(url: string, options?: RequestInit) {
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = { ...(options?.headers as Record<string, string> || {}) };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (options?.body) headers["Content-Type"] = "application/json";
+  const res = await fetch(url, { ...options, headers, credentials: "include" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Failed to fetch (${res.status})${text ? `: ${text.slice(0, 160)}` : ""}`);
+  }
+  return res.json();
+}
+
+/** Canonical severity → badge classes. Distinct per level (high/medium/low). */
+export function getRiskSeverityColor(severity: string): string {
+  switch (severity?.toLowerCase()) {
+    case "high":
+    case "critical":
+      return "text-red-500 bg-red-50 border-red-500/20";
+    case "medium":
+    case "major":
+      return "text-amber-500 bg-amber-50 border-amber-500/20";
+    case "low":
+    case "minor":
+      return "text-yellow-500 bg-yellow-500/10 border-yellow-500/20";
+    default:
+      return "text-muted-foreground bg-muted/50 border-border";
+  }
+}

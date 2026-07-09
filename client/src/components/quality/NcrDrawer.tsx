@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
+import { qFetch } from "@/lib/quality-ui-helpers";
 import { Loader2, Send, Ban, ArrowRight } from "lucide-react";
 
 // NCR status machine (mirrors server/lib/quality-ncr-state-machine.ts).
@@ -48,19 +49,6 @@ function nextStatus(from: string): string | null {
   if (TERMINAL.has(from)) return null;
   const idx = STATUS_ORDER.indexOf(from as (typeof STATUS_ORDER)[number]);
   return idx >= 0 && idx < STATUS_ORDER.length - 1 ? STATUS_ORDER[idx + 1] : null;
-}
-
-async function qFetch(url: string, options?: RequestInit) {
-  const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = { ...(options?.headers as Record<string, string> || {}) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (options?.body) headers["Content-Type"] = "application/json";
-  const res = await fetch(url, { ...options, headers, credentials: "include" });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Request failed (${res.status})${text ? `: ${text.slice(0, 160)}` : ""}`);
-  }
-  return res.json();
 }
 
 interface NcrDetail {

@@ -3,20 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { qFetch } from "@/lib/quality-ui-helpers";
 import { BatteryCharging, CheckCircle2, Loader2 } from "lucide-react";
-
-async function qFetch(url: string, options?: RequestInit) {
-  const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = { ...(options?.headers as Record<string, string> || {}) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (options?.body) headers["Content-Type"] = "application/json";
-  const res = await fetch(url, { ...options, headers, credentials: "include" });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Request failed (${res.status})${text ? `: ${text.slice(0, 160)}` : ""}`);
-  }
-  return res.json();
-}
 
 interface BessItem {
   id: number;

@@ -2,15 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertTriangle, ChevronDown } from "lucide-react";
-
-function getRiskSeverityColor(severity: string) {
-  switch (severity?.toLowerCase()) {
-    case "high": return "text-red-500 bg-red-50 border-red-500/20";
-    case "medium": return "text-orange-500 bg-orange-50 border-orange-500/20";
-    case "low": return "text-yellow-500 bg-yellow-500/10 border-yellow-500/20";
-    default: return "text-muted-foreground bg-muted/50 border-border";
-  }
-}
+import { getRiskSeverityColor } from "@/lib/quality-ui-helpers";
 
 interface Warning {
   id: number;

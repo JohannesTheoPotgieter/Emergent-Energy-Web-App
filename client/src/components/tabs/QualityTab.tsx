@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
+import { getRiskSeverityColor } from "@/lib/quality-ui-helpers";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -49,14 +50,6 @@ function getPhaseColor(phaseKey: string) {
   return PHASE_COLORS[phaseKey] || PHASE_COLORS["planning_design"];
 }
 
-function getRiskSeverityColor(severity: string) {
-  switch (severity?.toLowerCase()) {
-    case "high": return "text-red-500 bg-red-50 border-red-500/20";
-    case "medium": return "text-amber-500 bg-amber-50 border-amber-500/20";
-    case "low": return "text-amber-500 bg-amber-50 border-amber-500/20";
-    default: return "text-muted-foreground bg-muted/50 border-border";
-  }
-}
 
 function parseRiskYesNo(value: string | null | undefined): boolean | null {
   if (value === "yes") return true;

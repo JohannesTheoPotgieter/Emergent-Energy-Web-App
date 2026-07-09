@@ -71,19 +71,7 @@ import { QualityTab } from "@/components/tabs/QualityTab";
 import { ConfirmDestructive, type ImpactRow } from "@/components/ui/confirm-destructive";
 import { usePermission } from "@/hooks/use-permissions";
 import { useAuth } from "@/hooks/use-auth";
-
-async function qFetch(url: string, options?: RequestInit) {
-  const token = localStorage.getItem('auth_token');
-  const headers: Record<string, string> = { ...(options?.headers as Record<string, string> || {}) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (options?.body) headers["Content-Type"] = "application/json";
-  const res = await fetch(url, { ...options, headers, credentials: "include" });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Failed to fetch (${res.status})${text ? `: ${text.slice(0, 160)}` : ""}`);
-  }
-  return res.json();
-}
+import { qFetch } from "@/lib/quality-ui-helpers";
 
 interface ChecklistPhase {
   phaseId: number;
