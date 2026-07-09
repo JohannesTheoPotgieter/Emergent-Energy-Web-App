@@ -121,8 +121,8 @@
       "loc": 1788
     },
     {
-      "file": "client/src/pages/EngineeringTasksPage.tsx",
-      "loc": 1783
+      "file": "client/src/pages/engineering/EngineeringTaskManagerPage.tsx",
+      "loc": 1535
     },
     {
       "file": "client/src/pages/pd-dashboard.tsx",

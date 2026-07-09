@@ -12,6 +12,7 @@ import {
   LayoutList,
   Kanban,
   UserCircle,
+  CalendarClock,
   X,
 } from "lucide-react";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
@@ -77,7 +78,9 @@ import {
   WORKLOAD_STATE_OPTIONS,
   SAVED_FILTERS,
 } from "./task-filter-config";
-import { InlineListView, StatusKanbanView, MyTasksView, PersonalKpiStrip } from "./engineering-task-views";
+import { InlineListView, StatusKanbanView, MyTasksView, PersonalKpiStrip, TimelineView } from "./engineering-task-views";
+import { GenerateFromTemplateButton } from "./GenerateFromTemplateButton";
+import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
 import { LinkDocumentDialog } from "./dialogs/LinkDocumentDialog";
 import { CheckoutPromptDialog } from "./dialogs/CheckoutPromptDialog";
 import { SubmitForApprovalDialog } from "./dialogs/SubmitForApprovalDialog";
@@ -142,7 +145,8 @@ interface Options {
   users: { id: number; name: string }[];
 }
 
-type ViewMode = "list" | "kanban" | "mytasks";
+type ViewMode = "list" | "kanban" | "mytasks" | "timeline";
+const VIEW_MODES: ViewMode[] = ["list", "kanban", "mytasks", "timeline"];
 
 const NONE = "__none__";
 const ALL = "all";
@@ -210,25 +214,52 @@ function toTask(t: TaskListItem): Task {
   };
 }
 
-export default function EngineeringTaskManagerPage() {
+export default function EngineeringTaskManagerPage({
+  embedded = false,
+  lockedProjectId,
+  lockedProjectName,
+  initialStatusFilter,
+  initialView,
+  canGenerateFromTemplate = false,
+}: {
+  /** Suppress page chrome (hero header, saved views) so the board can be
+   *  embedded inside another page (e.g. the project-detail Tasks tab). */
+  embedded?: boolean;
+  /** Pin the board to a single project — the site filter is forced + hidden. */
+  lockedProjectId?: number;
+  /** Project name, used to pre-fill the create-task dialog when locked. */
+  lockedProjectName?: string;
+  /** Seed the status filter when embedded (localStorage view still applies). */
+  initialStatusFilter?: string;
+  /** Seed the view when embedded (e.g. a project "Timeline" sub-tab). */
+  initialView?: ViewMode;
+  /** Show the project-scoped "Generate from Template" action (admin-only). */
+  canGenerateFromTemplate?: boolean;
+} = {}) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
   const { options: projectOptions } = useEngineeringProjectOptions();
 
   const [view, setView] = useState<ViewMode>(() => {
+    if (embedded && initialView) return initialView;
     const saved = (typeof window !== "undefined" && localStorage.getItem(VIEW_STORAGE_KEY)) as ViewMode | null;
-    return saved === "list" || saved === "kanban" || saved === "mytasks" ? saved : "list";
+    return saved && VIEW_MODES.includes(saved) ? saved : "list";
   });
   useEffect(() => {
     localStorage.setItem(VIEW_STORAGE_KEY, view);
   }, [view]);
 
-  // Filters
+  // Filters. When embedded + locked, the site filter is pinned to the project
+  // and the seeded status filter is honoured.
   const [search, setSearch] = useState("");
-  const [siteFilter, setSiteFilter] = useState<string>(ALL); // by projectId (string)
+  const [siteFilter, setSiteFilter] = useState<string>(
+    embedded && lockedProjectId != null ? String(lockedProjectId) : ALL,
+  ); // by projectId (string)
   const [ownerFilter, setOwnerFilter] = useState<string>(ALL); // by ownerUserId (string)
-  const [statusFilter, setStatusFilter] = useState<string>(ALL);
+  const [statusFilter, setStatusFilter] = useState<string>(
+    embedded && initialStatusFilter ? canonicalizeTaskStatus(initialStatusFilter) : ALL,
+  );
   const [typeFilter, setTypeFilter] = useState<string>(ALL);
   const [dueDateFilter, setDueDateFilter] = useState<EngineeringDueDateFilter>("all");
   const [workloadStateFilter, setWorkloadStateFilter] = useState<EngineeringWorkloadStateFilter>("all");
@@ -564,26 +595,40 @@ export default function EngineeringTaskManagerPage() {
     setWorkloadStateFilter("all");
   }
 
+  const actionButtons = (
+    <div className="flex items-center gap-2">
+      {embedded && canGenerateFromTemplate && lockedProjectId != null ? (
+        <GenerateFromTemplateButton
+          projectId={lockedProjectId}
+          projectName={lockedProjectName}
+          onGenerated={() => qc.invalidateQueries({ queryKey: ["/api/engineering/tasks"] })}
+        />
+      ) : null}
+      <Button variant="outline" size="sm" onClick={refresh} disabled={tasksQuery.isFetching}>
+        <RefreshCw className={cn("h-4 w-4", tasksQuery.isFetching && "animate-spin")} />
+        Refresh
+      </Button>
+      <Button size="sm" onClick={() => setCreateOpen(true)} data-testid="new-task">
+        <Plus className="h-4 w-4" />
+        New task
+      </Button>
+    </div>
+  );
+
   return (
     <PageShell>
-      <SectionHeader
-        icon={<ListTodo className="h-5 w-5" />}
-        eyebrow="Engineering"
-        title="Task Manager"
-        description="Delivery tasks across the engineering discipline — from financial close to handover."
-        actions={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={refresh} disabled={tasksQuery.isFetching}>
-              <RefreshCw className={cn("h-4 w-4", tasksQuery.isFetching && "animate-spin")} />
-              Refresh
-            </Button>
-            <Button size="sm" onClick={() => setCreateOpen(true)} data-testid="new-task">
-              <Plus className="h-4 w-4" />
-              New task
-            </Button>
-          </div>
-        }
-      />
+      {embedded ? (
+        // Embedded (project tab): page chrome suppressed, just the actions.
+        <div className="flex items-center justify-end pb-1">{actionButtons}</div>
+      ) : (
+        <SectionHeader
+          icon={<ListTodo className="h-5 w-5" />}
+          eyebrow="Engineering"
+          title="Task Manager"
+          description="Delivery tasks across the engineering discipline — from financial close to handover."
+          actions={actionButtons}
+        />
+      )}
 
       {/* View switcher */}
       <div className="flex items-center justify-between gap-3">
@@ -600,6 +645,10 @@ export default function EngineeringTaskManagerPage() {
             <TabsTrigger value="mytasks" data-testid="view-mytasks">
               <UserCircle className="mr-1.5 h-4 w-4" />
               My Tasks
+            </TabsTrigger>
+            <TabsTrigger value="timeline" data-testid="view-timeline">
+              <CalendarClock className="mr-1.5 h-4 w-4" />
+              Timeline
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -622,19 +671,22 @@ export default function EngineeringTaskManagerPage() {
             />
           </div>
 
-          <Select value={siteFilter} onValueChange={setSiteFilter}>
-            <SelectTrigger className="h-9 w-48" data-testid="filter-site">
-              <SelectValue placeholder="Site" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All sites</SelectItem>
-              {projectOptions.map((p) => (
-                <SelectItem key={p.id} value={String(p.id)}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Site filter is pinned + hidden when embedded in a single project. */}
+          {embedded && lockedProjectId != null ? null : (
+            <Select value={siteFilter} onValueChange={setSiteFilter}>
+              <SelectTrigger className="h-9 w-48" data-testid="filter-site">
+                <SelectValue placeholder="Site" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All sites</SelectItem>
+                {projectOptions.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           <Select value={ownerFilter} onValueChange={setOwnerFilter}>
             <SelectTrigger className="h-9 w-44" data-testid="filter-owner">
@@ -727,7 +779,8 @@ export default function EngineeringTaskManagerPage() {
         </CardContent>
       </Card>
 
-      {/* Saved views */}
+      {/* Saved views — suppressed when embedded (page chrome). */}
+      {embedded ? null : (
       <div className="flex flex-wrap items-center gap-1.5" data-testid="saved-views">
         <span className="text-[11px] text-muted-foreground">Quick views:</span>
         {SAVED_FILTERS.map((sv) => (
@@ -746,6 +799,7 @@ export default function EngineeringTaskManagerPage() {
           </button>
         ))}
       </div>
+      )}
 
       {/* Content */}
       <div>
@@ -798,6 +852,8 @@ export default function EngineeringTaskManagerPage() {
             onStatusChange={handleStatusChange}
             onPriorityChange={handlePriorityChange}
           />
+        ) : view === "timeline" ? (
+          <TimelineView tasks={filtered} onCardClick={onCardClick} />
         ) : (
           <div className="space-y-3">
             <PersonalKpiStrip tasks={filtered} myTasks={myAssignedTasks} />
