@@ -60,7 +60,18 @@ export interface EngineeringTaskFilters {
   status?: string;
   taskTypeTag?: string;
   dueBefore?: string;
+  limit?: number;
+  offset?: number;
 }
+
+/** Hard cap on rows a single engineering-task list query returns, so an
+ *  unbounded board fetch can't scan the whole table. Applied even when the
+ *  caller asks for more. */
+export const ENGINEERING_TASKS_MAX_LIMIT = 500;
+/** Default page size when a caller doesn't specify one. */
+export const ENGINEERING_TASKS_DEFAULT_LIMIT = 200;
+/** Hard cap on option-list rows (projects / users) for the assignment dropdowns. */
+export const ENGINEERING_OPTIONS_MAX = 1000;
 
 /** Enriched list row — names resolved server-side so the UI needs no
  *  cross-module calls under the Live-Ready ring fence. */
@@ -114,6 +125,11 @@ export async function listEngineeringTasks(filters: EngineeringTaskFilters = {})
   if (filters.ownerUserId != null) conds.push(eq(workItems.ownerUserId, filters.ownerUserId));
   if (filters.status) conds.push(eq(workItems.status, filters.status));
   if (filters.taskTypeTag) conds.push(eq(workItems.taskTypeTag, filters.taskTypeTag));
+
+  // Pagination with a HARD cap: bound the page even when a caller asks for more,
+  // so a board fetch can't scan the whole table.
+  const cap = Math.min(Math.max(1, filters.limit ?? ENGINEERING_TASKS_DEFAULT_LIMIT), ENGINEERING_TASKS_MAX_LIMIT);
+  const offset = Math.max(0, filters.offset ?? 0);
   // NB: `dueBefore` is applied AFTER plan-link derivation (below), not as a SQL
   // predicate on the persisted `endDate` — for a plan-linked task the derived
   // due can differ from the stored date, so filtering the raw column would
@@ -147,7 +163,11 @@ export async function listEngineeringTasks(filters: EngineeringTaskFilters = {})
     .leftJoin(users, eq(users.id, workItems.ownerUserId))
     .leftJoin(planItems, eq(planItems.id, workItems.planLinkItemId))
     .where(and(...conds))
-    .orderBy(desc(workItems.updatedAt));
+    // `id` is the deterministic tiebreaker so pages don't overlap when several
+    // tasks share an `updatedAt`.
+    .orderBy(desc(workItems.updatedAt), desc(workItems.id))
+    .limit(cap)
+    .offset(offset);
 
   const ids = rows.map((r: (typeof rows)[number]) => r.id);
   const docCounts = new Map<number, number>();
@@ -225,18 +245,22 @@ export interface EngineeringOptions {
   users: { id: number; name: string }[];
 }
 
-/** Assignment dropdown data (projects + users) for the Task Manager forms. */
+/** Assignment dropdown data (projects + users) for the Task Manager forms.
+ *  Both lists are hard-capped (`ENGINEERING_OPTIONS_MAX`) so the options
+ *  endpoint can't return an unbounded result set. */
 export async function getEngineeringOptions(): Promise<EngineeringOptions> {
   const projects = await db
     .select({ id: projectInfo.id, name: projectInfo.projectName })
     .from(projectInfo)
     .where(isNull(projectInfo.deletedAt))
-    .orderBy(projectInfo.projectName);
+    .orderBy(projectInfo.projectName)
+    .limit(ENGINEERING_OPTIONS_MAX);
   const userRows = await db
     .select({ id: users.id, name: users.name })
     .from(users)
     .where(isNull(users.deletedAt))
-    .orderBy(users.name);
+    .orderBy(users.name)
+    .limit(ENGINEERING_OPTIONS_MAX);
   return { projects, users: userRows };
 }
 
@@ -295,9 +319,21 @@ async function assignOwner(workItemId: number, userId: number): Promise<void> {
 
 export async function createEngineeringTask(input: BuildEngineeringTaskInput, actorId: number): Promise<WorkItemRow> {
   const insert = buildEngineeringTaskInsert(input, actorId);
-  const [row] = await db.insert(workItems).values(insert).returning();
-  if (insert.ownerUserId != null) await assignOwner(row.id, insert.ownerUserId);
-  await db.insert(workItemStatusHistory).values(buildStatusHistoryInsert(row.id, null, row.status, actorId, "created"));
+  // Atomic: the task, its OWNER assignment, and its first status-history row
+  // commit together or not at all.
+  const row = await runInTransaction(async (tx) => {
+    const [created] = await tx.insert(workItems).values(insert).returning();
+    if (insert.ownerUserId != null) {
+      await tx
+        .insert(workItemAssignments)
+        .values({ workItemId: created.id, userId: insert.ownerUserId, role: "OWNER" })
+        .onConflictDoNothing();
+    }
+    await tx
+      .insert(workItemStatusHistory)
+      .values(buildStatusHistoryInsert(created.id, null, created.status, actorId, "created"));
+    return created;
+  });
   await recordAudit({
     userId: actorId,
     entityType: "work_item",
@@ -310,13 +346,23 @@ export async function createEngineeringTask(input: BuildEngineeringTaskInput, ac
 
 export async function bulkCreateEngineeringTasks(input: BuildBulkEngineeringTaskInput, actorId: number): Promise<WorkItemRow[]> {
   const inserts = buildBulkEngineeringTaskInserts(input, actorId);
-  const rows: WorkItemRow[] = [];
-  for (const ins of inserts) {
-    const [row] = await db.insert(workItems).values(ins).returning();
-    if (ins.ownerUserId != null) await assignOwner(row.id, ins.ownerUserId);
-    await db.insert(workItemStatusHistory).values(buildStatusHistoryInsert(row.id, null, row.status, actorId, "created (bulk)"));
-    rows.push(row);
-  }
+  if (inserts.length === 0) return [];
+  // Atomic + set-based: one batched insert, one batched assignment insert, and
+  // one batched status-history insert — three statements regardless of count,
+  // and a mid-batch failure rolls the whole batch back (no partial creation).
+  const rows = await runInTransaction(async (tx) => {
+    const created: WorkItemRow[] = await tx.insert(workItems).values(inserts).returning();
+    const assignments = created
+      .filter((r) => r.ownerUserId != null)
+      .map((r) => ({ workItemId: r.id, userId: r.ownerUserId as number, role: "OWNER" as const }));
+    if (assignments.length > 0) {
+      await tx.insert(workItemAssignments).values(assignments).onConflictDoNothing();
+    }
+    await tx
+      .insert(workItemStatusHistory)
+      .values(created.map((r) => buildStatusHistoryInsert(r.id, null, r.status, actorId, "created (bulk)")));
+    return created;
+  });
   await recordAudit({
     userId: actorId,
     entityType: "work_item",

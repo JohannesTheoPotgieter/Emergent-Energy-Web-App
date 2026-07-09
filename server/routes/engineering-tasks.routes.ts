@@ -32,6 +32,9 @@ const listQuerySchema = z.object({
   status: z.string().max(64).optional(),
   taskTypeTag: z.string().max(64).optional(),
   dueBefore: z.string().max(32).optional(),
+  // Pagination — the repository additionally hard-caps `limit`.
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
 });
 
 const createSchema = z.object({

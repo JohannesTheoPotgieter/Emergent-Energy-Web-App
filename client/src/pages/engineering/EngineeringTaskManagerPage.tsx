@@ -40,7 +40,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, fetchQueryFn } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -237,7 +237,13 @@ export default function EngineeringTaskManagerPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  const tasksQuery = useQuery<{ tasks: TaskListItem[] }>({ queryKey: ["/api/engineering/tasks"] });
+  // Request a bounded page (the server hard-caps at 500). The fetch URL carries
+  // the limit while the query key stays stable so every existing
+  // invalidateQueries(["/api/engineering/tasks"]) still matches.
+  const tasksQuery = useQuery<{ tasks: TaskListItem[] }>({
+    queryKey: ["/api/engineering/tasks"],
+    queryFn: fetchQueryFn<{ tasks: TaskListItem[] }>("/api/engineering/tasks?limit=500"),
+  });
   const optionsQuery = useQuery<Options>({ queryKey: ["/api/engineering/options"] });
 
   const rawTasks = useMemo(() => tasksQuery.data?.tasks ?? [], [tasksQuery.data]);
