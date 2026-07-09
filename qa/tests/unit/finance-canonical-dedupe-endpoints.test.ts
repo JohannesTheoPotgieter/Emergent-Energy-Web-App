@@ -276,10 +276,6 @@ vi.mock("../../../server/services/dashboard-metrics", () => ({
   refreshProjectMetricsAsync: vi.fn(async () => undefined),
 }));
 
-vi.mock("../../../server/services/notification-service", () => ({
-  createNotification: vi.fn(async () => undefined),
-}));
-
 vi.mock("../../../server/services/project-cost-line-read-service", () => {
   const getRowsByProjectId = (projectId: number) => {
     const filtered = seededNormalizedRows.filter((r) => r.projectId === projectId);

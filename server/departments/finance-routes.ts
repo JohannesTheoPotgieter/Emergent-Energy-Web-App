@@ -308,7 +308,6 @@ import { FinanceLineLevelRepository } from '../repositories/finance-line-level-r
 import { canonicalRealisedByMonth } from '../lib/finance/canonical-realised-by-month';
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from '../work-items-adapter';
 import { refreshProjectMetricsAsync } from '../services/dashboard-metrics';
-import { createNotification } from '../services/notification-service';
 import {
   getExpenseEffectiveDateAndSource,
   getCosEffectiveDateAndSource,
@@ -456,25 +455,6 @@ async function createPendingEditRequest(
     affectsQuality: false,
     status: 'pending',
   });
-
-  // Notify financial approvers about the pending edit request
-  try {
-    const approvers = await usersRepository.listByRoles(FINANCIAL_APPROVER_ROLES);
-    for (const approver of approvers) {
-      if (approver.id === userId) continue; // don't notify the requester
-      await createNotification({
-        recipientUserId: approver.id,
-        eventType: 'financial.edit_request_pending',
-        title: `Financial edit request: ${projectName}`,
-        body: editSummary,
-        projectName,
-        relatedEntityType: 'financial_edit_request',
-        relatedEntityId: saved.id,
-      });
-    }
-  } catch (err) {
-    console.error('[finance] Failed to send edit request notifications:', err);
-  }
 
   return saved;
 }

@@ -195,18 +195,6 @@ describe("priorities — loadPriorityForRead defense-in-depth", () => {
   });
 });
 
-describe("priorities — fanout filters watchers by current visibility", () => {
-  it("fanoutPriorityNotifications passes accountableExecId to canPriorityRoleReadPriority", () => {
-    const source = read("server/departments/priority-strategic-routes.ts");
-    const fanoutBlock = source.slice(
-      source.indexOf("async function fanoutPriorityNotifications"),
-      source.indexOf("async function fanoutPriorityNotifications") + 3000,
-    );
-    expect(fanoutBlock).toContain("accountableExecId");
-    expect(fanoutBlock).toContain("canPriorityRoleReadPriority");
-  });
-});
-
 describe("priorities sprint 2 — route-level ownership-aware escalation", () => {
   it("escalate route loads priority then runs canPriorityRoleEscalatePriority instead of requirePriorityAdmin", () => {
     const source = read("server/departments/priority-strategic-routes.ts");

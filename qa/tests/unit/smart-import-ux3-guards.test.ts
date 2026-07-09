@@ -71,10 +71,9 @@ describe("UX-3 — post-commit next card", () => {
     expect(src).toMatch(/data-testid="post-commit-next"/);
   });
 
-  it("gates stage-readiness + task-notification lines on plan-section touches", () => {
+  it("gates the stage-readiness line on plan-section touches", () => {
     expect(src).toMatch(/planTouched/);
     expect(src).toMatch(/"next-stage-readiness"/);
-    expect(src).toMatch(/"next-task-notifications"/);
   });
 
   it("gates QuickBooks-sync line on revenue or cost touches", () => {

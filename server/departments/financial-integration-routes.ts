@@ -4,18 +4,15 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { requireAuth, requireAdmin } from "./shared-middleware";
 import { storage } from "../storage";
-import { createNotification } from "../services/notification-service";
 import { paramStr, parseIntParam } from "../lib/req-params";
 import { getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
 import { FinancialIntegrationRepository } from "../repositories/financial-integration-repository";
 import { ProjectInfoRepository } from "../repositories/project-info-repository";
 import { WorkManagementRepository } from "../repositories/work-management-repository";
-import { UsersRepository } from "../repositories/users-repository";
 
 const financialIntegrationRepository = new FinancialIntegrationRepository();
 const projectInfoRepository = new ProjectInfoRepository();
 const workManagementRepository = new WorkManagementRepository();
-const usersRepository = new UsersRepository();
 
 const router = Router();
 
@@ -90,63 +87,6 @@ async function detectExpenditureImpact(projectName: string, taskIds: number[]): 
   return false;
 }
 
-async function sendFinancialWarningNotifications(
-  projectName: string,
-  editSummary: string,
-  flags: { isCriticalPath: boolean; affectsRevenue: boolean; affectsExpenditure: boolean; affectsQuality: boolean },
-  requestedByUserId: number,
-  requestId: number
-) {
-  try {
-    const tags: string[] = [];
-    if (flags.isCriticalPath) tags.push("CRITICAL PATH");
-    if (flags.affectsRevenue) tags.push("REVENUE IMPACT");
-    if (flags.affectsExpenditure) tags.push("EXPENDITURE IMPACT");
-    const tagStr = tags.length > 0 ? ` [${tags.join(", ")}]` : "";
-
-    const approvers = await usersRepository.listByRoles(FINANCIAL_APPROVER_ROLES);
-    for (const approver of approvers) {
-      if (approver.id === requestedByUserId) continue;
-      await createNotification({
-        recipientUserId: approver.id,
-        eventType: "financial.edit_request_pending",
-        title: `Financial edit request: ${projectName}${tagStr}`,
-        body: editSummary,
-        projectName,
-        relatedEntityType: "financial_edit_request",
-        relatedEntityId: requestId,
-      });
-    }
-  } catch (err) {
-    console.error("[fin-integration] Failed to send financial warning notifications:", err);
-  }
-}
-
-async function sendIntegrationWarningNotifications(
-  projectName: string,
-  warningType: string,
-  title: string,
-  body: string,
-  linkedTaskId?: number
-) {
-  try {
-    const approvers = await usersRepository.listByRoles(FINANCIAL_APPROVER_ROLES);
-    for (const approver of approvers) {
-      await createNotification({
-        recipientUserId: approver.id,
-        eventType: `financial.integration_warning.${warningType}`,
-        title,
-        body,
-        projectName,
-        linkedTaskId,
-        relatedEntityType: "financial_integration_warning",
-      });
-    }
-  } catch (err) {
-    console.error("[fin-integration] Failed to send integration warning notifications:", err);
-  }
-}
-
 router.post("/api/financial-edit-requests", requireAuth, requireFinancialEditor, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -181,15 +121,6 @@ router.post("/api/financial-edit-requests", requireAuth, requireFinancialEditor,
         reviewedAt: new Date(),
       });
 
-      if (isCriticalPath || affectsRevenue || affectsExpenditure) {
-        await sendIntegrationWarningNotifications(
-          projectName,
-          isCriticalPath ? "critical_path" : "financial_impact",
-          `Financial Edit Applied: ${projectName}`,
-          `An authorized edit was applied. ${editSummary}${isCriticalPath ? " [CRITICAL PATH]" : ""}${affectsRevenue ? " [REVENUE IMPACT]" : ""}${affectsExpenditure ? " [EXPENDITURE IMPACT]" : ""}`,
-        );
-      }
-
       return res.json({ status: "auto_approved", request: saved, message: "Edit applied directly (authorized role)" });
     }
 
@@ -206,14 +137,6 @@ router.post("/api/financial-edit-requests", requireAuth, requireFinancialEditor,
       affectsQuality,
       status: "pending",
     });
-
-    await sendFinancialWarningNotifications(
-      projectName,
-      editSummary,
-      { isCriticalPath, affectsRevenue, affectsExpenditure, affectsQuality },
-      userId,
-      saved.id
-    );
 
     res.json({ status: "pending_approval", request: saved, message: "Your edit has been submitted for approval." });
   } catch (error: any) {
@@ -373,21 +296,6 @@ router.post("/api/financial-edit-requests/:id/reject", requireAuth, requireFinan
       reviewComment: comment.trim(),
       reviewedAt: new Date(),
     });
-
-    // Notify the requester that their edit was rejected
-    try {
-      await createNotification({
-        recipientUserId: existing.requestedByUserId,
-        eventType: "financial.edit_request_rejected",
-        title: `Financial edit rejected: ${existing.projectName}`,
-        body: `Your edit request was rejected. Reason: ${comment.trim()}`,
-        projectName: existing.projectName,
-        relatedEntityType: "financial_edit_request",
-        relatedEntityId: requestId,
-      });
-    } catch (err) {
-      console.error("[fin-integration] Failed to send rejection notification:", err);
-    }
 
     res.json({ message: "Edit request rejected", request: updated });
   } catch (error: any) {

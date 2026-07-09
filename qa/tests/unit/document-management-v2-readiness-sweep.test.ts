@@ -46,10 +46,6 @@ const projectDocsPage = fs.readFileSync(
   path.join(repoRoot, "client", "src", "components", "documents", "ProjectDocumentsView.tsx"),
   "utf8",
 );
-const approvalsService = fs.readFileSync(
-  path.join(repoRoot, "server", "services", "managed-document-approvals-service.ts"),
-  "utf8",
-);
 const readinessService = fs.readFileSync(
   path.join(repoRoot, "server", "services", "document-readiness-service.ts"),
   "utf8",
@@ -172,36 +168,6 @@ describe("D6 Phase 4.1 — deep-linkable tabs + bound badge", () => {
   it("tabs are driven by LIFECYCLE_DEPARTMENTS and surface a per-discipline bound badge", () => {
     expect(projectDocsPage).toMatch(/LIFECYCLE_DEPARTMENTS/);
     expect(projectDocsPage).toMatch(/data-testid={`tab-discipline-bound-\$\{d\}`}/);
-  });
-});
-
-describe("D6 Phase 5.1 — notifications", () => {
-  it("approvals service imports the canonical notification helpers", () => {
-    expect(approvalsService).toMatch(
-      /import\s*\{[^}]*createNotification[^}]*notifyUsers[^}]*\}\s*from\s*["']\.\/notification-service["']/,
-    );
-  });
-
-  it("requestApproval fans out to every approver", () => {
-    expect(approvalsService).toMatch(/notifyUsers\(\s*dedup/);
-    expect(approvalsService).toMatch(
-      /eventType:\s*["']managed_document\.approval_requested["']/,
-    );
-  });
-
-  it("recordApproval notifies the submitter on finalisation (both branches)", () => {
-    expect(approvalsService).toMatch(/managed_document\.approved/);
-    // The "all-required" + "any-of-many" finalise paths both notify.
-    const matches = approvalsService.match(
-      /eventType:\s*["']managed_document\.approved["']/g,
-    );
-    expect(matches).toBeTruthy();
-    expect((matches ?? []).length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("recordRejection notifies the submitter with the reason", () => {
-    expect(approvalsService).toMatch(/managed_document\.rejected/);
-    expect(approvalsService).toMatch(/body:\s*reason/);
   });
 });
 
