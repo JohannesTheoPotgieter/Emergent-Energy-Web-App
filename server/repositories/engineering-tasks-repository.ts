@@ -28,11 +28,9 @@ import {
 import {
   buildEngineeringTaskInsert,
   buildBulkEngineeringTaskInserts,
-  buildSeamHandoffInsert,
   buildStatusHistoryInsert,
   type BuildEngineeringTaskInput,
   type BuildBulkEngineeringTaskInput,
-  type BuildSeamHandoffInput,
 } from "../lib/engineering/task-builders";
 import {
   buildTaskWorkflowContext,
@@ -40,9 +38,10 @@ import {
   type TaskWorkflowMutationSource,
 } from "../lib/task-workflow-guard";
 import { recordAudit } from "../api/v2/services/audit-service";
-import { listManagedDocumentsByProject } from "./managed-documents-repository";
+import { listManagedDocumentsByProject, getManagedDocumentById } from "./managed-documents-repository";
+import { getProjectDocumentLink } from "./project-document-register-repository";
 import { isTaskComplete } from "@shared/task-status";
-import { conflict, notFound, badRequest } from "../lib/api-error";
+import { ApiError, conflict, notFound, badRequest, logApiError } from "../lib/api-error";
 import { runInTransaction } from "../lib/drizzle-helpers";
 import {
   derivePlanLink,
@@ -60,7 +59,18 @@ export interface EngineeringTaskFilters {
   status?: string;
   taskTypeTag?: string;
   dueBefore?: string;
+  limit?: number;
+  offset?: number;
 }
+
+/** Hard cap on rows a single engineering-task list query returns, so an
+ *  unbounded board fetch can't scan the whole table. Applied even when the
+ *  caller asks for more. */
+export const ENGINEERING_TASKS_MAX_LIMIT = 500;
+/** Default page size when a caller doesn't specify one. */
+export const ENGINEERING_TASKS_DEFAULT_LIMIT = 200;
+/** Hard cap on option-list rows (projects / users) for the assignment dropdowns. */
+export const ENGINEERING_OPTIONS_MAX = 1000;
 
 /** Enriched list row — names resolved server-side so the UI needs no
  *  cross-module calls under the Live-Ready ring fence. */
@@ -114,6 +124,11 @@ export async function listEngineeringTasks(filters: EngineeringTaskFilters = {})
   if (filters.ownerUserId != null) conds.push(eq(workItems.ownerUserId, filters.ownerUserId));
   if (filters.status) conds.push(eq(workItems.status, filters.status));
   if (filters.taskTypeTag) conds.push(eq(workItems.taskTypeTag, filters.taskTypeTag));
+
+  // Pagination with a HARD cap: bound the page even when a caller asks for more,
+  // so a board fetch can't scan the whole table.
+  const cap = Math.min(Math.max(1, filters.limit ?? ENGINEERING_TASKS_DEFAULT_LIMIT), ENGINEERING_TASKS_MAX_LIMIT);
+  const offset = Math.max(0, filters.offset ?? 0);
   // NB: `dueBefore` is applied AFTER plan-link derivation (below), not as a SQL
   // predicate on the persisted `endDate` — for a plan-linked task the derived
   // due can differ from the stored date, so filtering the raw column would
@@ -147,7 +162,11 @@ export async function listEngineeringTasks(filters: EngineeringTaskFilters = {})
     .leftJoin(users, eq(users.id, workItems.ownerUserId))
     .leftJoin(planItems, eq(planItems.id, workItems.planLinkItemId))
     .where(and(...conds))
-    .orderBy(desc(workItems.updatedAt));
+    // `id` is the deterministic tiebreaker so pages don't overlap when several
+    // tasks share an `updatedAt`.
+    .orderBy(desc(workItems.updatedAt), desc(workItems.id))
+    .limit(cap)
+    .offset(offset);
 
   const ids = rows.map((r: (typeof rows)[number]) => r.id);
   const docCounts = new Map<number, number>();
@@ -225,18 +244,22 @@ export interface EngineeringOptions {
   users: { id: number; name: string }[];
 }
 
-/** Assignment dropdown data (projects + users) for the Task Manager forms. */
+/** Assignment dropdown data (projects + users) for the Task Manager forms.
+ *  Both lists are hard-capped (`ENGINEERING_OPTIONS_MAX`) so the options
+ *  endpoint can't return an unbounded result set. */
 export async function getEngineeringOptions(): Promise<EngineeringOptions> {
   const projects = await db
     .select({ id: projectInfo.id, name: projectInfo.projectName })
     .from(projectInfo)
     .where(isNull(projectInfo.deletedAt))
-    .orderBy(projectInfo.projectName);
+    .orderBy(projectInfo.projectName)
+    .limit(ENGINEERING_OPTIONS_MAX);
   const userRows = await db
     .select({ id: users.id, name: users.name })
     .from(users)
     .where(isNull(users.deletedAt))
-    .orderBy(users.name);
+    .orderBy(users.name)
+    .limit(ENGINEERING_OPTIONS_MAX);
   return { projects, users: userRows };
 }
 
@@ -293,11 +316,24 @@ async function assignOwner(workItemId: number, userId: number): Promise<void> {
     .onConflictDoNothing();
 }
 
+
 export async function createEngineeringTask(input: BuildEngineeringTaskInput, actorId: number): Promise<WorkItemRow> {
   const insert = buildEngineeringTaskInsert(input, actorId);
-  const [row] = await db.insert(workItems).values(insert).returning();
-  if (insert.ownerUserId != null) await assignOwner(row.id, insert.ownerUserId);
-  await db.insert(workItemStatusHistory).values(buildStatusHistoryInsert(row.id, null, row.status, actorId, "created"));
+  // Atomic: the task, its OWNER assignment, and its first status-history row
+  // commit together or not at all.
+  const row = await runInTransaction(async (tx) => {
+    const [created] = await tx.insert(workItems).values(insert).returning();
+    if (insert.ownerUserId != null) {
+      await tx
+        .insert(workItemAssignments)
+        .values({ workItemId: created.id, userId: insert.ownerUserId, role: "OWNER" })
+        .onConflictDoNothing();
+    }
+    await tx
+      .insert(workItemStatusHistory)
+      .values(buildStatusHistoryInsert(created.id, null, created.status, actorId, "created"));
+    return created;
+  });
   await recordAudit({
     userId: actorId,
     entityType: "work_item",
@@ -310,13 +346,23 @@ export async function createEngineeringTask(input: BuildEngineeringTaskInput, ac
 
 export async function bulkCreateEngineeringTasks(input: BuildBulkEngineeringTaskInput, actorId: number): Promise<WorkItemRow[]> {
   const inserts = buildBulkEngineeringTaskInserts(input, actorId);
-  const rows: WorkItemRow[] = [];
-  for (const ins of inserts) {
-    const [row] = await db.insert(workItems).values(ins).returning();
-    if (ins.ownerUserId != null) await assignOwner(row.id, ins.ownerUserId);
-    await db.insert(workItemStatusHistory).values(buildStatusHistoryInsert(row.id, null, row.status, actorId, "created (bulk)"));
-    rows.push(row);
-  }
+  if (inserts.length === 0) return [];
+  // Atomic + set-based: one batched insert, one batched assignment insert, and
+  // one batched status-history insert — three statements regardless of count,
+  // and a mid-batch failure rolls the whole batch back (no partial creation).
+  const rows = await runInTransaction(async (tx) => {
+    const created: WorkItemRow[] = await tx.insert(workItems).values(inserts).returning();
+    const assignments = created
+      .filter((r) => r.ownerUserId != null)
+      .map((r) => ({ workItemId: r.id, userId: r.ownerUserId as number, role: "OWNER" as const }));
+    if (assignments.length > 0) {
+      await tx.insert(workItemAssignments).values(assignments).onConflictDoNothing();
+    }
+    await tx
+      .insert(workItemStatusHistory)
+      .values(created.map((r) => buildStatusHistoryInsert(r.id, null, r.status, actorId, "created (bulk)")));
+    return created;
+  });
   await recordAudit({
     userId: actorId,
     entityType: "work_item",
@@ -369,15 +415,19 @@ export async function transitionEngineeringTaskStatus(
     return row;
   });
 
-  // Audit + owner notification are post-commit side effects — a failed
-  // notification must not roll back the persisted status change.
-  await recordAudit({
-    userId: actorId,
-    entityType: "work_item",
-    entityId: String(taskId),
-    action: "engineering.task.status_change",
-    changesJson: { from: current.status, to: newStatus },
-  });
+  // Audit is a post-commit side effect — error-isolated so a failed audit
+  // never surfaces after the status change already committed.
+  try {
+    await recordAudit({
+      userId: actorId,
+      entityType: "work_item",
+      entityId: String(taskId),
+      action: "engineering.task.status_change",
+      changesJson: { from: current.status, to: newStatus },
+    });
+  } catch (err) {
+    logApiError("engineering.task.status_change.side_effects", err);
+  }
   return updated;
 }
 
@@ -407,13 +457,19 @@ export async function reassignEngineeringTaskOwner(
     .where(and(eq(workItemAssignments.workItemId, taskId), eq(workItemAssignments.role, "OWNER")));
   if (ownerUserId != null) await assignOwner(taskId, ownerUserId);
 
-  await recordAudit({
-    userId: actorId,
-    entityType: "work_item",
-    entityId: String(taskId),
-    action: "engineering.task.owner_change",
-    changesJson: { from: current.ownerUserId ?? null, to: ownerUserId },
-  });
+  // Error-isolated post-commit side effect (audit only — a failed audit must
+  // not surface after the owner change already committed).
+  try {
+    await recordAudit({
+      userId: actorId,
+      entityType: "work_item",
+      entityId: String(taskId),
+      action: "engineering.task.owner_change",
+      changesJson: { from: current.ownerUserId ?? null, to: ownerUserId },
+    });
+  } catch (err) {
+    logApiError("engineering.task.owner_change.side_effects", err);
+  }
   return updated;
 }
 
@@ -477,11 +533,37 @@ export async function getDocumentCandidatesForTask(taskId: number): Promise<Docu
   return docs.map((d) => ({ id: d.id, name: d.name, path: d.path }));
 }
 
+const DOCUMENT_PROJECT_MISMATCH = (message: string): ApiError =>
+  new ApiError(400, "DOCUMENT_PROJECT_MISMATCH", message);
+
 export async function linkDocumentToTask(
   taskId: number,
   input: { managedDocumentId?: number | null; projectDocumentLinkId?: number | null; linkRole?: string },
   actorId: number,
 ): Promise<WorkItemDocumentLinkRow | null> {
+  const task = await getEngineeringTask(taskId);
+  if (!task) throw notFound("Task");
+
+  // Project-scope guard (Batch 1): a linked document/link must belong to the
+  // task's own project. Without this a document from another project could
+  // satisfy the Done-gate. Enforced here (single chokepoint) so no caller can
+  // bypass it. Coded ApiError so the client can surface a targeted message.
+  if (task.projectId == null) {
+    throw DOCUMENT_PROJECT_MISMATCH("Assign the task to a project before linking a document.");
+  }
+  if (input.managedDocumentId != null) {
+    const doc = await getManagedDocumentById(input.managedDocumentId);
+    if (!doc || doc.projectId !== task.projectId) {
+      throw DOCUMENT_PROJECT_MISMATCH("That document isn't available on this task's project.");
+    }
+  }
+  if (input.projectDocumentLinkId != null) {
+    const link = await getProjectDocumentLink(task.projectId, input.projectDocumentLinkId);
+    if (!link) {
+      throw DOCUMENT_PROJECT_MISMATCH("That document link isn't available on this task's project.");
+    }
+  }
+
   const rows = await db
     .insert(workItemDocumentLinks)
     .values({
@@ -493,8 +575,10 @@ export async function linkDocumentToTask(
     })
     .onConflictDoNothing()
     .returning();
-  // Unique (workItemId, managedDocumentId): an empty result means this document
-  // is already linked to the task — signal the route to return 409, not 500.
+  // Bare onConflictDoNothing() covers BOTH unique targets — (workItemId,
+  // managedDocumentId) and the partial (workItemId, projectDocumentLinkId)
+  // index. An empty result means this document is already linked to the task
+  // — signal the route to return 409, not a duplicate row (or 500).
   if (rows.length === 0) return null;
   const row = rows[0];
   await recordAudit({
@@ -525,38 +609,10 @@ export async function unlinkDocumentFromTask(taskId: number, linkId: number, act
 }
 
 // ── Seam handoffs ───────────────────────────────────────────────────────────
-
-/**
- * Create a tracked seam handoff: a spine ENG work item owned by the recipient
- * (Keith / Construction Manager), with a due date, a notification, an audit
- * event, an initial status-history row, and a dependency back-link to the
- * originating task. Reuses canonical tables — no parallel handoff entity.
- */
-export async function createSeamHandoff(
-  input: BuildSeamHandoffInput & { fromTaskId?: number | null },
-  actorId: number,
-): Promise<WorkItemRow> {
-  const insert = buildSeamHandoffInsert(input, actorId);
-  const [row] = await db.insert(workItems).values(insert).returning();
-  await assignOwner(row.id, input.toOwnerUserId);
-  await db.insert(workItemStatusHistory).values(buildStatusHistoryInsert(row.id, null, row.status, actorId, "seam handoff created"));
-  if (input.fromTaskId != null) {
-    await db.insert(workItemDependencies).values({
-      predecessorId: input.fromTaskId,
-      successorId: row.id,
-      depType: "FS",
-      source: "MANUAL",
-    });
-  }
-  await recordAudit({
-    userId: actorId,
-    entityType: "work_item",
-    entityId: String(row.id),
-    action: "engineering.seam.create",
-    changesJson: { seamType: input.seamType, fromTaskId: input.fromTaskId ?? null, toOwnerUserId: input.toOwnerUserId },
-  });
-  return row;
-}
+// Seam routing lives in ./engineering-seam-repository (extracted for the
+// EE-QA-015 file-size ratchet). Re-exported so callers importing the tasks-repo
+// namespace (e.g. the seam route) are unaffected.
+export { createSeamHandoff } from "./engineering-seam-repository";
 
 // ── Subtasks (reuse work_items.parentId) ─────────────────────────────────────
 

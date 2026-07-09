@@ -44,6 +44,26 @@ export function SharePointErrorAlert({ error }: Props) {
     );
   }
 
+  if (code === "SHAREPOINT_UNAVAILABLE") {
+    return (
+      <div
+        className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+        role="alert"
+        data-testid="sharepoint-unavailable-alert"
+      >
+        <p className="font-medium">SharePoint isn't connected</p>
+        <p className="mt-1">{body?.nextAction ?? message}</p>
+        <a
+          href="/admin/document-management"
+          className="mt-2 inline-block font-medium text-emerald-700 hover:underline"
+          data-testid="sharepoint-connect-link"
+        >
+          Connect SharePoint &rarr;
+        </a>
+      </div>
+    );
+  }
+
   if (code === "ROOT_NOT_CONFIGURED") {
     return (
       <div

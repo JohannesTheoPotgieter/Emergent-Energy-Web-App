@@ -177,7 +177,7 @@ export function registerProjectDisciplineFoldersRoutes(app: Express): void {
       try {
         const resolved = await resolveBoundFolder(parsed.data, disc.data);
         await assertDisciplineAcl(resolved, user.role, "read");
-        res.json(await getBoundFolderItem(resolved, itemId.data, user.id));
+        res.json(await getBoundFolderItem(resolved, itemId.data));
       } catch (err) {
         handleError("item", err);
       }

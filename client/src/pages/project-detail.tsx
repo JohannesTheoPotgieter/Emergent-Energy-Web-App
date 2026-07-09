@@ -1608,7 +1608,7 @@ export default function ProjectDetailPage() {
             ))}
           </div>
 
-          {(activeSubTab === "tasks" || activeSubTab === "timeline") && projectInfoId && <ProjectEngineeringTasksTab projectInfoId={projectInfoId} isAdmin={isAdmin} projectName={projectName} initialStatusFilter={engFilter || undefined} />}
+          {(activeSubTab === "tasks" || activeSubTab === "timeline") && projectInfoId && <ProjectEngineeringTasksTab projectInfoId={projectInfoId} isAdmin={isAdmin} projectName={projectName} initialStatusFilter={engFilter || undefined} initialView={activeSubTab === "timeline" ? "timeline" : undefined} />}
           {activeSubTab === "drawings" && projectInfoId && <DrawingRegisterTab projectId={projectInfoId} projectName={projectName} />}
           {activeSubTab === "documents" && projectInfoId && <ProjectDocumentRegisterPanel projectId={projectInfoId} projectName={projectName} domain="engineering" />}
         </div>

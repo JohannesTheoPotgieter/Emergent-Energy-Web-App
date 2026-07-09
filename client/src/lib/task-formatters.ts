@@ -49,17 +49,41 @@ export function formatDateShort(d: string | null) {
   }
 }
 
+const SAST_TZ = "Africa/Johannesburg";
+
+/** Today's calendar date in SAST as an ISO "YYYY-MM-DD" string (en-CA => ISO order). */
+function todayIsoSAST(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: SAST_TZ });
+}
+
+/** The calendar date ("YYYY-MM-DD") of a due value, in SAST. A bare date string
+ *  is already timezone-agnostic; a full timestamp is projected into SAST. */
+function dueIsoSAST(dueDate: string): string {
+  return dueDate.length <= 10 ? dueDate.slice(0, 10) : new Date(dueDate).toLocaleDateString("en-CA", { timeZone: SAST_TZ });
+}
+
+/** ISO date `days` after the given ISO date, using UTC arithmetic on the parts
+ *  (timezone-safe — never touches local/UTC midnight of the input). */
+function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + days));
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(t.getUTCDate()).padStart(2, "0")}`;
+}
+
 export function isOverdue(dueDate: string | null, status: string) {
   if (!dueDate || isTaskComplete(status)) return false;
-  return new Date(dueDate) < new Date();
+  // Date-only comparison in SAST: overdue only once the due DATE is strictly in
+  // the past. A task due TODAY is not overdue — fixes the UTC-midnight
+  // (new Date("YYYY-MM-DD")) vs local-now off-by-one.
+  return dueIsoSAST(dueDate) < todayIsoSAST();
 }
 
 export function isDueThisWeek(dueDate: string | null, status: string) {
   if (!dueDate || isTaskComplete(status)) return false;
-  const due = new Date(dueDate);
-  const now = new Date();
-  const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-  return due >= now && due <= weekFromNow;
+  const due = dueIsoSAST(dueDate);
+  const today = todayIsoSAST();
+  // Due within the next 7 calendar days, inclusive of today (date-only, SAST).
+  return due >= today && due <= addDaysIso(today, 7);
 }
 
 export function daysLabel(d: string | null) {

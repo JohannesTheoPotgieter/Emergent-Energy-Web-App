@@ -15,6 +15,7 @@ import { validateBody } from "../middleware/validateBody";
 import { ApiError, badRequest, conflict, notFound, serverError, unauthorized, logApiError } from "../lib/api-error";
 import { TaskWorkflowGuardError } from "../lib/task-workflow-guard";
 import { requireEngTaskOwnership } from "../middleware/requireEngTaskOwnership";
+import { userCanAccessEngineeringTask } from "../repositories/engineering-repository";
 import { getEffectiveWorkstreamVisibility } from "../workstream-visibility-middleware";
 import { TASK_STATUSES, TASK_PRIORITIES, normalizeRoleForPermissions } from "@shared/schema";
 import {
@@ -31,6 +32,9 @@ const listQuerySchema = z.object({
   status: z.string().max(64).optional(),
   taskTypeTag: z.string().max(64).optional(),
   dueBefore: z.string().max(32).optional(),
+  // Pagination — the repository additionally hard-caps `limit`.
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
 });
 
 const createSchema = z.object({
@@ -71,7 +75,10 @@ const linkDocSchema = z
 
 const seamSchema = z.object({
   seamType: engineeringSeamTaskTypeTagSchema,
-  toOwnerUserId: z.number().int().positive(),
+  // Optional override. Omit to route by role (compliance_input → SSEG Manager,
+  // construction_snag → Construction Manager); if provided, the repository
+  // validates the recipient holds the seam's role.
+  toOwnerUserId: z.number().int().positive().optional(),
   title: z.string().min(1).max(500),
   note: z.string().max(5000).optional(),
   fromTaskId: z.number().int().positive().optional(),
@@ -297,15 +304,9 @@ export function registerEngineeringTasksRoutes(app: Express): void {
       if (!parsedId.success) throw badRequest("Invalid task id");
       const body = req.body as z.infer<typeof linkDocSchema>;
       try {
-        const task = await tasksRepo.getEngineeringTask(parsedId.data);
-        if (!task) throw notFound("Task");
-        // Only allow linking a managed document that lives on the task's project.
-        if (body.managedDocumentId != null) {
-          const candidates = await tasksRepo.getDocumentCandidatesForTask(parsedId.data);
-          if (!candidates.some((c) => c.id === body.managedDocumentId)) {
-            throw badRequest("That document isn't available on this task's project.");
-          }
-        }
+        // The repository is the single chokepoint: it resolves the task, enforces
+        // that the managed document / project-document link belongs to the task's
+        // own project (coded DOCUMENT_PROJECT_MISMATCH), and dedupes on conflict.
         const link = await tasksRepo.linkDocumentToTask(parsedId.data, body, actorId(req));
         if (!link) throw conflict("This document is already linked to the task.");
         res.status(201).json({ link });
@@ -342,6 +343,20 @@ export function registerEngineeringTasksRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       const body = req.body as z.infer<typeof seamSchema>;
       try {
+        // Ownership of the originating task: `requireEngTaskOwnership` is
+        // params-only, so validate the body's `fromTaskId` inline for scoped
+        // ('own') users — the same IDOR guard the middleware gives /:id routes.
+        if (body.fromTaskId != null) {
+          const user = getEffectiveUser(req);
+          if (!user) throw unauthorized();
+          const visibility = await getEffectiveWorkstreamVisibility(
+            user.id,
+            normalizeRoleForPermissions(user.role) ?? "",
+          );
+          if (visibility.scope === "own" && !(await userCanAccessEngineeringTask(body.fromTaskId, user.id))) {
+            throw notFound("Task");
+          }
+        }
         const task = await tasksRepo.createSeamHandoff(body, actorId(req));
         res.status(201).json({ task });
       } catch (err) {

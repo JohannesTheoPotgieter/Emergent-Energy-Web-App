@@ -12,6 +12,7 @@ import {
   LayoutList,
   Kanban,
   UserCircle,
+  CalendarClock,
   X,
 } from "lucide-react";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
@@ -40,7 +41,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, fetchQueryFn } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -51,6 +52,8 @@ import {
   ENGINEERING_DELIVERY_TASK_TYPE_TAGS,
   ENGINEERING_SEAM_TASK_TYPE_TAGS,
   ENGINEERING_TASK_TYPE_LABELS,
+  SEAM_RECIPIENT_ROLE_LABEL,
+  DONE_GATE_OUTPUT_LINK_ROLE,
   requiresDocumentLink,
   type EngineeringDeliveryTaskTypeTag,
   type EngineeringSeamTaskTypeTag,
@@ -76,7 +79,9 @@ import {
   WORKLOAD_STATE_OPTIONS,
   SAVED_FILTERS,
 } from "./task-filter-config";
-import { InlineListView, StatusKanbanView, MyTasksView, PersonalKpiStrip } from "./engineering-task-views";
+import { InlineListView, StatusKanbanView, MyTasksView, PersonalKpiStrip, TimelineView } from "./engineering-task-views";
+import { GenerateFromTemplateButton } from "./GenerateFromTemplateButton";
+import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
 import { LinkDocumentDialog } from "./dialogs/LinkDocumentDialog";
 import { CheckoutPromptDialog } from "./dialogs/CheckoutPromptDialog";
 import { SubmitForApprovalDialog } from "./dialogs/SubmitForApprovalDialog";
@@ -141,7 +146,8 @@ interface Options {
   users: { id: number; name: string }[];
 }
 
-type ViewMode = "list" | "kanban" | "mytasks";
+type ViewMode = "list" | "kanban" | "mytasks" | "timeline";
+const VIEW_MODES: ViewMode[] = ["list", "kanban", "mytasks", "timeline"];
 
 const NONE = "__none__";
 const ALL = "all";
@@ -209,25 +215,52 @@ function toTask(t: TaskListItem): Task {
   };
 }
 
-export default function EngineeringTaskManagerPage() {
+export default function EngineeringTaskManagerPage({
+  embedded = false,
+  lockedProjectId,
+  lockedProjectName,
+  initialStatusFilter,
+  initialView,
+  canGenerateFromTemplate = false,
+}: {
+  /** Suppress page chrome (hero header, saved views) so the board can be
+   *  embedded inside another page (e.g. the project-detail Tasks tab). */
+  embedded?: boolean;
+  /** Pin the board to a single project — the site filter is forced + hidden. */
+  lockedProjectId?: number;
+  /** Project name, used to pre-fill the create-task dialog when locked. */
+  lockedProjectName?: string;
+  /** Seed the status filter when embedded (localStorage view still applies). */
+  initialStatusFilter?: string;
+  /** Seed the view when embedded (e.g. a project "Timeline" sub-tab). */
+  initialView?: ViewMode;
+  /** Show the project-scoped "Generate from Template" action (admin-only). */
+  canGenerateFromTemplate?: boolean;
+} = {}) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
   const { options: projectOptions } = useEngineeringProjectOptions();
 
   const [view, setView] = useState<ViewMode>(() => {
+    if (embedded && initialView) return initialView;
     const saved = (typeof window !== "undefined" && localStorage.getItem(VIEW_STORAGE_KEY)) as ViewMode | null;
-    return saved === "list" || saved === "kanban" || saved === "mytasks" ? saved : "list";
+    return saved && VIEW_MODES.includes(saved) ? saved : "list";
   });
   useEffect(() => {
     localStorage.setItem(VIEW_STORAGE_KEY, view);
   }, [view]);
 
-  // Filters
+  // Filters. When embedded + locked, the site filter is pinned to the project
+  // and the seeded status filter is honoured.
   const [search, setSearch] = useState("");
-  const [siteFilter, setSiteFilter] = useState<string>(ALL); // by projectId (string)
+  const [siteFilter, setSiteFilter] = useState<string>(
+    embedded && lockedProjectId != null ? String(lockedProjectId) : ALL,
+  ); // by projectId (string)
   const [ownerFilter, setOwnerFilter] = useState<string>(ALL); // by ownerUserId (string)
-  const [statusFilter, setStatusFilter] = useState<string>(ALL);
+  const [statusFilter, setStatusFilter] = useState<string>(
+    embedded && initialStatusFilter ? canonicalizeTaskStatus(initialStatusFilter) : ALL,
+  );
   const [typeFilter, setTypeFilter] = useState<string>(ALL);
   const [dueDateFilter, setDueDateFilter] = useState<EngineeringDueDateFilter>("all");
   const [workloadStateFilter, setWorkloadStateFilter] = useState<EngineeringWorkloadStateFilter>("all");
@@ -236,7 +269,13 @@ export default function EngineeringTaskManagerPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  const tasksQuery = useQuery<{ tasks: TaskListItem[] }>({ queryKey: ["/api/engineering/tasks"] });
+  // Request a bounded page (the server hard-caps at 500). The fetch URL carries
+  // the limit while the query key stays stable so every existing
+  // invalidateQueries(["/api/engineering/tasks"]) still matches.
+  const tasksQuery = useQuery<{ tasks: TaskListItem[] }>({
+    queryKey: ["/api/engineering/tasks"],
+    queryFn: fetchQueryFn<{ tasks: TaskListItem[] }>("/api/engineering/tasks?limit=500"),
+  });
   const optionsQuery = useQuery<Options>({ queryKey: ["/api/engineering/options"] });
 
   const rawTasks = useMemo(() => tasksQuery.data?.tasks ?? [], [tasksQuery.data]);
@@ -339,21 +378,38 @@ export default function EngineeringTaskManagerPage() {
   const [checkedOutByTask, setCheckedOutByTask] = useState<Record<number, number>>({});
 
   // ── Status change (workflow-guarded) ──────────────────────────────────────
+  // Optimistic: patch the board cache immediately so a kanban move / quick
+  // status change lands without a full-board refetch, snapshot the previous
+  // list for rollback, and reconcile with the server in onSettled. (Ported
+  // from the retired project-tab board so both surfaces behave identically.)
   const statusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) =>
       apiRequest("PATCH", `/api/engineering/tasks/${id}/status`, { status }),
+    onMutate: async ({ id, status }: { id: number; status: string }) => {
+      await qc.cancelQueries({ queryKey: ["/api/engineering/tasks"] });
+      const previous = qc.getQueryData<{ tasks: TaskListItem[] }>(["/api/engineering/tasks"]);
+      qc.setQueryData<{ tasks: TaskListItem[] }>(["/api/engineering/tasks"], (old) =>
+        old ? { ...old, tasks: old.tasks.map((t) => (t.id === id ? { ...t, status } : t)) } : old,
+      );
+      return { previous };
+    },
     onSuccess: () => {
       toast({ title: "Status updated" });
-      refresh();
     },
-    onError: (e: unknown) =>
+    onError: (e: unknown, _vars, ctx: { previous?: { tasks: TaskListItem[] } } | undefined) => {
+      // Roll the optimistic patch back on failure.
+      if (ctx?.previous) qc.setQueryData(["/api/engineering/tasks"], ctx.previous);
       // The server's complete-guard returns 409 with a message listing the
       // open blocking tasks — surface it as a "Blocked" toast.
       toast({
         title: isApiError(e) && e.status === 409 ? "Blocked by dependencies" : "Couldn't update status",
         description: e instanceof Error ? e.message : undefined,
         variant: "destructive",
-      }),
+      });
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["/api/engineering/tasks"] });
+    },
   });
 
   // Fire the real status PATCH (after the workflow guard + any doc prompt).
@@ -540,26 +596,40 @@ export default function EngineeringTaskManagerPage() {
     setWorkloadStateFilter("all");
   }
 
+  const actionButtons = (
+    <div className="flex items-center gap-2">
+      {embedded && canGenerateFromTemplate && lockedProjectId != null ? (
+        <GenerateFromTemplateButton
+          projectId={lockedProjectId}
+          projectName={lockedProjectName}
+          onGenerated={() => qc.invalidateQueries({ queryKey: ["/api/engineering/tasks"] })}
+        />
+      ) : null}
+      <Button variant="outline" size="sm" onClick={refresh} disabled={tasksQuery.isFetching}>
+        <RefreshCw className={cn("h-4 w-4", tasksQuery.isFetching && "animate-spin")} />
+        Refresh
+      </Button>
+      <Button size="sm" onClick={() => setCreateOpen(true)} data-testid="new-task">
+        <Plus className="h-4 w-4" />
+        New task
+      </Button>
+    </div>
+  );
+
   return (
     <PageShell>
-      <SectionHeader
-        icon={<ListTodo className="h-5 w-5" />}
-        eyebrow="Engineering"
-        title="Task Manager"
-        description="Delivery tasks across the engineering discipline — from financial close to handover."
-        actions={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={refresh} disabled={tasksQuery.isFetching}>
-              <RefreshCw className={cn("h-4 w-4", tasksQuery.isFetching && "animate-spin")} />
-              Refresh
-            </Button>
-            <Button size="sm" onClick={() => setCreateOpen(true)} data-testid="new-task">
-              <Plus className="h-4 w-4" />
-              New task
-            </Button>
-          </div>
-        }
-      />
+      {embedded ? (
+        // Embedded (project tab): page chrome suppressed, just the actions.
+        <div className="flex items-center justify-end pb-1">{actionButtons}</div>
+      ) : (
+        <SectionHeader
+          icon={<ListTodo className="h-5 w-5" />}
+          eyebrow="Engineering"
+          title="Task Manager"
+          description="Delivery tasks across the engineering discipline — from financial close to handover."
+          actions={actionButtons}
+        />
+      )}
 
       {/* View switcher */}
       <div className="flex items-center justify-between gap-3">
@@ -576,6 +646,10 @@ export default function EngineeringTaskManagerPage() {
             <TabsTrigger value="mytasks" data-testid="view-mytasks">
               <UserCircle className="mr-1.5 h-4 w-4" />
               My Tasks
+            </TabsTrigger>
+            <TabsTrigger value="timeline" data-testid="view-timeline">
+              <CalendarClock className="mr-1.5 h-4 w-4" />
+              Timeline
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -598,19 +672,22 @@ export default function EngineeringTaskManagerPage() {
             />
           </div>
 
-          <Select value={siteFilter} onValueChange={setSiteFilter}>
-            <SelectTrigger className="h-9 w-48" data-testid="filter-site">
-              <SelectValue placeholder="Site" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All sites</SelectItem>
-              {projectOptions.map((p) => (
-                <SelectItem key={p.id} value={String(p.id)}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Site filter is pinned + hidden when embedded in a single project. */}
+          {embedded && lockedProjectId != null ? null : (
+            <Select value={siteFilter} onValueChange={setSiteFilter}>
+              <SelectTrigger className="h-9 w-48" data-testid="filter-site">
+                <SelectValue placeholder="Site" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All sites</SelectItem>
+                {projectOptions.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           <Select value={ownerFilter} onValueChange={setOwnerFilter}>
             <SelectTrigger className="h-9 w-44" data-testid="filter-owner">
@@ -703,7 +780,8 @@ export default function EngineeringTaskManagerPage() {
         </CardContent>
       </Card>
 
-      {/* Saved views */}
+      {/* Saved views — suppressed when embedded (page chrome). */}
+      {embedded ? null : (
       <div className="flex flex-wrap items-center gap-1.5" data-testid="saved-views">
         <span className="text-[11px] text-muted-foreground">Quick views:</span>
         {SAVED_FILTERS.map((sv) => (
@@ -722,6 +800,7 @@ export default function EngineeringTaskManagerPage() {
           </button>
         ))}
       </div>
+      )}
 
       {/* Content */}
       <div>
@@ -774,6 +853,8 @@ export default function EngineeringTaskManagerPage() {
             onStatusChange={handleStatusChange}
             onPriorityChange={handlePriorityChange}
           />
+        ) : view === "timeline" ? (
+          <TimelineView tasks={filtered} onCardClick={onCardClick} />
         ) : (
           <div className="space-y-3">
             <PersonalKpiStrip tasks={filtered} myTasks={myAssignedTasks} />
@@ -845,9 +926,13 @@ export default function EngineeringTaskManagerPage() {
           open
           taskId={gate.task.id}
           checkedOutDocId={checkedOutByTask[gate.task.id] ?? null}
+          requiresOutputDocument={requiresDocumentLink(gate.task.taskTypeTag)}
           onProceed={() => proceedGate()}
           onCancel={closeGate}
           onError={gateError}
+          // Deep-link to the document link flow: open the task drawer (where the
+          // Done-gate banner's "Link a document" CTA lives) for this task.
+          onNeedsDocument={() => setSelectedId(gate.task.id)}
         />
       ) : null}
     </PageShell>
@@ -1071,7 +1156,12 @@ function TaskDrawer({
     enabled: open,
   });
   const links = useMemo(() => docsQuery.data?.links ?? [], [docsQuery.data]);
-  const docGated = task != null && requiresDocumentLink(task.taskTypeTag) && links.length === 0;
+  // Mirror the server Done-gate exactly: only a linkRole='output' document
+  // satisfies it. An 'evidence'/'reference' link does NOT unblock Done, so the
+  // affordance must key off the presence of an OUTPUT link, not any link
+  // (Batch 1 aligned the server; Batch 8 aligns the UI so the two never diverge).
+  const hasOutputLink = links.some((l) => l.linkRole === DONE_GATE_OUTPUT_LINK_ROLE);
+  const docGated = task != null && requiresDocumentLink(task.taskTypeTag) && !hasOutputLink;
 
   const candidatesQuery = useQuery<{ candidates: DocumentCandidate[] }>({
     queryKey: ["/api/engineering/tasks", taskId, "document-candidates"],
@@ -1087,7 +1177,6 @@ function TaskDrawer({
   );
 
   const [seamType, setSeamType] = useState<EngineeringSeamTaskTypeTag>(ENGINEERING_SEAM_TASK_TYPE_TAGS[0]);
-  const [seamOwner, setSeamOwner] = useState<string>(NONE);
   const [seamNote, setSeamNote] = useState("");
 
   function invalidateDocs() {
@@ -1140,7 +1229,8 @@ function TaskDrawer({
     mutationFn: async () =>
       apiRequest("POST", "/api/engineering/tasks/seam", {
         seamType,
-        toOwnerUserId: Number(seamOwner),
+        // Recipient is role-routed on the server (SSEG Manager / Construction
+        // Manager) — no raw user id is sent.
         title: `${task?.title ?? "Handoff"} — ${seamType === "compliance_input" ? "compliance input" : "construction snag"}`,
         note: seamNote || undefined,
         fromTaskId: taskId,
@@ -1149,7 +1239,6 @@ function TaskDrawer({
     onSuccess: () => {
       toast({ title: "Seam handoff created" });
       setSeamNote("");
-      setSeamOwner(NONE);
       onChanged();
     },
     onError: (e: unknown) =>
@@ -1218,7 +1307,10 @@ function TaskDrawer({
                   </SelectTrigger>
                   <SelectContent>
                     {TASK_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>
+                      // Proactively disable Complete while the Done-gate is
+                      // unsatisfied (no output document) — mirrors the server so
+                      // the user links first instead of hitting a 409.
+                      <SelectItem key={s} value={s} disabled={docGated && s === "complete"}>
                         {getTaskStatusLabel(s)}
                       </SelectItem>
                     ))}
@@ -1226,14 +1318,32 @@ function TaskDrawer({
                 </Select>
                 {docGated ? (
                   <div
-                    className="ee-status-warning flex items-start gap-2 rounded-md border p-2 text-xs"
+                    className="ee-status-warning flex flex-col gap-2 rounded-md border p-2 text-xs"
                     data-testid="done-gate-banner"
                   >
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    <span>
-                      This task produces a document. Moving to In Progress, Needs Approval, or Complete will prompt
-                      you to check it out, submit it for review, or finalise it.
-                    </span>
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>
+                        This task can't be marked <span className="font-medium">Complete</span> until its output
+                        document is linked. Link the file this task produces, then set the status.
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1 self-start"
+                      onClick={() => setBrowseOpen(true)}
+                      disabled={task.projectId == null}
+                      data-testid="done-gate-link-doc"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Link a document
+                    </Button>
+                    {task.projectId == null ? (
+                      <span className="text-[11px] text-muted-foreground">
+                        This task has no project, so there is no document folder to browse.
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -1410,19 +1520,9 @@ function TaskDrawer({
                     ))}
                   </SelectContent>
                 </Select>
-                <Select value={seamOwner} onValueChange={setSeamOwner}>
-                  <SelectTrigger className="h-8">
-                    <SelectValue placeholder="Hand to…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>Hand to…</SelectItem>
-                    {options?.users.map((u) => (
-                      <SelectItem key={u.id} value={String(u.id)}>
-                        {u.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Routed to the <span className="font-medium text-foreground">{SEAM_RECIPIENT_ROLE_LABEL[seamType]}</span>.
+                </p>
                 <Textarea
                   value={seamNote}
                   onChange={(e) => setSeamNote(e.target.value)}
@@ -1433,7 +1533,7 @@ function TaskDrawer({
                   size="sm"
                   variant="outline"
                   className="w-full"
-                  disabled={seamOwner === NONE || seamMutation.isPending}
+                  disabled={seamMutation.isPending}
                   onClick={() => seamMutation.mutate()}
                 >
                   Create handoff

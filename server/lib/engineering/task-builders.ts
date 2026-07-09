@@ -9,9 +9,11 @@
 
 import {
   ENGINEERING_TASK_TYPE_LABELS,
+  isEngineeringTaskTypeTag,
   type EngineeringTaskTypeTag,
   type EngineeringSeamTaskTypeTag,
 } from "@shared/engineering/delivery-task-catalog";
+import { badRequest } from "../api-error";
 
 export const DEFAULT_TASK_STATUS = "not_started";
 
@@ -42,12 +44,19 @@ export interface BuildEngineeringTaskInput {
 }
 
 export function buildEngineeringTaskInsert(input: BuildEngineeringTaskInput, actorId: number): EngineeringTaskInsert {
+  // Single write-helper guard: every engineering task insert (create, bulk, seam)
+  // flows through here, so a `task_type_tag`, when present, must be a controlled
+  // catalog tag (delivery or seam). A null tag is allowed (untyped/subtask work).
+  const taskTypeTag = input.taskTypeTag ?? null;
+  if (taskTypeTag != null && !isEngineeringTaskTypeTag(taskTypeTag)) {
+    throw badRequest(`Unknown engineering task type "${taskTypeTag}".`);
+  }
   return {
     workstream: "ENG",
     source: "UI",
     title: input.title.trim(),
     description: input.description ?? null,
-    taskTypeTag: input.taskTypeTag ?? null,
+    taskTypeTag,
     priority: input.priority ?? null,
     status: input.status ?? DEFAULT_TASK_STATUS,
     projectId: input.projectId ?? null,

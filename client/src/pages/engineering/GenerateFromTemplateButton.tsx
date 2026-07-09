@@ -25,7 +25,17 @@ import { invalidateEngineeringTicketCaches } from "@/lib/task-cache";
  * re-check it). On success the board's task caches are invalidated so the new
  * tasks appear without a manual refresh.
  */
-export function GenerateFromTemplateButton({ projectId, projectName }: { projectId: number; projectName?: string }) {
+export function GenerateFromTemplateButton({
+  projectId,
+  projectName,
+  onGenerated,
+}: {
+  projectId: number;
+  projectName?: string;
+  /** Called after a successful generate — lets a host on the spine surface
+   *  (`/api/engineering/tasks`) refresh its own cache too. */
+  onGenerated?: () => void;
+}) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -34,6 +44,7 @@ export function GenerateFromTemplateButton({ projectId, projectName }: { project
     mutationFn: () => engFetch(`/api/projects/${projectId}/generate-eng-tasks`, { method: "POST" }),
     onSuccess: (data) => {
       invalidateEngineeringTicketCaches(queryClient);
+      onGenerated?.();
       setConfirmOpen(false);
       const n = data?.tasksCreated;
       toast({ title: typeof n === "number" ? `${n} engineering task${n === 1 ? "" : "s"} created` : "Engineering tasks generated" });

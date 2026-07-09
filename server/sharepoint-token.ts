@@ -26,11 +26,27 @@
  */
 
 import { ConfidentialClientApplication } from "@azure/msal-node";
+import { ApiError } from "./lib/api-error";
 
 let cachedToken: string | null = null;
 let cachedExpiresAt: number = 0;
 
 const CONNECTOR_CANDIDATES = ["sharepoint", "outlook"] as const;
+
+/**
+ * A coded "SharePoint isn't set up" failure. Surfaced as a 503 with a stable
+ * machine code so the client (SharePointErrorAlert) can render a "connect
+ * SharePoint" call-to-action instead of an opaque 500.
+ */
+function sharePointUnavailable(message: string): ApiError {
+  return new ApiError(
+    503,
+    "SHAREPOINT_UNAVAILABLE",
+    message,
+    undefined,
+    "Connect SharePoint under Settings → Document Management, or set the SharePoint app-only credentials.",
+  );
+}
 const GRAPH_DEFAULT_SCOPE = "https://graph.microsoft.com/.default";
 
 type ResolvedToken = { accessToken: string; expiresAt: string | undefined };
@@ -85,8 +101,8 @@ async function acquireAppOnlyToken(config: SharePointAppConfig): Promise<Resolve
     scopes: [GRAPH_DEFAULT_SCOPE],
   });
   if (!result?.accessToken) {
-    throw new Error(
-      "SharePoint app-only token request returned no access token - verify " +
+    throw sharePointUnavailable(
+      "SharePoint app-only token request returned no access token — verify " +
         "SHAREPOINT_CLIENT_ID / SHAREPOINT_CLIENT_SECRET / SHAREPOINT_TENANT_ID.",
     );
   }
@@ -141,7 +157,7 @@ async function acquireConnectorToken(): Promise<ResolvedToken> {
       : null;
 
   if (!hostname || !xReplitToken) {
-    throw new Error("SharePoint not available - connector not configured.");
+    throw sharePointUnavailable("SharePoint not available — connector not configured.");
   }
 
   let resolved: ResolvedToken | null = null;
@@ -151,8 +167,8 @@ async function acquireConnectorToken(): Promise<ResolvedToken> {
   }
 
   if (!resolved) {
-    throw new Error(
-      "SharePoint not connected - configure the 'sharepoint' Replit connector (preferred), " +
+    throw sharePointUnavailable(
+      "SharePoint not connected — configure the 'sharepoint' Replit connector (preferred), " +
         "grant the 'outlook' connector Sites.Read.All + Files.ReadWrite.All scopes, " +
         "or set SHAREPOINT_TENANT_ID / SHAREPOINT_CLIENT_ID / SHAREPOINT_CLIENT_SECRET for app-only access.",
     );

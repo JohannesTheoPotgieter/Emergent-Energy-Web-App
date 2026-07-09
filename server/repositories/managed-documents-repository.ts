@@ -14,6 +14,7 @@ import {
   type ManagedDocumentState,
   type DocumentRootScope,
 } from "@shared/schema/documents";
+import { workItems, workItemDocumentLinks } from "@shared/schema/tasks";
 
 type InsertManagedDocument = typeof managedDocuments.$inferInsert;
 
@@ -73,6 +74,54 @@ export async function listManagedDocumentsByProject(
         ),
       )
       .orderBy(desc(managedDocuments.updatedAt));
+  } catch (err) {
+    if (isMissingTableError(err)) return [];
+    throw err;
+  }
+}
+
+export interface TaskLinkedToDocument {
+  taskId: number;
+  title: string;
+  status: string;
+  projectId: number | null;
+  linkRole: string;
+  linkId: number;
+}
+
+/**
+ * Reverse of `listTaskDocumentLinks`: the (non-deleted) engineering/work-item
+ * tasks that link a given managed document, with the link role so the document
+ * drawer can show which tasks a file satisfies. Metadata only — no file bytes.
+ */
+export async function listTasksLinkedToDocument(managedDocumentId: number): Promise<TaskLinkedToDocument[]> {
+  try {
+    const rows = await db
+      .select({
+        taskId: workItems.id,
+        title: workItems.title,
+        status: workItems.status,
+        projectId: workItems.projectId,
+        linkRole: workItemDocumentLinks.linkRole,
+        linkId: workItemDocumentLinks.id,
+      })
+      .from(workItemDocumentLinks)
+      .innerJoin(workItems, eq(workItems.id, workItemDocumentLinks.workItemId))
+      .where(
+        and(
+          eq(workItemDocumentLinks.managedDocumentId, managedDocumentId),
+          isNull(workItems.deletedAt),
+        ),
+      )
+      .orderBy(desc(workItemDocumentLinks.createdAt));
+    return rows.map((r: (typeof rows)[number]) => ({
+      taskId: r.taskId,
+      title: r.title,
+      status: r.status,
+      projectId: r.projectId ?? null,
+      linkRole: r.linkRole,
+      linkId: r.linkId,
+    }));
   } catch (err) {
     if (isMissingTableError(err)) return [];
     throw err;
