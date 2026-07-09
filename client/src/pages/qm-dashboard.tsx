@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,6 +66,7 @@ import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { NcrLegacyDeepLinkBanner } from "@/components/quality/NcrLegacyDeepLinkBanner";
+import { NcrDrawer, NcrCreateDialog } from "@/components/quality/NcrDrawer";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { ConfirmDestructive, type ImpactRow } from "@/components/ui/confirm-destructive";
 import { usePermission } from "@/hooks/use-permissions";
@@ -245,6 +246,14 @@ function SortHeader({ label, sortKey, currentSort, currentDir, onSort, className
 export default function QmDashboardPage() {
   const { enabled: microWalkthroughEnabled } = useRolloutFlag("micro_walkthrough");
   const [, setLocation] = useLocation();
+  // Task 1.1: the ?ncr=<id> deep link (set by a row click) opens the NCR
+  // drawer reactively. Closing it clears the param.
+  const ncrSearch = useSearch();
+  const ncrDrawerId = (() => {
+    const raw = new URLSearchParams(ncrSearch).get("ncr");
+    return raw && /^\d+$/.test(raw) ? Number(raw) : null;
+  })();
+  const [ncrCreateOpen, setNcrCreateOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("project") || "";
@@ -658,6 +667,18 @@ export default function QmDashboardPage() {
         )}
       />
       <NcrLegacyDeepLinkBanner />
+      <NcrDrawer
+        ncrId={ncrDrawerId}
+        open={ncrDrawerId !== null}
+        onOpenChange={(o) => { if (!o) setLocation("/quality"); }}
+      />
+      <NcrCreateDialog
+        open={ncrCreateOpen}
+        onOpenChange={setNcrCreateOpen}
+        projects={checklists
+          .filter((c) => typeof c.projectId === "number")
+          .map((c) => ({ projectId: c.projectId as number, projectName: c.projectName }))}
+      />
 
       {microWalkthroughEnabled ? <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} /> : null}
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
@@ -739,6 +760,15 @@ export default function QmDashboardPage() {
               variant="outline"
               size="sm"
               className="ml-auto h-7 gap-1.5 text-xs"
+              onClick={() => setNcrCreateOpen(true)}
+              data-testid="btn-new-ncr"
+            >
+              <Plus className="h-3.5 w-3.5" /> New NCR
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
               onClick={exportNcrRegister}
               disabled={ncrExporting}
               data-testid="btn-export-ncrs"
