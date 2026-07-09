@@ -1,7 +1,16 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { and, desc, eq, isNull, inArray } from "drizzle-orm";
+import multer from "multer";
+import path from "node:path";
+import fs from "node:fs";
+import { and, desc, eq, isNull, inArray, notInArray } from "drizzle-orm";
 import { db } from "./db";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
+import {
+  computeNcrAging,
+  computeNcrTrend,
+  rowsToCsv,
+} from "./lib/quality-ncr-analytics";
 import {
   ncrReports,
   ncrAttachments,
@@ -17,32 +26,17 @@ import { recordAudit } from "./api/v2/services/audit-service";
 import { requireAuthoriserFor } from "./middleware/requireAuthoriserFor";
 import { validateBody } from "./middleware/validateBody";
 import { DEFAULT_QUERY_LIMIT } from "./lib/safe-query";
+import { buildNcrFieldUpdates } from "./lib/quality-ncr-update";
+import { canTransition, NCR_TERMINAL_STATUSES } from "./lib/quality-ncr-state-machine";
 import {
   getQualityHseScope,
   scopeAllowsProject,
   scopedProjectIdsArray,
 } from "./services/quality-hse-scope";
 
-/**
- * NCR state machine. Forward-only chain (`open → investigating →
- * corrective_action → verification → closed`) with one exit branch
- * `waived` reachable from any non-terminal state when an authorised
- * user records a waiver reason. § T3-2 (Plan v3) added the `waived`
- * branch — playbook § 5.10 implies authorised waivers are rare-but-
- * possible.
- */
-const STATUS_ORDER = ["open", "investigating", "corrective_action", "verification", "closed"] as const;
-const TERMINAL = new Set(["closed", "waived"]);
-
-function canTransition(from: string, to: string): boolean {
-  if (from === to) return true;
-  if (TERMINAL.has(from)) return false;
-  if (to === "waived") return true;
-  const fromIdx = STATUS_ORDER.indexOf(from as any);
-  const toIdx = STATUS_ORDER.indexOf(to as any);
-  if (fromIdx < 0 || toIdx < 0) return false;
-  return toIdx === fromIdx + 1;
-}
+// NCR state-machine rules (canTransition + terminal set) live in the pure,
+// unit-tested module ./lib/quality-ncr-state-machine — single source of truth.
+const TERMINAL = NCR_TERMINAL_STATUSES;
 
 /**
  * Compatibility shim: pre-Plan-v3 callers (e.g., bootstrap, server boot)
@@ -103,6 +97,52 @@ const ncrCommentSchema = z
     comment: z.string().trim().min(1).max(5000),
   })
   .strict();
+
+// Task 0.3: attachment via SharePoint / URL link (the non-file branch of the
+// upload route). Accepts an https link, a site-relative path (/uploads, /api),
+// or an Office/Graph deep link (ms-word:, ms-excel:, …). Dangerous schemes
+// (javascript:, data:, vbscript:, file:) are rejected so a stored link can't
+// become a script sink when later surfaced in the UI.
+const NCR_LINK_SAFE_SCHEME = /^(https?:\/\/|\/|ms-[a-z]+:)/i;
+const ncrLinkAttachmentSchema = z
+  .object({
+    url: z
+      .string()
+      .trim()
+      .min(1, "url required")
+      .max(2048)
+      .refine((u) => NCR_LINK_SAFE_SCHEME.test(u), {
+        message: "url must be an https link, a site-relative path, or an Office/Graph deep link",
+      }),
+    name: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
+// Task 0.3: NCR file attachments. Mirrors the QM-approval multer config in
+// quality-routes.ts — sanitised filenames, 50 MB cap, allowlisted types, and
+// the same Bearer-gated /uploads static subtree.
+const ncrAttachmentUploadsDir = path.join(process.cwd(), "uploads", "ncr-attachments");
+if (!fs.existsSync(ncrAttachmentUploadsDir)) fs.mkdirSync(ncrAttachmentUploadsDir, { recursive: true });
+const ncrAttachmentUpload = multer({
+  storage: multer.diskStorage({
+    destination: ncrAttachmentUploadsDir,
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${sanitizeFilename(file.originalname)}`),
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: allowedFileFilter,
+});
+
+const NCR_EXPORT_HEADER = [
+  "ID",
+  "Project",
+  "Title",
+  "Severity",
+  "Status",
+  "Assignee",
+  "Due Date",
+  "Created",
+  "Closed",
+];
 
 const ncrListQuerySchema = z
   .object({
@@ -222,6 +262,105 @@ export function registerQualityNcrRoutes(app: Express) {
       }
     });
 
+  // Analytics — aging buckets + status/severity trend, project-scoped.
+  // Registered before the /:id route so "analytics" isn't captured as an id.
+  app.get("/api/quality/ncrs/analytics", requireAuth, requirePermission("quality", "view"), async (req: Request, res: Response) => {
+    try {
+      const scope = await getQualityHseScope(req);
+      const scopedIds = scopedProjectIdsArray(scope);
+      const emptyAging = { "0-7": 0, "8-30": 0, "30+": 0, total: 0 };
+      if (scopedIds !== null && scopedIds.length === 0) {
+        return res.json({ aging: emptyAging, trend: [], byStatus: {}, bySeverity: {} });
+      }
+      const scopeFilter = scopedIds !== null ? inArray(ncrReports.projectId, scopedIds) : undefined;
+      const nonTerminal = notInArray(ncrReports.status, ["closed", "waived"]);
+
+      // Aging is measured over the still-open worklist only.
+      const openRows = await db
+        .select({ createdAt: ncrReports.createdAt, status: ncrReports.status, severity: ncrReports.severity })
+        .from(ncrReports)
+        .where(scopeFilter ? and(nonTerminal, scopeFilter) : nonTerminal);
+      const aging = computeNcrAging(openRows, new Date());
+
+      // Trend covers every scoped NCR, bucketed by raise month.
+      const allRows = await db
+        .select({ createdAt: ncrReports.createdAt, status: ncrReports.status, severity: ncrReports.severity })
+        .from(ncrReports)
+        .where(scopeFilter);
+      const trend = computeNcrTrend(allRows);
+
+      const byStatus: Record<string, number> = {};
+      const bySeverity: Record<string, number> = {};
+      for (const r of openRows) {
+        byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
+        bySeverity[r.severity] = (bySeverity[r.severity] ?? 0) + 1;
+      }
+      res.json({ aging, trend, byStatus, bySeverity });
+    } catch (err) {
+      console.error("[QualityNCR] Failed to compute analytics:", err);
+      res.status(500).json({ error: "Failed to compute NCR analytics" });
+    }
+  });
+
+  // Export — the NCR register as CSV, honouring the same filters + scope as
+  // the list route. Registered before /:id.
+  app.get("/api/quality/ncrs/export", requireAuth, requirePermission("quality", "view"), async (req: Request, res: Response) => {
+    try {
+      const parsed = ncrListQuerySchema.safeParse(req.query);
+      if (!parsed.success) return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+      const { status, severity, projectId } = parsed.data;
+
+      const sendCsv = (dataRows: unknown[][]) => {
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", 'attachment; filename="ncr-register.csv"');
+        res.send(rowsToCsv(NCR_EXPORT_HEADER, dataRows));
+      };
+
+      const scope = await getQualityHseScope(req);
+      const scopedIds = scopedProjectIdsArray(scope);
+      if (scopedIds !== null && scopedIds.length === 0) return sendCsv([]);
+      if (projectId && !scopeAllowsProject(scope, projectId)) return sendCsv([]);
+
+      const filters: any[] = [];
+      if (status) filters.push(eq(ncrReports.status, status as any));
+      if (severity) filters.push(eq(ncrReports.severity, severity as any));
+      if (projectId) filters.push(eq(ncrReports.projectId, projectId));
+      if (scopedIds !== null) filters.push(inArray(ncrReports.projectId, scopedIds));
+      const where = filters.length > 0 ? and(...filters) : undefined;
+
+      const rows = await db
+        .select({ ncr: ncrReports, assigneeName: users.name, projectName: projectInfo.projectName })
+        .from(ncrReports)
+        .leftJoin(users, eq(users.id, ncrReports.assignedTo))
+        .leftJoin(projectInfo, eq(projectInfo.id, ncrReports.projectId))
+        .where(where)
+        .orderBy(desc(ncrReports.updatedAt));
+
+      const toIso = (v: Date | null) => (v instanceof Date ? v.toISOString() : v ?? "");
+      const dataRows = rows.map((r: { ncr: typeof ncrReports.$inferSelect; assigneeName: string | null; projectName: string | null }) => [
+        r.ncr.id,
+        r.projectName ?? "",
+        r.ncr.title,
+        r.ncr.severity,
+        r.ncr.status,
+        r.assigneeName ?? "",
+        r.ncr.dueDate ?? "",
+        toIso(r.ncr.createdAt),
+        toIso(r.ncr.closedAt),
+      ]);
+      logAuditFromReq(req, {
+        entityType: "ncr_report",
+        entityId: "register",
+        action: "export",
+        changesJson: { count: dataRows.length, filters: { status, severity, projectId } },
+      });
+      sendCsv(dataRows);
+    } catch (err) {
+      console.error("[QualityNCR] Failed to export NCR register:", err);
+      res.status(500).json({ error: "Failed to export NCR register" });
+    }
+  });
+
   // Get one.
   app.get("/api/quality/ncrs/:id", requireAuth, requirePermission("quality", "view"), async (req: Request, res: Response) => {
     try {
@@ -274,17 +413,15 @@ export function registerQualityNcrRoutes(app: Express) {
           return res.status(400).json({ error: "invalid_transition", message: `Cannot transition ${current.status} -> ${next}` });
         }
         const user = getEffectiveUser(req);
+        // Task 0.2: distinguish `undefined` (field omitted → keep current)
+        // from an explicit `null` (clear the field). A `??` collapse made it
+        // impossible to un-assign an NCR or clear its due date. Only fields
+        // present in the validated body are written; nullable fields may be
+        // written through as null.
         const updates: any = {
-          title: body.title ?? current.title,
-          description: body.description ?? current.description,
-          severity: body.severity ?? current.severity,
           status: next as any,
-          rootCause: body.root_cause ?? current.rootCause,
-          correctiveAction: body.corrective_action ?? current.correctiveAction,
-          preventiveAction: body.preventive_action ?? current.preventiveAction,
-          assignedTo: body.assigned_to ?? current.assignedTo,
-          dueDate: body.due_date ?? current.dueDate,
           updatedAt: new Date(),
+          ...buildNcrFieldUpdates(body),
         };
         if (next === "closed" && current.status !== "closed") {
           updates.closedAt = new Date();
@@ -362,6 +499,12 @@ export function registerQualityNcrRoutes(app: Express) {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+      // R7: scope gate before delete, matching the other NCR mutations — 404
+      // (not 403) so a user with no access can't probe which ids exist.
+      const [target] = await db.select({ projectId: ncrReports.projectId }).from(ncrReports).where(eq(ncrReports.id, id)).limit(1);
+      if (!target) return res.status(404).json({ error: "not_found" });
+      const scope = await getQualityHseScope(req);
+      if (!scopeAllowsProject(scope, target.projectId)) return res.status(404).json({ error: "not_found" });
       // Children cascade via FK ON DELETE CASCADE.
       const [deleted] = await db.delete(ncrReports).where(eq(ncrReports.id, id)).returning();
       if (!deleted) return res.status(404).json({ error: "not_found" });
@@ -402,6 +545,76 @@ export function registerQualityNcrRoutes(app: Express) {
         res.status(500).json({ error: "Failed to add comment" });
       }
     });
+
+  // Attachment upload (Task 0.3). Supports both a multipart file upload and a
+  // SharePoint/URL link — the same dual shape QC evidence supports. Multipart
+  // requests populate `req.file`; JSON requests carry `{ url, name? }`. Both
+  // land in ncr_attachments so the get-one route surfaces them.
+  app.post(
+    "/api/quality/ncrs/:id/attachments",
+    requireAuth,
+    requirePermission("quality", "edit"),
+    ncrAttachmentUpload.single("file"),
+    async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+        const user = getEffectiveUser(req);
+        if (!user) return res.status(401).json({ error: "auth_required" });
+
+        // R7: same scope gate as the sibling NCR routes — 404 (not 403) so a
+        // user with no access can't probe which NCR ids exist.
+        const [target] = await db
+          .select({ projectId: ncrReports.projectId })
+          .from(ncrReports)
+          .where(eq(ncrReports.id, id))
+          .limit(1);
+        if (!target) return res.status(404).json({ error: "not_found" });
+        const scope = await getQualityHseScope(req);
+        if (!scopeAllowsProject(scope, target.projectId)) return res.status(404).json({ error: "not_found" });
+
+        const file = req.file;
+        let filePath: string;
+        let fileName: string;
+        if (file) {
+          filePath = `/uploads/ncr-attachments/${file.filename}`;
+          const providedName = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+          fileName = providedName || file.originalname;
+        } else {
+          const parsed = ncrLinkAttachmentSchema.safeParse(req.body);
+          if (!parsed.success) {
+            return res.status(400).json({ error: "invalid_input", details: parsed.error.flatten() });
+          }
+          filePath = parsed.data.url;
+          fileName = parsed.data.name?.trim() || parsed.data.url;
+        }
+
+        const [created] = await db
+          .insert(ncrAttachments)
+          .values({ ncrId: id, filePath, fileName, uploadedBy: user.id })
+          .returning();
+
+        logAuditFromReq(req, {
+          entityType: "ncr_report",
+          entityId: String(id),
+          action: "update",
+          changesJson: { description: "NCR attachment added", fileName, kind: file ? "file" : "link" },
+        });
+        await recordAudit({
+          actorRole: (user as any)?.role,
+          userId: user.id,
+          entityType: "ncr_report",
+          entityId: String(id),
+          action: "ADD_NCR_ATTACHMENT",
+          changesJson: { projectId: target.projectId, kind: file ? "file" : "link", fileName },
+        });
+        res.status(201).json({ ok: true, attachment: created });
+      } catch (err) {
+        console.error("[QualityNCR] Failed to add attachment:", err);
+        res.status(500).json({ error: "Failed to add attachment" });
+      }
+    },
+  );
 
   // /api/quality/dashboard is owned by quality-routes.ts.
 }

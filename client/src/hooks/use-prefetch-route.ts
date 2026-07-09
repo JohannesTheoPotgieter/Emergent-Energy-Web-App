@@ -21,7 +21,6 @@ const PREFETCH_MAP: Record<string, () => Promise<unknown>> = {
   "/my-work/tasks": () => import("@/pages/my-work-tasks"),
   "/my-work/calendar": () => import("@/pages/my-work-calendar"),
   "/my-work/meetings": () => import("@/pages/my-work-meetings"),
-  "/inbox": () => import("@/pages/inbox"),
   "/approvals": () => import("@/pages/admin-approvals"),
   "/portfolios": () => import("@/pages/portfolios"),
   "/admin/settings": () => import("@/pages/role-settings"),

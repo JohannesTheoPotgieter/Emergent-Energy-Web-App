@@ -416,3 +416,365 @@ export function summariseTrust(projects: ReconPortfolioProjectRow[]): TrustCount
   }
   return counts;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Finance Home upgrades — additive derivations (all from the canonical ledger).
+//
+// Everything below RE-GROUPS the same realised/budget figures the endpoints
+// above already produced. No new finance number is computed: the "include open
+// month" values are byte-identical to the current page; "last closed month"
+// simply subtracts the open (current) month's own canonical per-month value.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** As-at basis for the FYTD headline: settled months only, or including the live month. */
+export type AsAtMode = "closed" | "open";
+
+/** Chart grain for the by-month series. */
+export type ChartGrain = "month" | "quarter";
+
+/** Board-set FY target (item 8) as consumed by the Revenue KPI. */
+export interface BoardTarget {
+  fy: number;
+  revenueTarget: number | null;
+  targetMarginPct: number | null;
+}
+
+export interface BoardTargetsResponse {
+  targets: BoardTarget[];
+}
+
+/**
+ * Trailing window (in closed months) for the FY-close run-rate projection.
+ * Mean of the last N closed months of realised revenue. Kept as a const so the
+ * window is tuned in one place.
+ */
+export const RUN_RATE_WINDOW = 3;
+
+/** Default margin floor for the exception watch-list (fraction, i.e. 0.05 = 5%). */
+export const LOW_MARGIN_THRESHOLD = 0.05;
+
+const SAST_OFFSET_MS = 120 * 60 * 1000;
+
+/**
+ * Current YYYY-MM anchored to SAST — matches the server's realised classifier
+ * (`todayMonthKey()`), so "open month" agrees with the ledger's month boundary
+ * rather than drifting with the viewer's timezone.
+ */
+export function currentSastMonthKey(now: Date = new Date()): string {
+  return new Date(now.getTime() + SAST_OFFSET_MS).toISOString().slice(0, 7);
+}
+
+/**
+ * The last CLOSED FY month = the greatest frame month strictly before the open
+ * (current) SAST month. Null when the FY has no closed month yet (frame in the
+ * future). `frame` is ascending.
+ */
+export function lastClosedMonthKey(frame: string[], openMonthKey: string): string | null {
+  let last: string | null = null;
+  for (const mk of frame) if (mk < openMonthKey) last = mk;
+  return last;
+}
+
+// ── As-at FYTD headline (item 5) ──────────────────────────────────────────────
+
+export interface AsAtHeadline {
+  realisedRevenue: number;
+  realisedCos: number;
+  grossProfit: number;
+  marginPct: number | null;
+  /** The open (current) month's own realised contribution — shown as an MTD add-on. */
+  openRevenue: number;
+  openCos: number;
+  openGp: number;
+}
+
+/**
+ * Recompute the FYTD headline for the chosen as-at basis. The include-open
+ * inputs are the page's current totals; "closed" subtracts the open month's own
+ * canonical per-month realised. No recomputation of any finance figure.
+ */
+export function asAtHeadline(args: {
+  inclOpenRevenue: number;
+  inclOpenCos: number;
+  openRevenue: number;
+  openCos: number;
+  mode: AsAtMode;
+}): AsAtHeadline {
+  const { inclOpenRevenue, inclOpenCos, openRevenue, openCos, mode } = args;
+  const realisedRevenue = mode === "closed" ? inclOpenRevenue - openRevenue : inclOpenRevenue;
+  const realisedCos = mode === "closed" ? inclOpenCos - openCos : inclOpenCos;
+  const grossProfit = realisedRevenue - realisedCos;
+  return {
+    realisedRevenue,
+    realisedCos,
+    grossProfit,
+    marginPct: realisedRevenue !== 0 ? (grossProfit / realisedRevenue) * 100 : null,
+    openRevenue,
+    openCos,
+    openGp: openRevenue - openCos,
+  };
+}
+
+/** The open (current) month's realised revenue from the Revenue-screen rows. */
+export function openMonthRealisedRevenue(
+  months: RevenueTrackerMonthRow[],
+  openMonthKey: string,
+): number {
+  return months.find((m) => m.monthKey === openMonthKey)?.realisedRevenue ?? 0;
+}
+
+/** The open (current) month's realised COS from the canonical monthly rows. */
+export function openMonthRealisedCos(monthly: MonthlyReconRow[], openMonthKey: string): number {
+  return monthly.find((m) => m.monthKey === openMonthKey)?.realisedCos ?? 0;
+}
+
+// ── Run-rate FY-close forecast (item 2) ───────────────────────────────────────
+
+export interface RunRatePoint {
+  monthKey: string;
+  monthLabel: string;
+  /** Cumulative realised extended at the trailing run-rate; null before the anchor. */
+  projected: number | null;
+}
+
+export interface RunRateForecast {
+  /** Aligned to the on-track frame; `projected` is populated from the anchor → FY-end. */
+  points: RunRatePoint[];
+  /** Mean monthly realised over the trailing closed-month window. */
+  runRate: number;
+  projectedFyClose: number | null;
+  /** Cumulative budget at FY-end. */
+  budgetFyClose: number;
+  /** projectedFyClose − budgetFyClose (negative = projected to land behind budget). */
+  gapToBudget: number | null;
+  monthsProjected: number;
+}
+
+/**
+ * Extend the cumulative-realised line to FY-end at the trailing run-rate (mean
+ * of the last RUN_RATE_WINDOW closed months' realised). The projection anchors
+ * at `boundaryKey` (the as-at boundary) and adds the run-rate each month to
+ * FY-end. This is a FORECAST — kept visually and semantically distinct from the
+ * actual-to-date ahead/behind gap (`onTrackGap`).
+ */
+export function runRateForecast(
+  series: OnTrackPoint[],
+  boundaryKey: string | null,
+  openMonthKey: string,
+  window = RUN_RATE_WINDOW,
+): RunRateForecast {
+  const budgetFyClose = series.length ? series[series.length - 1].cumBudget : 0;
+  const emptyPoints = series.map((p) => ({
+    monthKey: p.monthKey,
+    monthLabel: p.monthLabel,
+    projected: null as number | null,
+  }));
+  const empty: RunRateForecast = {
+    points: emptyPoints,
+    runRate: 0,
+    projectedFyClose: null,
+    budgetFyClose,
+    gapToBudget: null,
+    monthsProjected: 0,
+  };
+  if (series.length === 0) return empty;
+
+  // Per-month realised deltas from the cumulative series.
+  const perMonth = series.map((p, i) => (i === 0 ? p.cumRealised : p.cumRealised - series[i - 1].cumRealised));
+  // Closed months = strictly before the open (current) month.
+  const closedIdx = series
+    .map((p, i) => ({ i, closed: p.monthKey < openMonthKey }))
+    .filter((x) => x.closed)
+    .map((x) => x.i);
+  if (closedIdx.length === 0) return empty;
+
+  const windowIdx = closedIdx.slice(-window);
+  const runRate = windowIdx.reduce((s, i) => s + perMonth[i], 0) / windowIdx.length;
+
+  const lastClosed = windowIdx[windowIdx.length - 1];
+  const boundaryIdx = boundaryKey ? series.findIndex((p) => p.monthKey === boundaryKey) : lastClosed;
+  const anchorIdx = boundaryIdx >= 0 ? boundaryIdx : lastClosed;
+
+  const points: RunRatePoint[] = emptyPoints.map((p) => ({ ...p }));
+  let running = series[anchorIdx].cumRealised;
+  points[anchorIdx].projected = running;
+  for (let i = anchorIdx + 1; i < series.length; i += 1) {
+    running += runRate;
+    points[i].projected = running;
+  }
+  const projectedFyClose = points[series.length - 1].projected;
+  return {
+    points,
+    runRate,
+    projectedFyClose,
+    budgetFyClose,
+    gapToBudget: projectedFyClose != null ? projectedFyClose - budgetFyClose : null,
+    monthsProjected: Math.max(0, series.length - 1 - anchorIdx),
+  };
+}
+
+// ── Exception watch-list (item 3) ─────────────────────────────────────────────
+
+export type ExceptionReason = "negative_gp" | "low_margin" | "tracker_drift";
+
+export interface ExceptionRow {
+  projectId: number;
+  projectName: string;
+  revenue: number;
+  gp: number;
+  /** Margin as a percentage (e.g. 4.2), not a fraction; null when no realised revenue. */
+  gpPct: number | null;
+  /** App-vs-tracker drift magnitude (absDelta) from the reconciliation layer. */
+  drift: number;
+  reasons: ExceptionReason[];
+  /** Internal ranking — higher = worse. */
+  severity: number;
+}
+
+export interface ExceptionWatchList {
+  rows: ExceptionRow[];
+  /** Count before the top-N cap (drives the "view all" affordance). */
+  totalFlagged: number;
+}
+
+/**
+ * Rule-flag projects from the per-project ledger rollup + reconciliation layer:
+ *   - negative GP,
+ *   - realised margin below `marginThreshold` (default 5%),
+ *   - material app-vs-tracker drift (reconciliation status amber/red).
+ * Ranked worst-first, capped at `topN`. Names resolved via `nameById`.
+ */
+export function exceptionWatchList(
+  byProject: ProjectTotals[],
+  recon: ReconPortfolioProjectRow[],
+  nameById: Map<number, string>,
+  opts: { marginThreshold?: number; topN?: number } = {},
+): ExceptionWatchList {
+  const marginThreshold = opts.marginThreshold ?? LOW_MARGIN_THRESHOLD;
+  const topN = opts.topN ?? 8;
+  const reconById = new Map(recon.map((r) => [r.projectId, r]));
+
+  const flagged: ExceptionRow[] = [];
+  for (const p of byProject) {
+    const r = reconById.get(p.projectId);
+    const hasRealised = p.realisedRevenue !== 0 || p.realisedGp !== 0;
+    const isDrift = r != null && (r.status === "amber" || r.status === "red");
+
+    const reasons: ExceptionReason[] = [];
+    if (hasRealised && p.realisedGp < 0) reasons.push("negative_gp");
+    if (
+      p.realisedGpPct != null &&
+      p.realisedRevenue > 0 &&
+      p.realisedGp >= 0 &&
+      p.realisedGpPct < marginThreshold
+    ) {
+      reasons.push("low_margin");
+    }
+    if (isDrift) reasons.push("tracker_drift");
+    if (reasons.length === 0) continue;
+
+    const drift = r?.absDelta ?? 0;
+    let severity = 0;
+    if (reasons.includes("negative_gp")) severity += 1_000_000 + Math.abs(p.realisedGp);
+    if (reasons.includes("low_margin")) severity += 100_000 + (marginThreshold - (p.realisedGpPct ?? 0)) * 1000;
+    if (reasons.includes("tracker_drift")) severity += drift;
+
+    flagged.push({
+      projectId: p.projectId,
+      projectName: nameById.get(p.projectId) ?? `Project ${p.projectId}`,
+      revenue: p.realisedRevenue,
+      gp: p.realisedGp,
+      gpPct: p.realisedGpPct != null ? p.realisedGpPct * 100 : null,
+      drift,
+      reasons,
+      severity,
+    });
+  }
+  flagged.sort((a, b) => b.severity - a.severity);
+  return { rows: flagged.slice(0, topN), totalFlagged: flagged.length };
+}
+
+// ── Month/Quarter grain (item 6) ──────────────────────────────────────────────
+
+/**
+ * Fold a FY-ordered month series into quarters (Q1 = first three frame months,
+ * i.e. Sep–Nov for a full FY). Sums each state; keeps the first month's key as
+ * the group anchor. Pure regroup of already-computed monthly figures.
+ */
+export function toQuarterlyStates(points: MonthStatePoint[]): MonthStatePoint[] {
+  const out: MonthStatePoint[] = [];
+  for (let i = 0; i < points.length; i += 3) {
+    const group = points.slice(i, i + 3);
+    if (group.length === 0) continue;
+    out.push({
+      monthKey: group[0].monthKey,
+      monthLabel: `Q${Math.floor(i / 3) + 1}`,
+      budget: group.reduce((s, g) => s + g.budget, 0),
+      planned: group.reduce((s, g) => s + g.planned, 0),
+      realised: group.reduce((s, g) => s + g.realised, 0),
+      qb: group.reduce((s, g) => s + g.qb, 0),
+      budgetSet: group.some((g) => g.budgetSet),
+    });
+  }
+  return out;
+}
+
+export function applyGrain(points: MonthStatePoint[], grain: ChartGrain): MonthStatePoint[] {
+  return grain === "quarter" ? toQuarterlyStates(points) : points;
+}
+
+// ── Prior-FY overlay alignment (item 6) ───────────────────────────────────────
+
+/**
+ * Align a prior-FY series onto the current frame BY POSITION. Both FYs run
+ * Sep–Aug, so frame index i in the prior FY maps to index i in the current FY.
+ * Returns a value-by-index array (null where the prior FY has no matching slot).
+ */
+export function alignPriorByIndex<T>(prior: T[], length: number, pick: (row: T) => number): (number | null)[] {
+  return Array.from({ length }, (_, i) => (i < prior.length ? pick(prior[i]) : null));
+}
+
+// ── On-track chart row (item 2 + item 6): actual + forecast + prior overlay ───
+
+export interface OnTrackChartRow extends OnTrackPoint {
+  /** Dotted FY-close projection (item 2). Null before the projection anchor. */
+  projected?: number | null;
+  /** Prior-FY cumulative realised overlay (item 6). Null when compare is off. */
+  priorCumRealised?: number | null;
+}
+
+/**
+ * Merge the actual cumulative series with the run-rate projection and an
+ * optional prior-FY cumulative overlay into a single chart array.
+ */
+export function buildOnTrackChartRows(
+  actual: OnTrackPoint[],
+  forecast: RunRateForecast | null,
+  priorSeries: OnTrackPoint[] | null,
+): OnTrackChartRow[] {
+  const priorByIndex = priorSeries
+    ? alignPriorByIndex(priorSeries, actual.length, (p) => p.cumRealised)
+    : null;
+  return actual.map((p, i) => ({
+    ...p,
+    projected: forecast ? forecast.points[i]?.projected ?? null : undefined,
+    priorCumRealised: priorByIndex ? priorByIndex[i] : undefined,
+  }));
+}
+
+// ── Month-states chart row (item 6): current + prior overlay ───────────────────
+
+export interface MonthStateChartRow extends MonthStatePoint {
+  /** Prior-FY realised revenue overlay, aligned by FY position. */
+  priorRealised?: number | null;
+}
+
+export function buildMonthStateChartRows(
+  current: MonthStatePoint[],
+  priorRealisedByIndex: (number | null)[] | null,
+): MonthStateChartRow[] {
+  return current.map((p, i) => ({
+    ...p,
+    priorRealised: priorRealisedByIndex ? priorRealisedByIndex[i] ?? null : undefined,
+  }));
+}

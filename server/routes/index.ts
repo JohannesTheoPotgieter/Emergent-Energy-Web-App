@@ -11,6 +11,7 @@ import { registerPdIntakeRoutes } from './pd-intake.routes';
 import { registerImpactRoutes } from './impact.routes';
 import { registerEmailLinksRoutes } from './email-links.routes';
 import { registerScreenSettingsRoutes } from './admin-screen-settings.routes';
+import { registerBoardTargetsRoutes } from './board-targets.routes';
 import { registerExceptionDashboardRoutes } from './exception-dashboard.routes';
 import { registerDocumentManagementRoutes } from './document-management.routes';
 import { registerDocumentCommentsRoutes } from './document-comments.routes';
@@ -33,15 +34,10 @@ import { registerEngineeringHomeRoutes } from './engineering-home.routes';
 import { registerEngineeringTasksRoutes } from './engineering-tasks.routes';
 import { registerProjectDisciplineFoldersRoutes } from './project-discipline-folders.routes';
 import { registerCashflowWorklistsRoutes } from './cashflow-worklists.routes';
-import { registerFinanceHealthRoutes } from './finance-health.routes';
 import { registerExecutionBoardRoutes } from './execution-board.routes';
 import { registerMilestoneTrackerRoutes } from './milestone-tracker.routes';
-import { financeErrorTracker } from '../middleware/finance-error-tracker';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
-  // Observe finance 5xx responses for the error-rate monitor (read-only).
-  app.use(financeErrorTracker);
-  registerFinanceHealthRoutes(app);
   registerExecutionBoardRoutes(app);
   registerMilestoneTrackerRoutes(app);
   registerTemplateGovernanceRoutes(app);
@@ -56,6 +52,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerImpactRoutes(app);
   registerEmailLinksRoutes(app);
   registerScreenSettingsRoutes(app);
+  registerBoardTargetsRoutes(app);
   registerExceptionDashboardRoutes(app);
   registerDocumentManagementRoutes(app);
   registerDocumentCommentsRoutes(app);

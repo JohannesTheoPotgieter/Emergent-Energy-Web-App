@@ -1353,6 +1353,17 @@ async function ensureSqliteSchema() {
     `));
 
     await db.run(sql.raw(`
+      CREATE TABLE IF NOT EXISTS board_finance_targets (
+        fy INTEGER PRIMARY KEY,
+        revenue_target REAL,
+        target_margin_pct REAL,
+        reason TEXT,
+        updated_by_user_id INTEGER,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `));
+
+    await db.run(sql.raw(`
       CREATE TABLE IF NOT EXISTS do_next_state (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,

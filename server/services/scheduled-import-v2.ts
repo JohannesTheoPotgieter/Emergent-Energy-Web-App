@@ -62,8 +62,6 @@ import {
   type AutoCommitGateSignals,
 } from "../lib/import/auto-commit-gate";
 import { getReconciliationDetail } from "./reconciliation-service";
-import { notifyUsers } from "./notification-service";
-import { UsersRepository } from "../repositories/users-repository";
 import { resolveSchedulerConflictPolicy } from "../imports/scheduler-conflict-policy";
 import { commitSmartImportRunAsSystem } from "./scheduler-commit";
 import { IMPORT_FILE_ALWAYS_WINS } from "../imports/import-conflict-policy";
@@ -110,53 +108,6 @@ function computeHash(buffer: Buffer): string {
 // conservative >=0.85 auto-map. Shared by processFileV2 and the dedupe
 // resolver so the two never drift.
 const AUTO_MATCH_THRESHOLD = IMPORT_FILE_ALWAYS_WINS ? 0.75 : 0.85;
-
-const usersRepository = new UsersRepository();
-
-/**
- * Finance / management roles that own import review. They get the in-app
- * notification when a scheduled run parks on a net-delta swing (the Teams alert
- * fires separately via the orchestrator's `maybeSendImportAlert`). Excludes PMs/
- * CMs, who can view but not commit imports (smart_import:approve = COO/CEO).
- */
-const NET_DELTA_NOTIFY_ROLES = [
-  "COO_ADMIN",
-  "CEO_ADMIN",
-  "CFO",
-  "PROGRAM_FINANCE_MANAGER",
-];
-
-/** In-app notification (throttled) to the finance reviewers that a run parked on
- *  a net-delta swing, with the reason + a deep link to the run via the
- *  smart_import related entity. Non-blocking. */
-async function notifyNetDeltaPark(
-  runId: number,
-  projectName: string,
-  projectId: number,
-  reason: string,
-): Promise<void> {
-  try {
-    const recipients = await usersRepository.listByRoles(NET_DELTA_NOTIFY_ROLES);
-    if (recipients.length === 0) return;
-    await notifyUsers(
-      recipients.map((r) => r.id),
-      {
-        eventType: "import_net_delta_park",
-        title: `Import parked for review — ${projectName}`,
-        body: `Auto-import held: ${reason}. Open the import to check the swing and commit.`,
-        projectName,
-        projectId,
-        relatedEntityType: "smart_import",
-        relatedEntityId: runId,
-      },
-    );
-  } catch (notifyErr) {
-    console.warn(
-      `[ScheduledImportV2] net-delta in-app notification failed for run ${runId}:`,
-      notifyErr instanceof Error ? notifyErr.message : notifyErr,
-    );
-  }
-}
 
 /**
  * NET-DELTA GUARD (owner-approved). Before an unattended commit, compare the
@@ -211,7 +162,6 @@ async function maybeParkOnNetDelta(opts: {
       })
       .where(and(eq(smartImportRuns.id, runId), inArray(smartImportRuns.status, ["preview", "awaiting_review"])));
     console.warn(`[ScheduledImportV2] net-delta park for run ${runId}: ${parkDecision.reason}`);
-    await notifyNetDeltaPark(runId, projectName, projectId, parkDecision.reason);
     return true;
   } catch (deltaErr) {
     console.warn(

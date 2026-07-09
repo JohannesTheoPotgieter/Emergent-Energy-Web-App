@@ -15,7 +15,7 @@ import {
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
   qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory, projectExecutionState,
   projectEngApprovals, projectEngStages, projectEngTasks, projectEngDeliverables, engStageTemplates,
-  workItems, workItemAssignments, notifications, notificationThrottle,
+  workItems, workItemAssignments,
   msObjects,
   phaseTemplate as phaseTemplateTbl,
   uploadMetadata, refreshLogs, writebackAuditLog, phaseTemplateApplication, appSettings,
@@ -286,48 +286,6 @@ async function requireEngTaskOwnership(req: Request, res: Response, next: NextFu
     return next();
   } catch (err) {
     return sendError(res, err);
-  }
-}
-
-/** Insert an in-app notification row with throttle deduplication. Silently no-ops on error. */
-async function createNotification(recipientUserId: number, eventType: string, title: string, body: string | null, opts: {
-  projectName?: string; projectId?: number; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
-} = {}) {
-  try {
-    // Throttle: skip if same recipient+event+entity was notified in last 5 minutes
-    const entityId = opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0;
-    const entityType = opts.linkedTaskId ? "task" : opts.linkedDeliverableId ? "deliverable" : "other";
-    if (entityId) {
-      const [recent] = await db.select({ id: notificationThrottle.id })
-        .from(notificationThrottle)
-        .where(and(
-          eq(notificationThrottle.recipientUserId, recipientUserId),
-          eq(notificationThrottle.eventType, eventType),
-          eq(notificationThrottle.entityType, entityType),
-          eq(notificationThrottle.entityId, entityId),
-          gt(notificationThrottle.lastSentAt, new Date(Date.now() - 5 * 60_000)),
-        ));
-      if (recent) return null; // Throttled — skip duplicate
-      await db.insert(notificationThrottle).values({ recipientUserId, eventType, entityType, entityId })
-        .onConflictDoNothing();
-    }
-
-    const [row] = await db.insert(notifications).values({
-      recipientUserId,
-      eventType,
-      title,
-      body,
-      projectName: opts.projectName ?? null,
-      projectId: opts.projectId ?? null,
-      linkedTaskId: opts.linkedTaskId ?? null,
-      linkedDeliverableId: opts.linkedDeliverableId ?? null,
-      linkedWarningId: opts.linkedWarningId ?? null,
-      linkedPlanItemId: opts.linkedPlanItemId ?? null,
-    }).returning();
-    return row;
-  } catch (err) {
-    console.error("[Notifications] Failed to create notification:", err);
-    return null;
   }
 }
 
@@ -1065,12 +1023,6 @@ export function registerEngineeringRoutes(app: Express) {
         plannedHours: data.plannedHours ? parseFloat(data.plannedHours) : null,
       });
 
-      if (task.ownerUserId && task.ownerUserId !== getUser(req).id) {
-        await createNotification(task.ownerUserId, "task.assigned", `Task assigned: ${task.title}`, `You've been assigned task "${task.title}"`, {
-          linkedTaskId: task.id,
-        });
-      }
-
       let createdPayload: any = {
         id: task.id,
         workItemId: task.id,
@@ -1196,14 +1148,6 @@ export function registerEngineeringRoutes(app: Express) {
         plannedHours: updates.plannedHours !== undefined ? parseFloat(updates.plannedHours) || null : undefined,
       });
       if (!updated) return sendError(res, notFound("Task"));
-
-      if (updates.status && updates.status !== "") {
-        if (updated.ownerUserId) {
-          await createNotification(updated.ownerUserId, "task.status_changed",
-            `Task status: ${updated.title}`, `Status changed to "${updates.status}"`,
-            { linkedTaskId: id });
-        }
-      }
 
       // Run cascades (dates rollup to parent, status propagation)
       try {
@@ -1350,14 +1294,6 @@ export function registerEngineeringRoutes(app: Express) {
         action: "canonical_save_succeeded",
         projectName: existing.projectName || undefined,
       });
-
-      if (updated.ownerUserId && updated.ownerUserId !== user.id) {
-        await createNotification(updated.ownerUserId, "deliverable.submitted_for_approval",
-          `Approval needed: ${updated.title}`,
-          `Task "${updated.title}" has been sent for approval${file ? ` with attachment: ${file.originalname}` : ""}`,
-          { projectName: existing.projectName ?? undefined, linkedTaskId: id }
-        );
-      }
 
       const localFlowEnabled = await isLocalSyncedSaveFlowEnabled();
       const mappedPath = await getLocalSyncedPathForUser(user.id);
@@ -1600,12 +1536,6 @@ export function registerEngineeringRoutes(app: Express) {
         changesJson: { deliverableId: deliverable.id },
       });
 
-      await createNotification(recipientUserId, "deliverable.sent_for_acknowledgment",
-        `Deliverable received: ${existing.title}`,
-        `"${file.originalname}" has been sent to you for acknowledgment on task "${existing.title}"${note.trim() ? ` — ${note.trim()}` : ""}`,
-        { projectName: existing.projectName ?? undefined, linkedTaskId: id }
-      );
-
       const localFlowEnabled = await isLocalSyncedSaveFlowEnabled();
       const mappedPath = await getLocalSyncedPathForUser(user.id);
       const fallbackPreference = await getFallbackPreferenceForUser(user.id);
@@ -1801,12 +1731,6 @@ export function registerEngineeringRoutes(app: Express) {
         fieldName: "deliverable",
         newValue: deliverable.originalName,
       });
-
-      await createNotification(deliverable.sentByUserId, "deliverable.acknowledged",
-        `Deliverable acknowledged: ${deliverable.originalName}`,
-        `Your deliverable "${deliverable.originalName}" has been acknowledged by ${user.name}`,
-        { linkedTaskId: deliverable.taskId }
-      );
 
       res.json(updated);
     } catch (err) {
@@ -2100,15 +2024,6 @@ export function registerEngineeringRoutes(app: Express) {
         newValue: body.trim(),
       });
 
-      // Notify task owner about new comment
-      const [commentTask] = await db.select({ ownerUserId: workItems.ownerUserId, title: workItems.title, projectName: workItems.subProjectName })
-        .from(workItems).where(eq(workItems.id, taskId));
-      if (commentTask?.ownerUserId && commentTask.ownerUserId !== getUser(req).id) {
-        createNotification(commentTask.ownerUserId, "task.comment_added", `New comment on: ${commentTask.title}`,
-          `${getUser(req).name || "Someone"} commented on "${commentTask.title}"`,
-          { linkedTaskId: taskId, projectName: commentTask.projectName ?? undefined });
-      }
-
       res.json(comment);
     } catch (err) {
       console.error("[Engineering] Error:", err);
@@ -2333,16 +2248,6 @@ export function registerEngineeringRoutes(app: Express) {
           actorUserId: getUser(req).id,
         });
 
-        if (canonicalDeliverableStatus === "needs_approval" && updated.reviewerUserId) {
-          await createNotification(updated.reviewerUserId, "deliverable.submitted_for_approval",
-            `Review needed: ${updated.title}`, `Deliverable "${updated.title}" v${updated.currentVersion} needs review`,
-            { projectName: updated.projectName, linkedDeliverableId: id });
-        }
-        if (canonicalDeliverableStatus === "qc_approved" && updated.ownerUserId) {
-          await createNotification(updated.ownerUserId, "deliverable.qc_approved",
-            `QC Approved: ${updated.title}`, `Deliverable "${updated.title}" has been QC approved`,
-            { projectName: updated.projectName, linkedDeliverableId: id });
-        }
       }
 
 
@@ -2371,12 +2276,6 @@ export function registerEngineeringRoutes(app: Express) {
         feedbackText,
         actorUserId: getUser(req).id,
       });
-
-      if (updated?.ownerUserId) {
-        await createNotification(updated.ownerUserId, "deliverable.feedback_requested",
-          `Feedback on: ${updated.title}`, feedbackText,
-          { projectName: updated.projectName, linkedDeliverableId: id });
-      }
 
       logAuditFromReq(req, { entityType: "deliverable", entityId: String(id), action: "update", projectName: updated?.projectName, changesJson: { description: "Feedback provided", feedbackText } });
       res.json(updated);

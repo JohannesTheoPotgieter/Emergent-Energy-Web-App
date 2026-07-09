@@ -1,5 +1,5 @@
 {
-  "id": "0e8a29b0-b926-4adf-9d8f-c1369357b379",
+  "id": "58a2a9ac-faa9-4f5a-8983-829c762a5764",
   "prevId": "32de85af-0ebb-4d14-981e-7ba948a78ca7",
   "version": "7",
   "dialect": "postgresql",
@@ -20665,28 +20665,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "uq_work_item_project_doc_link": {
-          "name": "uq_work_item_project_doc_link",
-          "columns": [
-            {
-              "expression": "work_item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "project_document_link_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"work_item_document_links\".\"project_document_link_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -31810,7 +31788,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -31996,7 +31974,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "notifications_project_id_project_info_id_fk": {

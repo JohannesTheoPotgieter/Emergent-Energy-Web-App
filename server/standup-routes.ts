@@ -3,7 +3,7 @@ import { db, getDbMode } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, count } from "drizzle-orm";
 import {
   standupSchedules, standupParticipants, standupEntries,
-  users, projectInfo, workItems, workItemStatusHistory, notifications, workItemAssignments,
+  users, projectInfo, workItems, workItemStatusHistory, workItemAssignments,
   priorityProjects, mytoolCompanyPriorities,
   type InsertStandupSchedule, type InsertStandupEntry, type InsertStandupParticipant,
 } from "@shared/schema";
@@ -114,49 +114,6 @@ function isStandupDay(anchorDate: string, cadenceDays: number, checkDate: string
 /** Get today as YYYY-MM-DD */
 function today(): string {
   return new Date().toISOString().split("T")[0];
-}
-
-/** Notify other participants when someone submits a standup or flags a blocker */
-async function notifyStandupParticipants(
-  scheduleId: number,
-  submitter: AppUser,
-  entry: { blockers: string | null; mood: string | null },
-  scheduleName: string,
-) {
-  try {
-    const participants = await db
-      .select({ userId: standupParticipants.userId })
-      .from(standupParticipants)
-      .where(eq(standupParticipants.scheduleId, scheduleId));
-
-    const hasBlocker = entry.blockers && entry.blockers.trim().length > 0;
-    const isBlocked = entry.mood === "blocked" || entry.mood === "struggling";
-
-    // Only notify on blockers/struggling — regular submissions are too noisy
-    if (!hasBlocker && !isBlocked) return;
-
-    const title = hasBlocker
-      ? `Blocker flagged by ${submitter.name}`
-      : `${submitter.name} is ${entry.mood}`;
-    const body = hasBlocker
-      ? `${submitter.name} flagged a blocker in "${scheduleName}": ${entry.blockers!.slice(0, 200)}`
-      : `${submitter.name} reported feeling ${entry.mood} in "${scheduleName}"`;
-
-    const notificationRows = participants
-      .filter((p: any) => p.userId !== submitter.id)
-      .map((p: any) => ({
-        recipientUserId: p.userId,
-        eventType: hasBlocker ? "standup.blocker" : "standup.mood_alert",
-        title,
-        body,
-      }));
-
-    if (notificationRows.length > 0) {
-      await db.insert(notifications).values(notificationRows);
-    }
-  } catch (err) {
-    console.error("[Standup] Failed to send notifications:", err);
-  }
 }
 
 async function ensureStandupV2Table() {
@@ -522,9 +479,6 @@ export function registerStandupRoutes(app: Express) {
         mood: mood || null,
         isLate,
       }).returning();
-
-      // Notify other participants about this submission (async, non-blocking)
-      notifyStandupParticipants(scheduleId, user, entry, schedule[0]?.name || "Standup").catch(() => {});
 
       res.status(201).json(entry);
     } catch (err: unknown) {

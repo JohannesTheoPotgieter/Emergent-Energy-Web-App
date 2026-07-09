@@ -79,7 +79,7 @@ export const TOP_SECTIONS: TopSection[] = [
     label: "Home",
     key: "HOME",
     path: "/",
-    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox", "/priorities"]),
+    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/priorities"]),
     secondary: [
       { label: "My Dashboard", path: "/" },
       // Phase 7B: "My Tasks" removed from secondary nav — surface unified
@@ -89,7 +89,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Priorities", path: "/priorities" },
       { label: "Calendar", path: "/my-work/calendar" },
       { label: "Meetings", path: "/my-work/meetings" },
-      { label: "Inbox", path: "/inbox" },
     ],
   },
   {

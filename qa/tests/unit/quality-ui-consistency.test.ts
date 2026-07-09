@@ -139,16 +139,23 @@ describe("quality component decomposition", () => {
     expect(qualityTab).not.toContain("Active Warning{activeWarnings.length");
   });
 
-  it("QualityTab still contains checklist execution, evidence, and risk questions inline", () => {
+  it("QualityTab renders the extracted execution components + inline item concerns", () => {
     const qualityTab = read("client/src/components/tabs/QualityTab.tsx");
 
-    // These are execution-level concerns that stay in QualityTab
-    expect(qualityTab).toContain("phase-tabs");
+    // Task 3.3: phase tabs, evidence, risk questions and the bulk bar are now
+    // extracted components rendered by QualityTab.
+    expect(qualityTab).toContain("<PhaseTabs");
+    expect(qualityTab).toContain("<EvidencePanel");
+    expect(qualityTab).toContain("<RiskQuestionsPanel");
+    expect(qualityTab).toContain("<BulkBar");
+    // The item row + phase summary stay inline.
     expect(qualityTab).toContain("phase-summary-card");
-    expect(qualityTab).toContain("evidence-dropzone-");
-    expect(qualityTab).toContain("risk-questions-toggle");
     expect(qualityTab).toContain("btn-send-for-approval-");
     expect(qualityTab).toContain("Link Task");
+    // The moved test ids live in the extracted components.
+    expect(read("client/src/components/tabs/quality/PhaseTabs.tsx")).toContain("phase-tabs");
+    expect(read("client/src/components/tabs/quality/EvidencePanel.tsx")).toContain("evidence-dropzone-");
+    expect(read("client/src/components/tabs/quality/RiskQuestionsPanel.tsx")).toContain("risk-questions-toggle");
   });
 
   it("keeps evidence-required approval blocking in place for single and bulk submit", () => {
@@ -156,7 +163,9 @@ describe("quality component decomposition", () => {
 
     expect(qualityTab).toContain("Evidence is required before this item can be submitted for review.");
     expect(qualityTab).toContain("disabled={governance.evidenceMissing}");
-    expect(qualityTab).toContain("data-testid=\"bulk-blocked-reasons\"");
+    // The blocked-reasons banner moved into BulkBar; QualityTab still computes
+    // the reasons and passes them in.
+    expect(read("client/src/components/tabs/quality/BulkBar.tsx")).toContain("data-testid=\"bulk-blocked-reasons\"");
     expect(qualityTab).toContain("Required evidence missing");
   });
 });

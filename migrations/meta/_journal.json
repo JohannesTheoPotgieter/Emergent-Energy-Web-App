@@ -845,8 +845,36 @@
     {
       "idx": 120,
       "version": "7",
-      "when": 1783493318552,
-      "tag": "0120_work_item_project_doc_link_unique",
+      "when": 1783508280640,
+      "tag": "0120_notification_recipient_fk_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1783511851882,
+      "tag": "0121_drop_notification_and_observability_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1783576021599,
+      "tag": "0122_board_finance_targets",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1783578416096,
+      "tag": "0123_bess_hybrid_seven_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1783583845638,
+      "tag": "0124_work_item_project_doc_link_unique",
       "breakpoints": true
     }
   ]

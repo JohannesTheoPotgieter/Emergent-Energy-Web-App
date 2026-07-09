@@ -10,9 +10,12 @@ import {
   selectNextTask,
   selectNextDelivery,
   deliveryRag,
+  isDeliveryOverdue,
   summarizeEngineering,
   summarizeQuality,
   summarizeWorkstream,
+  engineeringWorkstreamFromModule,
+  qualityWorkstreamFromModule,
   computeCriticalPath,
   parsePlanDate,
   startOfDay,
@@ -127,29 +130,65 @@ describe("expectedProgressFromDates", () => {
   });
 });
 
-describe("withComputedExpected", () => {
-  it("replaces expectedPctComplete from the ACTUAL dates (ignoring the stale import)", () => {
+describe("withComputedExpected (live expected % from planned dates)", () => {
+  it("interpolates expected from the PLANNED span mid-task, ignoring the stale import", () => {
+    // Planned start 10 days ago, planned end 10 days out, no actuals → half elapsed.
     const [t] = withComputedExpected(
-      [task({ taskNo: "1", actualStartDate: plusDays(-10), actualEndDate: plusDays(10), expectedPctComplete: 0.99 })],
+      [task({ taskNo: "1", startDate: plusDays(-10), endDate: plusDays(10), expectedPctComplete: 0.99 })],
       TODAY,
     );
-    expect(t.expectedPctComplete).toBeCloseTo(0.5, 5); // not the imported 0.99
+    expect(t.expectedPctComplete).toBeCloseTo(0.5, 5); // live, not the imported 0.99
   });
-  it("ignores planned dates — only the actual timeline drives expected", () => {
-    // Planned dates fully elapsed, but no ACTUAL dates → keep the imported value.
+  it("reads 100% once the planned span has fully elapsed (task still open)", () => {
     const [t] = withComputedExpected(
       [task({ taskNo: "1", startDate: plusDays(-20), endDate: plusDays(-10), expectedPctComplete: 0.42 })],
       TODAY,
     );
-    expect(t.expectedPctComplete).toBe(0.42);
+    expect(t.expectedPctComplete).toBe(1);
   });
-  it("keeps the imported value when the task has no actual dates", () => {
+  it("reads 0% before the planned start", () => {
+    const [t] = withComputedExpected(
+      [task({ taskNo: "1", startDate: plusDays(5), endDate: plusDays(15), expectedPctComplete: 0.42 })],
+      TODAY,
+    );
+    expect(t.expectedPctComplete).toBe(0);
+  });
+  it("is 100% for a complete task (ACT% ≥ 100), whatever its dates", () => {
+    const [t] = withComputedExpected(
+      [task({ taskNo: "1", startDate: plusDays(-10), endDate: plusDays(10), pctComplete: 1, expectedPctComplete: 0.3 })],
+      TODAY,
+    );
+    expect(t.expectedPctComplete).toBe(1);
+  });
+  it("is 100% for a task with an actual-end date (finished), whatever its dates", () => {
+    const [t] = withComputedExpected(
+      [task({ taskNo: "1", startDate: plusDays(-10), endDate: plusDays(10), actualEndDate: plusDays(-1) })],
+      TODAY,
+    );
+    expect(t.expectedPctComplete).toBe(1);
+  });
+  it("uses the actual start only when the planned start is missing", () => {
+    // No planned start, actual start 10 days ago, planned end 10 days out → half.
+    const [t] = withComputedExpected(
+      [task({ taskNo: "1", actualStartDate: plusDays(-10), endDate: plusDays(10) })],
+      TODAY,
+    );
+    expect(t.expectedPctComplete).toBeCloseTo(0.5, 5);
+  });
+  it("keeps the imported value when there are no usable planned dates", () => {
     const [t] = withComputedExpected([task({ taskNo: "1", expectedPctComplete: 0.42 })], TODAY);
     expect(t.expectedPctComplete).toBe(0.42);
   });
+  it("keeps the imported value when the planned end is missing (open, no actual end)", () => {
+    const [t] = withComputedExpected(
+      [task({ taskNo: "1", startDate: plusDays(-5), expectedPctComplete: 0.33 })],
+      TODAY,
+    );
+    expect(t.expectedPctComplete).toBe(0.33);
+  });
   it("does not touch pctComplete (actuals stay verbatim from the import)", () => {
     const [t] = withComputedExpected(
-      [task({ taskNo: "1", actualStartDate: plusDays(-10), actualEndDate: plusDays(10), pctComplete: 0.2 })],
+      [task({ taskNo: "1", startDate: plusDays(-10), endDate: plusDays(10), pctComplete: 0.2 })],
       TODAY,
     );
     expect(t.pctComplete).toBe(0.2);
@@ -183,6 +222,21 @@ describe("deliveryRag", () => {
     expect(deliveryRag(startOfDay(new Date(plusDays(30))), TODAY, false)).toBe("green");
     expect(deliveryRag(startOfDay(new Date(plusDays(-5))), TODAY, true)).toBe("green");
     expect(deliveryRag(null, TODAY, false)).toBeNull();
+  });
+});
+
+describe("isDeliveryOverdue", () => {
+  it("is overdue when open and the anchor date is strictly before today", () => {
+    expect(isDeliveryOverdue({ date: plusDays(-1), complete: false }, TODAY)).toBe(true);
+  });
+  it("is NOT overdue on the due date itself (matches server diffDays < 0)", () => {
+    expect(isDeliveryOverdue({ date: iso(TODAY), complete: false }, TODAY)).toBe(false);
+  });
+  it("is NOT overdue when complete, even if past due", () => {
+    expect(isDeliveryOverdue({ date: plusDays(-5), complete: true }, TODAY)).toBe(false);
+  });
+  it("is NOT overdue when there is no anchor date", () => {
+    expect(isDeliveryOverdue({ date: null, complete: false }, TODAY)).toBe(false);
   });
 });
 
@@ -280,6 +334,39 @@ describe("summarizeWorkstream", () => {
   it("derives the RAG from schedule variance (behind plan → red)", () => {
     const s = summarizeWorkstream([task({ taskNo: "1", pctComplete: 10, expectedPctComplete: 90 })]);
     expect(s.rag).toBe("red");
+  });
+});
+
+describe("engineeringWorkstreamFromModule (real Eng module → board WorkstreamSummary)", () => {
+  const stage = (status: string): EngStageRow => ({ projectId: 1, status });
+  it("maps stage counts + green RAG when all complete", () => {
+    const s = engineeringWorkstreamFromModule([stage("complete"), stage("complete")], 0);
+    expect(s.hasPlan).toBe(true);
+    expect(s.total).toBe(2);
+    expect(s.complete).toBe(2);
+    expect(s.rag).toBe("green");
+  });
+  it("is red when a stage is blocked", () => {
+    expect(engineeringWorkstreamFromModule([stage("blocked"), stage("in_progress")], 4).rag).toBe("red");
+  });
+  it("has data (hasPlan) when there are open tasks but no stages", () => {
+    const s = engineeringWorkstreamFromModule([], 3);
+    expect(s.hasPlan).toBe(true);
+    expect(s.total).toBe(0);
+  });
+});
+
+describe("qualityWorkstreamFromModule (real Quality module → board WorkstreamSummary)", () => {
+  const snag = (severity: string, status = "open"): SnagRow => ({ projectId: 1, severity, status, dueDate: null });
+  it("shows closed/total as complete/total and reads red on an open critical", () => {
+    const s = qualityWorkstreamFromModule([snag("critical"), snag("minor", "closed")], true, TODAY);
+    expect(s.total).toBe(2);
+    expect(s.complete).toBe(1); // the closed one
+    expect(s.rag).toBe("red");
+    expect(s.hasPlan).toBe(true);
+  });
+  it("has data (hasPlan) from a QCP link even with no snags", () => {
+    expect(qualityWorkstreamFromModule([], true, TODAY).hasPlan).toBe(true);
   });
 });
 

@@ -23,8 +23,6 @@ import {
   projectInfo,
   users,
   workItems,
-  notifications,
-  projectTeamMembers,
 } from "@shared/schema";
 import {
   RELEASED_FOR_STATES,
@@ -1294,36 +1292,6 @@ export function registerEngStageRoutes(app: Express) {
         action: "COMPLETE_ENG_STAGE",
         changesJson: { stageName: stage.templateName, projectId: stage.projectId },
       });
-
-      // Notify project team members + PM about stage completion
-      try {
-        const [stageProject] = await db.select({ projectId: projectEngStages.projectId })
-          .from(projectEngStages).where(eq(projectEngStages.id, stageId));
-        if (stageProject) {
-          const teamMembers = await db.select({ userId: projectTeamMembers.userId })
-            .from(projectTeamMembers)
-            .where(eq(projectTeamMembers.projectId, stageProject.projectId));
-          // Also fetch the project PM to ensure they're notified even if not a team member
-          const [proj] = await db.select({ pmUserId: projectInfo.pmUserId })
-            .from(projectInfo).where(eq(projectInfo.id, stageProject.projectId));
-          const recipientIds = new Set(teamMembers.map((m: any) => m.userId).filter(Boolean));
-          if (proj?.pmUserId) recipientIds.add(proj.pmUserId);
-
-          const currentUser = getUser(req);
-          for (const userId of recipientIds) {
-            if (userId !== currentUser.id) {
-              await db.insert(notifications).values({
-                recipientUserId: userId,
-                eventType: "stage.completed",
-                title: `Stage completed: ${stage.templateName}`,
-                body: `Engineering stage "${stage.templateName}" has been marked complete.`,
-                projectId: stageProject.projectId,
-                linkedTaskId: null,
-              }).catch(() => {});
-            }
-          }
-        }
-      } catch (_) { /* notification is best-effort */ }
 
       // If this is the Handover Pack stage, log commissioning unlock
       if (stage.templateName && /handover\s*pack/i.test(stage.templateName)) {

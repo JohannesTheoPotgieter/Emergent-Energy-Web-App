@@ -23,7 +23,9 @@ const TODAY = new Date("2026-06-24T00:00:00Z");
 
 beforeEach(() => {
   vi.clearAllMocks();
-  repo.getActiveProjects.mockResolvedValue([{ id: 1, projectName: "Coega BESS" }]);
+  // Phase must be inside the board universe (Financial-Close-forward) or the
+  // program lists filter the project out (they now match the board's set).
+  repo.getActiveProjects.mockResolvedValue([{ id: 1, projectName: "Coega BESS", phase: "Construction" }]);
   repo.getDeliveryMilestonesForProjects.mockResolvedValue([]);
   repo.getPlanTasksForProjects.mockResolvedValue(new Map());
 });

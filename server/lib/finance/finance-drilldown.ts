@@ -16,7 +16,8 @@
  *
  * The invariant that `sum(children) == parent` at every level therefore
  * holds by construction: a parent's totals are the sum of the same leaves
- * its children partition. The golden-fixture test asserts this within R1.
+ * its children partition. `findSumViolations` (below) self-checks this within
+ * R1 on the read path.
  */
 
 /** Bucket as emitted by the canonical repository (plus the legacy
@@ -27,8 +28,7 @@ export type DrillBucket = "planned" | "committed" | "unrealised" | "realised";
 /**
  * Minimal per-line shape the tree builder needs. The canonical
  * `FinanceLine` is structurally assignable to this, so the route passes
- * `FinanceLine[]` straight through and the golden test feeds fixture-derived
- * leaves — neither recomputes anything.
+ * `FinanceLine[]` straight through — the builder never recomputes anything.
  */
 export interface DrillLineInput {
   lineId: number;
@@ -220,8 +220,8 @@ export interface BuildTreeOptions {
   projectLabels?: Map<number, string>;
   /**
    * When true the tree includes the invoice leaves under each category.
-   * The /tree endpoint leaves this false (lazy leaves via /invoices); the
-   * golden invariant test sets it true so it can assert leaf ties.
+   * The /tree endpoint leaves this false (lazy leaves via /invoices);
+   * callers that assert leaf ties set it true.
    */
   includeInvoices?: boolean;
 }
@@ -337,7 +337,7 @@ function buildMonthNode(
  * fyStart/fyEnd filter on the invoice-raised date). The FY node is the root;
  * its totals equal the sum across all lines, and each descendant level
  * partitions the same leaves — so `sum(children) === parent` holds at every
- * level (asserted by the golden test within R1).
+ * level (self-checked by `findSumViolations` within R1).
  */
 export function buildRevCosGpTree(
   lines: readonly DrillLineInput[],
@@ -359,9 +359,9 @@ export function buildRevCosGpTree(
 
 /**
  * Recursively assert `sum(children) === parent` within `tol` for every
- * aggregate node. Returns the list of violations (empty = clean). Used both
- * by the golden test and as a defensive read-path self-check on the
- * endpoint (logged, never thrown — § 0A: the app records, it does not block).
+ * aggregate node. Returns the list of violations (empty = clean). Used as a
+ * defensive read-path self-check on the endpoint (logged, never thrown —
+ * § 0A: the app records, it does not block).
  */
 export interface SumViolation {
   level: DrillLevel;

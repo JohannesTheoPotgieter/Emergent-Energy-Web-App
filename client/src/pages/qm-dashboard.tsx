@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,7 @@ import {
   User,
   XCircle,
   Trash2,
+  Download,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ActionBar } from "@/components/guidance/ActionBar";
@@ -65,23 +66,12 @@ import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { NcrLegacyDeepLinkBanner } from "@/components/quality/NcrLegacyDeepLinkBanner";
+import { NcrDrawer, NcrCreateDialog } from "@/components/quality/NcrDrawer";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { ConfirmDestructive, type ImpactRow } from "@/components/ui/confirm-destructive";
 import { usePermission } from "@/hooks/use-permissions";
 import { useAuth } from "@/hooks/use-auth";
-
-async function qFetch(url: string, options?: RequestInit) {
-  const token = localStorage.getItem('auth_token');
-  const headers: Record<string, string> = { ...(options?.headers as Record<string, string> || {}) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (options?.body) headers["Content-Type"] = "application/json";
-  const res = await fetch(url, { ...options, headers, credentials: "include" });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Failed to fetch (${res.status})${text ? `: ${text.slice(0, 160)}` : ""}`);
-  }
-  return res.json();
-}
+import { qFetch } from "@/lib/quality-ui-helpers";
 
 interface ChecklistPhase {
   phaseId: number;
@@ -166,6 +156,13 @@ interface NcrListItem {
   assigneeName: string | null;
 }
 
+interface NcrAnalytics {
+  aging: { "0-7": number; "8-30": number; "30+": number; total: number };
+  trend: Array<{ month: string; total: number; byStatus: Record<string, number>; bySeverity: Record<string, number> }>;
+  byStatus: Record<string, number>;
+  bySeverity: Record<string, number>;
+}
+
 interface QualityDashboardSummary {
   totalChecklists: number;
   pendingApprovals: number;
@@ -237,13 +234,21 @@ function SortHeader({ label, sortKey, currentSort, currentDir, onSort, className
 export default function QmDashboardPage() {
   const { enabled: microWalkthroughEnabled } = useRolloutFlag("micro_walkthrough");
   const [, setLocation] = useLocation();
+  // Task 1.1: the ?ncr=<id> deep link (set by a row click) opens the NCR
+  // drawer reactively. Closing it clears the param.
+  const ncrSearch = useSearch();
+  const ncrDrawerId = (() => {
+    const raw = new URLSearchParams(ncrSearch).get("ncr");
+    return raw && /^\d+$/.test(raw) ? Number(raw) : null;
+  })();
+  const [ncrCreateOpen, setNcrCreateOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("project") || "";
   });
   const [projectSort, setProjectSort] = useState<ProjectSortKey>("name");
   const [projectSortDir, setProjectSortDir] = useState<ProjectSortDir>("asc");
-  const [statusFilter, setStatusFilter] = useState<"active">("active");
+  const [statusFilter, setStatusFilter] = useState<"active" | "completed" | "all">("active");
   const [warningFilter, setWarningFilter] = useState(false);
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null);
   const [warningsExpanded, setWarningsExpanded] = useState(false);
@@ -306,6 +311,42 @@ export default function QmDashboardPage() {
     retry: 1,
   });
 
+  // NCR analytics — aging buckets + status/severity trend (Task 1.2).
+  // Source: GET /api/quality/ncrs/analytics (server/quality-ncr-routes.ts).
+  const { data: ncrAnalytics } = useQuery<NcrAnalytics>({
+    queryKey: ["quality-ncrs", "analytics"],
+    queryFn: () => qFetch("/api/quality/ncrs/analytics"),
+    staleTime: 30_000,
+  });
+
+  // Export the NCR register as CSV. qFetch parses JSON, so fetch the raw blob
+  // with the auth header here and trigger a browser download.
+  const [ncrExporting, setNcrExporting] = useState(false);
+  const exportNcrRegister = async () => {
+    setNcrExporting(true);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch("/api/quality/ncrs/export", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ncr-register.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({ title: "Export failed", description: err instanceof Error ? err.message : "Could not export the NCR register.", variant: "destructive" });
+    } finally {
+      setNcrExporting(false);
+    }
+  };
+
   // Consolidated quality items for governance overview
   const { data: allQualityItems = [] } = useQuery<any[]>({
     queryKey: ["quality-all-items"],
@@ -338,8 +379,11 @@ export default function QmDashboardPage() {
 
 
   const startQmMutation = useMutation<ProjectChecklistResponse, Error, string>({
+    // Task 0.6: starting a quality process is a create, not a read. POST to the
+    // idempotent create/sync endpoint (returns the existing checklist if one is
+    // already there) rather than a GET that used to write.
     mutationFn: (projectName: string) =>
-      qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/checklist`),
+      qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/checklist`, { method: "POST" }),
     onSuccess: (data, projectName) => {
       queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
       const resolvedProjectName = data?.checklist?.projectName || projectName;
@@ -526,6 +570,8 @@ export default function QmDashboardPage() {
       (c.projectName || "").toLowerCase().includes(searchTerm.toLowerCase())
     );
     if (statusFilter === "active") list = list.filter(c => c.status === "active");
+    else if (statusFilter === "completed") list = list.filter(c => c.status !== "active");
+    // "all" → no status filter
     if (warningFilter) list = list.filter(c => getProjectWarnings(c) > 0);
 
     list.sort((a, b) => {
@@ -611,6 +657,18 @@ export default function QmDashboardPage() {
         )}
       />
       <NcrLegacyDeepLinkBanner />
+      <NcrDrawer
+        ncrId={ncrDrawerId}
+        open={ncrDrawerId !== null}
+        onOpenChange={(o) => { if (!o) setLocation("/quality"); }}
+      />
+      <NcrCreateDialog
+        open={ncrCreateOpen}
+        onOpenChange={setNcrCreateOpen}
+        projects={checklists
+          .filter((c) => typeof c.projectId === "number")
+          .map((c) => ({ projectId: c.projectId as number, projectName: c.projectName }))}
+      />
 
       {microWalkthroughEnabled ? <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} /> : null}
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
@@ -688,7 +746,42 @@ export default function QmDashboardPage() {
                 {openNcrs.length}
               </Badge>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto h-7 gap-1.5 text-xs"
+              onClick={() => setNcrCreateOpen(true)}
+              data-testid="btn-new-ncr"
+            >
+              <Plus className="h-3.5 w-3.5" /> New NCR
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
+              onClick={exportNcrRegister}
+              disabled={ncrExporting}
+              data-testid="btn-export-ncrs"
+            >
+              {ncrExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              Export
+            </Button>
           </CardTitle>
+          {/* Aging tiles (Task 1.2) — non-terminal NCRs bucketed by age. */}
+          {ncrAnalytics?.aging && ncrAnalytics.aging.total > 0 && (
+            <div className="grid grid-cols-3 gap-2 mt-3" data-testid="qm-ncr-aging">
+              {([
+                { key: "0-7", label: "0–7 days", tone: "text-emerald-600" },
+                { key: "8-30", label: "8–30 days", tone: "text-amber-600" },
+                { key: "30+", label: "30+ days", tone: "text-status-adverse" },
+              ] as const).map((b) => (
+                <div key={b.key} className="rounded-lg border bg-background px-3 py-2 text-center" data-testid={`qm-ncr-aging-${b.key}`}>
+                  <p className={`text-lg font-semibold ${b.tone}`}>{ncrAnalytics.aging[b.key]}</p>
+                  <p className="text-[11px] text-muted-foreground">{b.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </CardHeader>
         <CardContent className="pt-0">
           {ncrsLoading ? (
@@ -931,6 +1024,8 @@ export default function QmDashboardPage() {
                     data-testid="select-status-filter"
                     options={[
                       { value: "active", label: "Active" },
+                      { value: "completed", label: "Completed" },
+                      { value: "all", label: "All" },
                     ]}
                   />
                   <Popover>
@@ -1539,8 +1634,9 @@ function buildDeleteImpact(checklist: Checklist): ImpactRow[] {
     { label: "Warnings (all statuses)", count: warnings, severity: warnings > 0 ? "medium" : "low" },
     {
       label: "Evidence uploads, plan links, risk answers, post-mortem",
-      count: 1,
-      note: "all wiped",
+      // Count is genuinely unknown from the dashboard list response — show "—"
+      // rather than a misleading "1". The server transaction cascades them.
+      note: "all related records wiped",
       severity: "medium",
     },
   ];

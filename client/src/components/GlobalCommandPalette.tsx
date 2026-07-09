@@ -6,7 +6,7 @@ import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { isLiveReadyEnforced, isPageEnabled, isFinanceSearchType } from "@shared/config/enabled-modules";
 import {
-  Navigation, Search, Plus, ArrowRight, Zap,
+  Navigation, Search, Plus, Zap,
   FileText, FolderOpen, Receipt, User, Briefcase, Hash,
 } from "lucide-react";
 import { useRolloutFlag } from "@/hooks/use-rollout-flag";
@@ -249,13 +249,6 @@ export function GlobalCommandPalette() {
             >
               <Zap className="h-4 w-4 mr-2 text-orange-600" />
               Go to My Work
-            </CommandItem>
-            <CommandItem
-              value="action view notifications inbox"
-              onSelect={() => handleSelect("/inbox", "Inbox")}
-            >
-              <ArrowRight className="h-4 w-4 mr-2 text-blue-600" />
-              View Inbox
             </CommandItem>
           </CommandGroup>
         )}

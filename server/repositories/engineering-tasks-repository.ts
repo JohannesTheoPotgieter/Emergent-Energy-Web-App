@@ -38,7 +38,6 @@ import {
   type TaskWorkflowMutationSource,
 } from "../lib/task-workflow-guard";
 import { recordAudit } from "../api/v2/services/audit-service";
-import { createNotification } from "../services/notification-service";
 import { listManagedDocumentsByProject, getManagedDocumentById } from "./managed-documents-repository";
 import { getProjectDocumentLink } from "./project-document-register-repository";
 import { isTaskComplete } from "@shared/task-status";
@@ -416,8 +415,8 @@ export async function transitionEngineeringTaskStatus(
     return row;
   });
 
-  // Audit + owner notification are post-commit side effects — error-isolated so
-  // a failed audit/notification never surfaces after the status change committed.
+  // Audit is a post-commit side effect — error-isolated so a failed audit
+  // never surfaces after the status change already committed.
   try {
     await recordAudit({
       userId: actorId,
@@ -426,18 +425,6 @@ export async function transitionEngineeringTaskStatus(
       action: "engineering.task.status_change",
       changesJson: { from: current.status, to: newStatus },
     });
-    if (updated.ownerUserId != null && updated.ownerUserId !== actorId) {
-      await createNotification({
-        recipientUserId: updated.ownerUserId,
-        eventType: "engineering.task.status_changed",
-        title: `Task status: ${updated.title}`,
-        body: `Status changed to "${newStatus}".`,
-        projectId: updated.projectId ?? undefined,
-        linkedTaskId: updated.id,
-        relatedEntityType: "work_item",
-        relatedEntityId: updated.id,
-      });
-    }
   } catch (err) {
     logApiError("engineering.task.status_change.side_effects", err);
   }
@@ -470,7 +457,8 @@ export async function reassignEngineeringTaskOwner(
     .where(and(eq(workItemAssignments.workItemId, taskId), eq(workItemAssignments.role, "OWNER")));
   if (ownerUserId != null) await assignOwner(taskId, ownerUserId);
 
-  // Error-isolated post-commit side effects (audit + notify the new owner).
+  // Error-isolated post-commit side effect (audit only — a failed audit must
+  // not surface after the owner change already committed).
   try {
     await recordAudit({
       userId: actorId,
@@ -479,18 +467,6 @@ export async function reassignEngineeringTaskOwner(
       action: "engineering.task.owner_change",
       changesJson: { from: current.ownerUserId ?? null, to: ownerUserId },
     });
-    if (ownerUserId != null && ownerUserId !== actorId) {
-      await createNotification({
-        recipientUserId: ownerUserId,
-        eventType: "engineering.task.assigned",
-        title: `Assigned to you: ${updated.title}`,
-        body: `You are now the owner of "${updated.title}".`,
-        projectId: updated.projectId ?? undefined,
-        linkedTaskId: updated.id,
-        relatedEntityType: "work_item",
-        relatedEntityId: updated.id,
-      });
-    }
   } catch (err) {
     logApiError("engineering.task.owner_change.side_effects", err);
   }
@@ -893,19 +869,6 @@ export async function createComment(
       .insert(taskCommentMentions)
       .values(uniqueMentions.map((uid) => ({ commentId: comment.id, mentionedUserId: uid })))
       .onConflictDoNothing();
-    for (const uid of uniqueMentions) {
-      if (uid === actorId) continue;
-      await createNotification({
-        recipientUserId: uid,
-        eventType: "engineering.task.comment_mention",
-        title: `You were mentioned on: ${task.title}`,
-        body: body.trim().slice(0, 280),
-        projectId: task.projectId ?? undefined,
-        linkedTaskId: task.id,
-        relatedEntityType: "work_item",
-        relatedEntityId: task.id,
-      });
-    }
   }
 
   await recordAudit({
@@ -955,18 +918,6 @@ export async function addAssignee(
     action: "engineering.task.assignee_add",
     changesJson: { userId, role },
   });
-  if (userId !== actorId) {
-    await createNotification({
-      recipientUserId: userId,
-      eventType: "engineering.task.assigned",
-      title: `Added to task: ${task.title}`,
-      body: `You were added to "${task.title}" as ${role}.`,
-      projectId: task.projectId ?? undefined,
-      linkedTaskId: task.id,
-      relatedEntityType: "work_item",
-      relatedEntityId: task.id,
-    });
-  }
 }
 
 /** Remove a non-owner assignment. The OWNER row is managed via the owner PATCH. */

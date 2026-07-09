@@ -5,7 +5,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and, sql, isNull } from "drizzle-orm";
-import { projectInfo, workItems, workItemAssignments, notifications } from "@shared/schema";
+import { projectInfo, workItems, workItemAssignments } from "@shared/schema";
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";

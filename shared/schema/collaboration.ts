@@ -25,50 +25,6 @@ export const communicationFollowUpStatusEnum = pgEnum('communication_follow_up_s
 export const standupCadenceEnum = pgEnum('standup_cadence', ['DAILY', 'EVERY_2_DAYS', 'EVERY_3_DAYS', 'WEEKLY']);
 export const standupMoodEnum = pgEnum('standup_mood', ['great', 'good', 'okay', 'struggling', 'blocked']);
 
-// ===================== NOTIFICATIONS =====================
-
-export const notifications = pgTable("notifications", {
-  id: serial("id").primaryKey(),
-  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
-  eventType: text("event_type").notNull(),
-  title: text("title").notNull(),
-  body: text("body"),
-  /** @deprecated Denormalized display field. Use projectId FK + join instead. */
-  projectName: text("project_name"),
-  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
-  linkedTaskId: integer("linked_task_id"),
-  linkedDeliverableId: integer("linked_deliverable_id"),
-  linkedWarningId: integer("linked_warning_id"),
-  linkedPlanItemId: integer("linked_plan_item_id"),
-  isRead: boolean("is_read").notNull().default(false),
-  readAt: timestamp("read_at"),
-  requiresConfirmation: boolean("requires_confirmation").notNull().default(false),
-  confirmedByUserId: integer("confirmed_by_user_id"),
-  confirmedAt: timestamp("confirmed_at"),
-  changeDetails: text("change_details"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  recipientReadIdx: index("notifications_recipient_read_idx").on(table.recipientUserId, table.isRead),
-  createdAtIdx: index("notifications_created_at_idx").on(table.createdAt),
-}));
-export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true } as any);
-export type InsertNotification = z.infer<typeof insertNotificationSchema>;
-export type Notification = typeof notifications.$inferSelect;
-
-export const notificationThrottle = pgTable("notification_throttle", {
-  id: serial("id").primaryKey(),
-  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
-  eventType: text("event_type").notNull(),
-  entityType: text("entity_type").notNull(),
-  entityId: integer("entity_id").notNull(),
-  lastSentAt: timestamp("last_sent_at").notNull().defaultNow(),
-}, (table) => ({
-  uniqueThrottle: unique("notification_throttle_recipient_event_entity").on(table.recipientUserId, table.eventType, table.entityType, table.entityId),
-}));
-export const insertNotificationThrottleSchema = createInsertSchema(notificationThrottle).omit({ id: true } as any);
-export type InsertNotificationThrottle = z.infer<typeof insertNotificationThrottleSchema>;
-export type NotificationThrottle = typeof notificationThrottle.$inferSelect;
-
 // ===================== MEETINGS =====================
 
 export const meetingSummaries = pgTable("meeting_summaries", {

@@ -5,8 +5,8 @@
  * seam routing is a self-contained concern. A seam handoff is a tracked ENG
  * `work_items` row owned by the role-routed recipient (SSEG Manager /
  * Construction Manager), with a status-history row, an OWNER assignment, a
- * dependency back-link to the originating task, a notification, and an audit
- * event. Reuses canonical tables — no parallel handoff entity.
+ * dependency back-link to the originating task, and an audit event. Reuses
+ * canonical tables — no parallel handoff entity.
  */
 
 import { and, eq, isNull } from "drizzle-orm";
@@ -26,7 +26,6 @@ import {
 import { buildSeamHandoffInsert, buildStatusHistoryInsert } from "../lib/engineering/task-builders";
 import { runInTransaction } from "../lib/drizzle-helpers";
 import { recordAudit } from "../api/v2/services/audit-service";
-import { createNotification } from "../services/notification-service";
 import { UsersRepository } from "./users-repository";
 import { ApiError, notFound, badRequest, logApiError } from "../lib/api-error";
 
@@ -78,9 +77,8 @@ async function resolveSeamRecipient(
  * Create a tracked seam handoff. The recipient is resolved from the seam's role
  * (`resolveSeamRecipient`). The four spine writes (task + OWNER assignment +
  * status history + dependency) run inside ONE transaction, so a mid-write
- * failure leaves no orphan task; the notification + audit are post-commit side
- * effects, error-isolated so a failed notification can't roll back an
- * already-created handoff.
+ * failure leaves no orphan task; the audit is a post-commit side effect,
+ * error-isolated so a failed audit can't roll back an already-created handoff.
  */
 export async function createSeamHandoff(
   input: {
@@ -143,22 +141,8 @@ export async function createSeamHandoff(
     return created;
   });
 
-  // Post-commit side effects — a failed notification/audit must NOT roll back
-  // the committed handoff.
-  try {
-    await createNotification({
-      recipientUserId: recipientId,
-      eventType: "engineering.seam.assigned",
-      title: `Handoff to you: ${row.title}`,
-      body: input.note ?? `A ${input.seamType} item was handed to you.`,
-      projectId: row.projectId ?? undefined,
-      linkedTaskId: row.id,
-      relatedEntityType: "work_item",
-      relatedEntityId: row.id,
-    });
-  } catch (err) {
-    logApiError("engineering.seam.notify", err);
-  }
+  // Post-commit side effect — a failed audit must NOT roll back the committed
+  // handoff.
   try {
     await recordAudit({
       userId: actorId,
