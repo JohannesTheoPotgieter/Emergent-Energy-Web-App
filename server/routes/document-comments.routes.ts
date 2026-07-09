@@ -35,7 +35,6 @@ import {
   searchUsersForMentionPicker,
 } from "../repositories/document-comments-repository";
 import { recordActivity } from "../repositories/document-activity-repository";
-import { createNotification } from "../services/notification-service";
 
 const documentIdSchema = z.coerce.number().int().positive();
 const commentIdSchema = z.coerce.number().int().positive();
@@ -186,17 +185,6 @@ export function registerDocumentCommentsRoutes(app: Express): void {
           action: "comment",
           metadata: { mentions: mentionedUserIds.length },
         });
-        for (const mentionedId of mentionedUserIds) {
-          if (mentionedId === user.id) continue;
-          await createNotification({
-            recipientUserId: mentionedId,
-            eventType: "document.mention",
-            title: `${user.name} mentioned you on "${tracked.name}"`,
-            body: body.body.slice(0, 280),
-            relatedEntityType: "managed_document",
-            relatedEntityId: tracked.id,
-          });
-        }
         res.status(201).json({ comment, mentionedUserIds });
       } catch (err) {
         if (err instanceof ApiError) throw err;

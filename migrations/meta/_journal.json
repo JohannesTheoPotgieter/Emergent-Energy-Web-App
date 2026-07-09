@@ -845,8 +845,15 @@
     {
       "idx": 120,
       "version": "7",
-      "when": 1783509565452,
-      "tag": "0120_board_finance_targets",
+      "when": 1783508280640,
+      "tag": "0120_notification_recipient_fk_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1783511851882,
+      "tag": "0121_drop_notification_and_observability_tables",
       "breakpoints": true
     }
   ]

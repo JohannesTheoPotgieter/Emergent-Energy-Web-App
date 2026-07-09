@@ -1,23 +1,13 @@
 /**
- * fye_tracking.spec — FYE Tracking reconciliation & methodology test.
+ * fye_tracking.spec — FYE Tracking methodology test.
  *
- * This is the deliverable gate for the FYE Tracking tab. It has two layers:
- *
- *   1. METHODOLOGY (always runs, no DB): proves the calc rules on synthetic
- *      fixtures — the 4-state classification (incl. the hard prerequisite that
- *      a RED and a BLACK invoice-date row classify differently), the
- *      configurable exclusion list (incl. the namesake survivors), the stale-
- *      copy de-dup rule, the 4-state ↔ Budget partition identity, the amber
- *      COS-no-revenue flag, the NON_STANDARD_TEMPLATE exclusion, the FY window,
- *      and Plan-ahead continuity.
- *
- *   2. LIVE RECON (opt-in via FYE_RECON_LIVE + a DB holding the snapshot):
- *      recomputes the tab from the raw imported lines and asserts the Excel
- *      figures for the same snapshot — state totals, YTD/May, project count
- *      (48), the Superspar de-dup, and the amber flags. Skipped unless
- *      FYE_RECON_LIVE is set, so it never runs against CI's empty DB (the
- *      figures move with the data — asserted against the live snapshot, never
- *      a cached total).
+ * This is the deliverable gate for the FYE Tracking tab. METHODOLOGY (always
+ * runs, no DB): proves the calc rules on synthetic fixtures — the 4-state
+ * classification (incl. the hard prerequisite that a RED and a BLACK
+ * invoice-date row classify differently), the configurable exclusion list
+ * (incl. the namesake survivors), the stale-copy de-dup rule, the 4-state ↔
+ * Budget partition identity, the amber COS-no-revenue flag, the
+ * NON_STANDARD_TEMPLATE exclusion, the FY window, and Plan-ahead continuity.
  */
 
 import { describe, it, expect } from "vitest";
@@ -405,73 +395,5 @@ describe("View B — dashboard (Revised Budget / Actual / Plan-ahead)", () => {
     expect(gpApr.actual).toBe(130 - 100); // realised GP for Apr
     const gpJun = d.gp.monthly.find((m) => m.monthKey === "2026-06")!;
     expect(gpJun.planAhead).toBe(70 - 50); // pipeline GP for Jun
-  });
-});
-
-/**
- * LIVE RECONCILIATION — opt-in. Runs ONLY when `FYE_RECON_LIVE` is set AND a DB
- * holding the 3-Jun-2026 snapshot is reachable (DATABASE_URL). It recomputes
- * the tab from the raw imported lines and asserts the Excel figures for that
- * snapshot. It is gated on a dedicated flag (not merely DATABASE_URL) so it
- * never runs in normal CI — CI provides an empty Postgres service that has no
- * snapshot to reconcile against. The service is imported dynamically so the
- * methodology tests above never load the DB layer.
- *
- *   FYE_RECON_LIVE=1 DATABASE_URL=… npm run test -- qa/tests/unit/fye_tracking.spec.ts
- */
-describe.skipIf(!process.env.FYE_RECON_LIVE)("Live snapshot reconciliation (FYE_RECON_LIVE)", () => {
-  // Tolerance: "within rounding" — tight enough to catch a misclassified line
-  // (which would shift a bucket by far more), loose enough for cent-level FP.
-  const close = (actual: number, expected: number, label: string) => {
-    const tol = Math.max(1, Math.abs(expected) * 0.0005); // R1 or 0.05%
-    const delta = Math.abs(actual - expected);
-    expect(
-      delta <= tol,
-      `${label}: got ${actual.toLocaleString()} expected ~${expected.toLocaleString()} (Δ ${delta.toLocaleString()}, tol ${tol.toFixed(0)})`,
-    ).toBe(true);
-  };
-
-  it("reproduces the FY26 state totals, YTD/May Realised, project count (48), de-dup and amber flags", async () => {
-    const { buildFyeTracking } = await import("../../../server/lib/finance/fye-tracking/service");
-    const { extractReconMetrics, FY26_EXCEL_BASELINE: base } = await import(
-      "../../../server/lib/finance/fye-tracking/recon"
-    );
-    const result = await buildFyeTracking(2026, {}, new Date("2026-06-03T12:00:00Z"));
-    const m = extractReconMetrics(result, "2026-05");
-
-    // eslint-disable-next-line no-console
-    console.table({
-      Realised: m.states.realised,
-      Committed: m.states.committed,
-      Planned: m.states.planned,
-      Unrealised: m.states.unrealised,
-      Budget: m.states.budget,
-    });
-
-    // 4-state totals.
-    for (const s of ["realised", "committed", "planned", "unrealised", "budget"] as const) {
-      close(m.states[s].revenue, base.states[s].revenue, `${s} revenue`);
-      close(m.states[s].cos, base.states[s].cos, `${s} cos`);
-    }
-    // YTD Realised + margin.
-    close(m.ytdRealised.revenue, base.ytdRealised.revenue, "YTD realised revenue");
-    close(m.ytdRealised.cos, base.ytdRealised.cos, "YTD realised cos");
-    close(m.ytdRealised.gp, base.ytdRealised.gp, "YTD realised gp");
-    expect(Math.abs((m.ytdRealised.marginPct ?? 0) - base.ytdRealised.marginPct)).toBeLessThan(0.005);
-    // May Realised.
-    close(m.monthRealised.revenue, base.mayRealised.revenue, "May realised revenue");
-    close(m.monthRealised.cos, base.mayRealised.cos, "May realised cos");
-    // Project count, Superspar de-dup.
-    expect(m.projectCount).toBe(base.projectCount); // 48
-    expect(m.supersparDespatchDuplicateCount).toBe(0);
-    expect(m.supersparLiveCount).toBeGreaterThanOrEqual(1);
-    // Amber COS-no-revenue flags present (names matched case-insensitively).
-    const amberNorm = m.amberProjects.map((n) => n.toLowerCase());
-    for (const name of base.amberProjects) {
-      expect(
-        amberNorm.some((a) => a.includes(name.toLowerCase()) || name.toLowerCase().includes(a)),
-        `expected an amber COS-no-revenue flag for "${name}" (got: ${m.amberProjects.join(", ")})`,
-      ).toBe(true);
-    }
   });
 });

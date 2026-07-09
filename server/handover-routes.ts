@@ -4,14 +4,13 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, desc, sql, and, inArray, isNull, ilike } from "drizzle-orm";
-import { projectInfo, projectPhaseHistory, users, projectExecutionState, projectPdPmHandover, projectHandoverHistory, clients, evidenceOverrideRecords, lessonsLearnt, handoverStakeholders, projectSettings } from "@shared/schema";
+import { projectInfo, projectPhaseHistory, projectExecutionState, projectPdPmHandover, projectHandoverHistory, clients, evidenceOverrideRecords, lessonsLearnt, handoverStakeholders, projectSettings } from "@shared/schema";
 import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { logAuditFromReq } from "./audit-logger";
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
 import { storage } from "./storage";
 import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
 import { requirePermission } from "./permission-middleware";
-import { notifyHandoverSubmitted, notifyHandoverAccepted, notifyHandoverRejected } from "./services/notification-service";
 import { PM_REVIEW_ROLES } from "@shared/roles/pd-roles";
 import { findEntityRegistry } from "@shared/permissions/registry";
 import { evaluateHandoverAcceptDecision } from "./lib/handover-accept-override-eval";
@@ -848,17 +847,6 @@ export function registerHandoverRoutes(app: Express) {
         projectName: project.projectName,
         changesJson: { submittedBy: user?.name || "Unknown", readinessStatus: handover.handoverReadinessStatus || null },
       });
-      // Notify PM reviewers
-      try {
-        const pmUsers = await db.select({ id: users.id }).from(users)
-          .where(sql`${(users as any).companyRole ?? users.role} IN ('PROJECT_MANAGER_SITE', 'PROGRAM_MANAGER', 'COO_ADMIN', 'CEO_ADMIN')`);
-        const pmUserIds = pmUsers.map((u: any) => u.id);
-        if (pmUserIds.length > 0) {
-          await notifyHandoverSubmitted(projectId, project.projectName, pmUserIds);
-        }
-      } catch (notifyErr) {
-        console.warn("[handover] notification send failed (non-blocking):", notifyErr);
-      }
 
       // B6: response includes the completeness snapshot so the UI can surface
       // the amber/red badge on the success screen. The submission always
@@ -1042,20 +1030,6 @@ export function registerHandoverRoutes(app: Express) {
             : {}),
         },
       });
-      // Notify PD team about acceptance
-      try {
-        const pdOwnerName = handover.pdOwner;
-        if (pdOwnerName) {
-          const pdOwnerUsers = await db.select({ id: users.id }).from(users)
-            .where(sql`${users.name} = ${pdOwnerName}`);
-          if (pdOwnerUsers.length > 0) {
-            await notifyHandoverAccepted(projectId, project?.projectName || "Unknown", pdOwnerUsers.map((u: any) => u.id));
-          }
-        }
-      } catch (notifyErr) {
-        console.warn("[handover] acceptance notification failed (non-blocking):", notifyErr);
-      }
-
       // B7 (audit closeout): auto-seed the OHSA Safety File items with a
       // 7-day due date from acceptance. Non-blocking — a failure here must
       // not break handover acceptance, so errors are logged and swallowed.
@@ -1142,20 +1116,6 @@ export function registerHandoverRoutes(app: Express) {
         projectName: project?.projectName,
         changesJson: { rejectedBy: user?.name || "Unknown", reason },
       });
-
-      // Notify PD team about rejection
-      try {
-        const pdOwnerName = handover.pdOwner;
-        if (pdOwnerName) {
-          const pdOwnerUsers = await db.select({ id: users.id }).from(users)
-            .where(sql`${users.name} = ${pdOwnerName}`);
-          if (pdOwnerUsers.length > 0) {
-            await notifyHandoverRejected(projectId, project?.projectName || "Unknown", reason, pdOwnerUsers.map((u: any) => u.id));
-          }
-        }
-      } catch (notifyErr) {
-        console.warn("[handover] rejection notification failed (non-blocking):", notifyErr);
-      }
 
       res.json({ success: true, status: "REJECTED" });
     } catch (err: any) {

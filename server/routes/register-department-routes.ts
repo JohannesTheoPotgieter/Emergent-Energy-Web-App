@@ -153,14 +153,6 @@ export async function registerDepartmentRoutes(app: Express) {
     console.error("[Routes] Failed to register sseg-submissions.routes:", err);
   }
 
-  // C5: Notification Triggers
-  try {
-    const { registerNotificationTriggerRoutes } = await import("../departments/notification-trigger-routes");
-    registerNotificationTriggerRoutes(app);
-  } catch (err) {
-    console.error("[Routes] Failed to register notification-trigger-routes:", err);
-  }
-
   // Board Pack PDF
   try {
     const { registerBoardPackRoutes } = await import("../departments/board-pack-routes");

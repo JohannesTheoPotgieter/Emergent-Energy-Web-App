@@ -20,14 +20,21 @@ import { CriticalPathViewer } from "@/components/execution/critical-path";
 import type {
   ProjectDetail, ExecutionReviewItem, ExecItemStatus, InstallerRow, PlanTaskView,
 } from "@/lib/execution-types";
-import { fmtPct, fmtDate, fmtMoney } from "@/lib/execution-types";
+import { fmtPct, fmtDate, fmtMoney, parseExecDate } from "@/lib/execution-types";
 
 const ITEM_STATUSES: ExecItemStatus[] = ["open", "flagged", "actioned", "closed"];
 
+// Overdue on a date-only basis — strictly before today's date, matching the
+// server rule (diffDays(date, today) < 0). Comparing against Date.now() would
+// red the due date itself while the server only reds the day after.
 function isOverdue(dateStr: string | null): boolean {
-  if (!dateStr) return false;
-  const d = new Date(dateStr);
-  return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
+  const d = parseExecDate(dateStr);
+  if (!d) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(d);
+  due.setHours(0, 0, 0, 0);
+  return due.getTime() < today.getTime();
 }
 
 export default function ExecutionReviewDetail() {

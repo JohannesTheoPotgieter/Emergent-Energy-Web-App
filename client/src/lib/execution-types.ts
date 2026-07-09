@@ -1,209 +1,35 @@
-// Client-side shapes for the Execution control tower. Mirror the payloads
-// returned by server/services/execution-board-service.ts (kept in sync by the
-// API tests). Client never imports server code directly.
+// Client-side surface for the Execution control tower. The payload SHAPES are
+// the canonical wire types in @shared/execution-board-types — imported by BOTH
+// the server and this file, so the client cannot drift from the server. This
+// module re-exports them and adds the client-only types + display helpers.
 
-export type Rag = "green" | "amber" | "red" | null;
-
-export interface ScheduleSnapshot {
-  actualPct: number | null;
-  expectedPct: number | null;
-  variance: number | null;
-  rag: Rag;
-  leafCount: number;
-  hasPlan: boolean;
-}
-
-export interface NextTask {
-  taskNo: string | null;
-  taskName: string;
-  date: string | null;
-  isMilestone: boolean;
-}
-
-export interface NextDelivery {
-  label: string;
-  date: string | null;
-  rag: Rag;
-  source: "milestone" | "procurement" | "task";
-  blocker?: string | null;
-}
-
-/**
- * Eng/QA roll-up read from the program plan's ENG / QUALITY workstreams
- * (work_items) — the board's Eng and QA columns reflect the plan until the
- * dedicated Engineering / Quality modules come online.
- */
-export interface WorkstreamSummary {
-  total: number;
-  complete: number;
-  inProgress: number;
-  notStarted: number;
-  actualPct: number | null;
-  expectedPct: number | null;
-  variance: number | null;
-  rag: Rag;
-  hasPlan: boolean;
-}
-
-export interface ItemCounts {
-  open: number;
-  flagged: number;
-  actioned: number;
-  closed: number;
-  total: number;
-}
-
-export interface InstallerSummary {
-  count: number;
-  primary: string | null;
-  list: Array<{ id: number; counterpartyId: number; name: string | null; type: string | null; role: string | null; workPackage: string | null; scopeDescription: string | null }>;
-}
-
-export interface BoardRow {
-  projectId: number;
-  projectName: string;
-  phase: string | null;
-  sizeKwp: string | null;
-  contractValue: string | null;
-  schedule: ScheduleSnapshot & { importedAt: string | null };
-  nextTask: NextTask | null;
-  nextDelivery: NextDelivery | null;
-  /** Per-project overdue-delivery count — used to recompute the Overdue KPI
-   *  for the currently filtered subset. */
-  overdueDeliveryCount: number;
-  installers: InstallerSummary;
-  pmUserId: number | null;
-  pmName: string | null;
-  pdUserId: number | null;
-  pdName: string | null;
-  engineering: WorkstreamSummary;
-  quality: WorkstreamSummary;
-  flags: ItemCounts;
-  // Editable fields for the board's inline editors (PM assign, RAG status,
-  // phase, Edit Project Info). ragStatus is the canonical lifecycle RAG.
-  ragStatus: string | null;
-  constructionStartDate: string | null;
-  commissioningDate: string | null;
-  omHandoverDate: string | null;
-  clientHandoverDate: string | null;
-}
-
-export interface BoardHeader {
-  activeCount: number;
-  behindCount: number;
-  ragRed: number;
-  ragAmber: number;
-  ragGreen: number;
-  weightedActual: number | null;
-  weightedExpected: number | null;
-  openFlags: number;
-  overdueDeliveries: number;
-}
-
-export interface BoardResult {
-  header: BoardHeader;
-  rows: BoardRow[];
-}
-
-export interface PlanTaskView {
-  taskNo: string | null;
-  taskName: string;
-  phase: string | null;
-  parentTaskNo: string | null;
-  isMilestone: boolean;
-  plannedStart: string | null;
-  plannedEnd: string | null;
-  actualStart: string | null;
-  actualEnd: string | null;
-  pctComplete: number | null;
-  expectedPctComplete: number | null;
-  slipDays: number | null;
-  onCriticalPath: boolean;
-  comment: string | null;
-}
-
-export interface CriticalPathTask {
-  taskNo: string;
-  taskName: string;
-  start: string | null;
-  end: string | null;
-  durationDays: number;
-}
-
-export interface CriticalPathResult {
-  criticalTaskNos: string[];
-  chain: CriticalPathTask[];
-  projectStart: string | null;
-  projectFinish: string | null;
-  spanDays: number | null;
-  datedTaskCount: number;
-}
-
-export interface InstallerRow {
-  id: number;
-  projectId: number;
-  counterpartyId: number;
-  counterpartyName: string | null;
-  counterpartyType: string | null;
-  role: string | null;
-  workPackage: string | null;
-  scopeDescription: string | null;
-  status: string;
-}
+export type {
+  Rag,
+  ScheduleSnapshot,
+  NextTask,
+  NextDelivery,
+  WorkstreamSummary,
+  ItemCounts,
+  InstallerSummary,
+  InstallerRow,
+  BoardRow,
+  BoardHeader,
+  BoardResult,
+  PlanTaskView,
+  CriticalPathTask,
+  CriticalPathResult,
+  DeliveryMilestone,
+  ProcurementDelivery,
+  ProjectDetail,
+  UpcomingProgramRow,
+  DeliveryProgramRow,
+  AllocationProgramRow,
+  WorkItemPick,
+} from "@shared/execution-board-types";
 
 /** Allocation role a subcontractor plays on a project — mirrors
  *  SUBCONTRACTOR_ROLES in shared/schema/projects.ts. */
 export const SUBCONTRACTOR_ROLES = ["Installer", "Supplier", "EPC", "Electrical", "Civil", "Logistics", "O&M", "Other"] as const;
-
-export interface DeliveryMilestone {
-  id: number;
-  projectId: number;
-  milestoneName: string;
-  plannedDate: string | null;
-  actualDate: string | null;
-  status: string;
-  blocker: string | null;
-}
-
-export interface ProcurementDelivery {
-  id: number;
-  projectId: number;
-  title: string;
-  status: string;
-  requiredDate: string | null;
-  supplierId: number | null;
-  progressPercent: number | null;
-}
-
-export interface ProjectDetail {
-  project: {
-    id: number;
-    projectName: string;
-    phase: string | null;
-    sizeKwp: string | null;
-    contractValue: string | null;
-    pmUserId: number | null;
-    pmName: string | null;
-    pdUserId: number | null;
-    pdName: string | null;
-    latestUpdate: string | null;
-    latestUpdateBy: string | null;
-    latestUpdateAt: string | null;
-  };
-  schedule: ScheduleSnapshot & { importedAt: string | null; runId: number | null };
-  criticalPath: CriticalPathResult;
-  planTasks: PlanTaskView[];
-  installers: InstallerRow[];
-  deliveries: {
-    milestones: DeliveryMilestone[];
-    procurement: ProcurementDelivery[];
-    tasks: DeliveryProgramRow[];
-    next: NextDelivery | null;
-    overdueCount: number;
-  };
-  engineering: WorkstreamSummary;
-  quality: WorkstreamSummary;
-}
 
 export type ExecItemStatus = "open" | "flagged" | "actioned" | "closed";
 export type ExecItemSeverity = "low" | "medium" | "high" | "critical";
@@ -225,56 +51,6 @@ export interface ExecutionReviewItem {
   createdBy: number | null;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface UpcomingProgramRow {
-  projectId: number;
-  projectName: string;
-  taskNo: string | null;
-  taskName: string;
-  date: string | null;
-  isMilestone: boolean;
-}
-
-export interface DeliveryProgramRow {
-  projectId: number;
-  projectName: string;
-  label: string;
-  date: string | null;
-  rag: Rag;
-  source: "milestone" | "procurement" | "task";
-  overdue: boolean;
-  complete: boolean;
-  // delivery planning (procurement orders only)
-  id?: number;
-  editable?: boolean;
-  linkedWorkItemId?: number | null;
-  neededBy?: string | null;
-  leadTimeDays?: number | null;
-  orderDate?: string | null;
-  orderBy?: string | null;
-  eta?: string | null;
-  willMakeIt?: Rag;
-  taskNo?: string | null;
-  taskTitle?: string | null;
-  isLongLead?: boolean;
-}
-
-export interface WorkItemPick {
-  id: number;
-  taskNo: string | null;
-  title: string;
-  startDate: string | null;
-  endDate: string | null;
-}
-
-export interface AllocationProgramRow {
-  projectId: number;
-  projectName: string;
-  phase: string | null;
-  installers: InstallerSummary;
-  pmName: string | null;
-  pmUserId: number | null;
 }
 
 export interface AssignableUser {

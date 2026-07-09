@@ -47,7 +47,7 @@ The freeze is not "set and forget". The app watches itself and pages the owner:
   tables/columns, finance serves a typed `503` maintenance state instead of
   wrong numbers — `server/bootstrap/schema-verification-runtime.ts` +
   `server/middleware/schema-readiness-gate.ts`.
-- **Weekly integrity guard:** re-runs the golden + cross-surface + reconciliation
+- **Weekly integrity guard:** re-runs the cross-surface + reconciliation
   proofs against production and pages the owner on any drift.
 - **Monthly health digest:** a scheduled summary to the owner — the "is the
   ring-fence still holding?" signal.

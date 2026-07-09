@@ -16,7 +16,6 @@ import { downloadFileContent, detectChanges, downloadSingleFile, getFileMetadata
 import type { ChangeLedger, InsertSnapshot, InsertSnapshotMetric, InsertChangeLedger, InsertSpFile } from "@shared/schema";
 import ExcelJS from "exceljs";
 import { runScheduledImportV2 } from "./services/scheduled-import-v2";
-import { recordFinanceJobRun } from "./services/finance-observability/job-heartbeats";
 
 const PARSER_VERSION = "1.0";
 
@@ -493,7 +492,6 @@ export function startScheduler(): void {
       isRunning = true;
       console.log("[SharePoint] Scheduled import starting...");
 
-      const importStartedAt = new Date();
       const MAX_RETRIES = 3;
       const BACKOFF_BASE_MS = 2000;
       let lastError: any = null;
@@ -533,15 +531,6 @@ export function startScheduler(): void {
       if (lastError) {
         console.error("[SharePoint] Scheduled import error:", lastError.message);
       }
-
-      // Finance dead-man's-switch heartbeat: a scheduled tracker import ran
-      // (the freshest finance source). A dead import scheduler stops beating.
-      await recordFinanceJobRun({
-        jobKey: "tracker-import",
-        status: lastError ? "failure" : "success",
-        startedAt: importStartedAt,
-        error: lastError ? (lastError.message ?? String(lastError)) : null,
-      }).catch(() => {});
     } finally {
       isRunning = false;
     }

@@ -41,7 +41,6 @@ import {
   findMatchingRequirementByDiscipline,
 } from "../repositories/document-approval-requirements-repository";
 import { getDisciplineFolderById } from "../repositories/project-discipline-folders-repository";
-import { createNotification, notifyUsers } from "./notification-service";
 
 // =========================================================================
 // Types returned to route handlers
@@ -272,19 +271,6 @@ export async function requestApproval(input: RequestApprovalInput): Promise<Requ
     .where(eq(managedDocuments.id, managedDocumentId))
     .returning();
 
-  // Fan out notifications to every approver. Best-effort — failures are
-  // logged but don't roll back the approval round.
-  notifyUsers(dedup, {
-    eventType: "managed_document.approval_requested",
-    title: `Approval requested: ${doc.name}`,
-    body: comment ? `“${comment}”` : `Submitted by user #${requestedByUserId}`,
-    projectId: doc.projectId as number,
-    relatedEntityType: MANAGED_DOCUMENT_APPROVAL_TYPE,
-    relatedEntityId: managedDocumentId,
-  }).catch((err) => {
-    console.error("[managed-doc-approvals] notify approvers failed:", err);
-  });
-
   return {
     document: updatedDoc ?? doc,
     requirement,
@@ -355,20 +341,6 @@ export async function recordApproval(input: RecordApprovalInput): Promise<Record
         .where(eq(managedDocuments.id, documentId))
         .returning();
       finalised = true;
-      // Tell the submitter the document is fully approved.
-      if (target.requestedBy) {
-        createNotification({
-          recipientUserId: target.requestedBy,
-          eventType: "managed_document.approved",
-          title: `Approved: ${doc.name}`,
-          body: comment ? `“${comment}”` : "All approvers signed off.",
-          projectId: doc.projectId as number,
-          relatedEntityType: MANAGED_DOCUMENT_APPROVAL_TYPE,
-          relatedEntityId: documentId,
-        }).catch((err) =>
-          console.error("[managed-doc-approvals] notify submitter (approved) failed:", err),
-        );
-      }
       return { approval: decided, document: updated ?? doc, documentFinalised: true };
     }
   } else {
@@ -398,20 +370,6 @@ export async function recordApproval(input: RecordApprovalInput): Promise<Record
       .where(eq(managedDocuments.id, documentId))
       .returning();
     finalised = true;
-    // Any-of-many — first approval wins. Notify the submitter.
-    if (target.requestedBy) {
-      createNotification({
-        recipientUserId: target.requestedBy,
-        eventType: "managed_document.approved",
-        title: `Approved: ${doc.name}`,
-        body: comment ? `“${comment}”` : "Document approved.",
-        projectId: doc.projectId as number,
-        relatedEntityType: MANAGED_DOCUMENT_APPROVAL_TYPE,
-        relatedEntityId: documentId,
-      }).catch((err) =>
-        console.error("[managed-doc-approvals] notify submitter (approved) failed:", err),
-      );
-    }
     return { approval: decided, document: updated ?? doc, documentFinalised: true };
   }
 
@@ -490,20 +448,6 @@ export async function recordRejection(input: RecordRejectionInput): Promise<Reco
       .where(eq(managedDocuments.id, documentId))
       .returning();
     document = updated ?? document;
-    // Notify the submitter so they know the doc bounced and why.
-    if (document?.projectId != null && target.requestedBy) {
-      createNotification({
-        recipientUserId: target.requestedBy,
-        eventType: "managed_document.rejected",
-        title: `Rejected: ${document.name}`,
-        body: reason,
-        projectId: document.projectId,
-        relatedEntityType: MANAGED_DOCUMENT_APPROVAL_TYPE,
-        relatedEntityId: documentId,
-      }).catch((err) =>
-        console.error("[managed-doc-approvals] notify submitter (rejected) failed:", err),
-      );
-    }
   }
 
   return { approval: decided, document, cancelledSiblings };

@@ -78,7 +78,6 @@ const PMOnTheGoProject = lazyWithRetry(() => import("@/pages/pm-on-the-go-projec
 const MyWorkHomePage = lazyWithRetry(() => import("@/pages/my-work-home"));
 const MyWorkTasksPage = lazyWithRetry(() => import("@/pages/my-work-tasks"));
 const MyWorkCalendarPage = lazyWithRetry(() => import("@/pages/my-work-calendar"));
-const InboxPage = lazyWithRetry(() => import("@/pages/inbox"));
 const ApprovalsPage = lazyWithRetry(() => import("@/pages/admin-approvals"));
 const DatabaseMigrationPage = lazyWithRetry(() => import("@/pages/database-migration"));
 const ClientsPage = lazyWithRetry(() => import("@/pages/clients"));
@@ -154,7 +153,6 @@ const FinanceGpCompanyPage = lazyWithRetry(() => import("@/pages/finance-gp-comp
 const FinanceAuditPrepPage = lazyWithRetry(() => import("@/pages/finance-audit-prep"));
 const FinanceQbReconciliationPage = lazyWithRetry(() => import("@/pages/finance-qb-reconciliation"));
 const FinanceHomePage = lazyWithRetry(() => import("@/pages/finance-home"));
-const FinanceHealthPage = lazyWithRetry(() => import("@/pages/finance-health"));
 const FinanceProjectDetailPage = lazyWithRetry(() => import("@/pages/finance-project-detail"));
 const FinanceWeeklyClosePage = lazyWithRetry(() => import("@/pages/finance-weekly-close"));
 // Phase-1 new pages — Engineering Doc Mgmt, Quality Task Board + Doc Mgmt,
@@ -228,7 +226,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   MyWorkHomePage,
   MyWorkCalendarPage,
   MyWorkTasksPage,
-  InboxPage,
   ApprovalsPage,
   DatabaseMigrationPage,
   KpiTraceabilityPage,
@@ -281,7 +278,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   FinanceAuditPrepPage,
   FinanceQbReconciliationPage,
   FinanceHomePage,
-  FinanceHealthPage,
   FinanceProjectDetailPage,
   FinanceWeeklyClosePage,
   AdminBackfillPage,
