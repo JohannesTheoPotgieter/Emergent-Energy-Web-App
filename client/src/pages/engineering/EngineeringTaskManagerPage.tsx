@@ -51,6 +51,7 @@ import {
   ENGINEERING_DELIVERY_TASK_TYPE_TAGS,
   ENGINEERING_SEAM_TASK_TYPE_TAGS,
   ENGINEERING_TASK_TYPE_LABELS,
+  SEAM_RECIPIENT_ROLE_LABEL,
   requiresDocumentLink,
   type EngineeringDeliveryTaskTypeTag,
   type EngineeringSeamTaskTypeTag,
@@ -1087,7 +1088,6 @@ function TaskDrawer({
   );
 
   const [seamType, setSeamType] = useState<EngineeringSeamTaskTypeTag>(ENGINEERING_SEAM_TASK_TYPE_TAGS[0]);
-  const [seamOwner, setSeamOwner] = useState<string>(NONE);
   const [seamNote, setSeamNote] = useState("");
 
   function invalidateDocs() {
@@ -1140,7 +1140,8 @@ function TaskDrawer({
     mutationFn: async () =>
       apiRequest("POST", "/api/engineering/tasks/seam", {
         seamType,
-        toOwnerUserId: Number(seamOwner),
+        // Recipient is role-routed on the server (SSEG Manager / Construction
+        // Manager) — no raw user id is sent.
         title: `${task?.title ?? "Handoff"} — ${seamType === "compliance_input" ? "compliance input" : "construction snag"}`,
         note: seamNote || undefined,
         fromTaskId: taskId,
@@ -1149,7 +1150,6 @@ function TaskDrawer({
     onSuccess: () => {
       toast({ title: "Seam handoff created" });
       setSeamNote("");
-      setSeamOwner(NONE);
       onChanged();
     },
     onError: (e: unknown) =>
@@ -1410,19 +1410,9 @@ function TaskDrawer({
                     ))}
                   </SelectContent>
                 </Select>
-                <Select value={seamOwner} onValueChange={setSeamOwner}>
-                  <SelectTrigger className="h-8">
-                    <SelectValue placeholder="Hand to…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>Hand to…</SelectItem>
-                    {options?.users.map((u) => (
-                      <SelectItem key={u.id} value={String(u.id)}>
-                        {u.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Routed to the <span className="font-medium text-foreground">{SEAM_RECIPIENT_ROLE_LABEL[seamType]}</span>.
+                </p>
                 <Textarea
                   value={seamNote}
                   onChange={(e) => setSeamNote(e.target.value)}
@@ -1433,7 +1423,7 @@ function TaskDrawer({
                   size="sm"
                   variant="outline"
                   className="w-full"
-                  disabled={seamOwner === NONE || seamMutation.isPending}
+                  disabled={seamMutation.isPending}
                   onClick={() => seamMutation.mutate()}
                 >
                   Create handoff

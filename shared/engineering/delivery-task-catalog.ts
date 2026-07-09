@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CompanyRole } from "../schema/users";
 
 /**
  * Controlled vocabulary for Engineering **delivery-scope** task types.
@@ -27,6 +28,24 @@ export const ENGINEERING_SEAM_TASK_TYPE_TAGS = [
   "construction_snag", // ↔ Construction Manager
 ] as const;
 export type EngineeringSeamTaskTypeTag = (typeof ENGINEERING_SEAM_TASK_TYPE_TAGS)[number];
+
+/**
+ * Which company role receives each seam handoff. This is the machine-readable
+ * form of the routing documented on `ENGINEERING_SEAM_TASK_TYPE_TAGS` above:
+ * a `compliance_input` seam is owned by the SSEG lead (Keith / SSEG — SSEG,
+ * NERSA, PTI, grid input), a `construction_snag` by the Construction Manager.
+ * The server resolves the actual user from this role at handoff time.
+ */
+export const SEAM_RECIPIENT_ROLE = {
+  compliance_input: "SSEG_MANAGER",
+  construction_snag: "CONSTRUCTION_MANAGER",
+} as const satisfies Record<EngineeringSeamTaskTypeTag, CompanyRole>;
+
+/** Human label for the seam recipient role — surfaced in the handoff form. */
+export const SEAM_RECIPIENT_ROLE_LABEL: Record<EngineeringSeamTaskTypeTag, string> = {
+  compliance_input: "SSEG Manager",
+  construction_snag: "Construction Manager",
+};
 
 /** Every controlled engineering task type tag (delivery + seam). */
 export const ENGINEERING_TASK_TYPE_TAGS = [

@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { users, type InsertUser, type User } from "@shared/schema";
 import { db } from "../db";
 
@@ -91,5 +91,24 @@ export class UsersRepository {
       })
       .from(users)
       .where(eq(users.role, role));
+  }
+
+  /**
+   * Active (not disabled, not soft-deleted) users holding a role, ordered by id
+   * so callers that need a deterministic single recipient (e.g. seam-handoff
+   * routing) always resolve the same holder. Unlike `listAssignableByRole`,
+   * this filters `isActive` + `deletedAt IS NULL`.
+   */
+  async listActiveByRole(role: string): Promise<AssignableUserRow[]> {
+    return this.dbInstance
+      .select({
+        id: users.id,
+        name: users.name,
+        username: users.username,
+        role: users.role,
+      })
+      .from(users)
+      .where(and(eq(users.role, role), eq(users.isActive, true), isNull(users.deletedAt)))
+      .orderBy(asc(users.id));
   }
 }

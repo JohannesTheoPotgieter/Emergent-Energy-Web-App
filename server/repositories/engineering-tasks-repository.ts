@@ -28,11 +28,9 @@ import {
 import {
   buildEngineeringTaskInsert,
   buildBulkEngineeringTaskInserts,
-  buildSeamHandoffInsert,
   buildStatusHistoryInsert,
   type BuildEngineeringTaskInput,
   type BuildBulkEngineeringTaskInput,
-  type BuildSeamHandoffInput,
 } from "../lib/engineering/task-builders";
 import {
   buildTaskWorkflowContext,
@@ -579,48 +577,10 @@ export async function unlinkDocumentFromTask(taskId: number, linkId: number, act
 }
 
 // ── Seam handoffs ───────────────────────────────────────────────────────────
-
-/**
- * Create a tracked seam handoff: a spine ENG work item owned by the recipient
- * (Keith / Construction Manager), with a due date, a notification, an audit
- * event, an initial status-history row, and a dependency back-link to the
- * originating task. Reuses canonical tables — no parallel handoff entity.
- */
-export async function createSeamHandoff(
-  input: BuildSeamHandoffInput & { fromTaskId?: number | null },
-  actorId: number,
-): Promise<WorkItemRow> {
-  const insert = buildSeamHandoffInsert(input, actorId);
-  const [row] = await db.insert(workItems).values(insert).returning();
-  await assignOwner(row.id, input.toOwnerUserId);
-  await db.insert(workItemStatusHistory).values(buildStatusHistoryInsert(row.id, null, row.status, actorId, "seam handoff created"));
-  if (input.fromTaskId != null) {
-    await db.insert(workItemDependencies).values({
-      predecessorId: input.fromTaskId,
-      successorId: row.id,
-      depType: "FS",
-      source: "MANUAL",
-    });
-  }
-  await createNotification({
-    recipientUserId: input.toOwnerUserId,
-    eventType: "engineering.seam.assigned",
-    title: `Handoff to you: ${row.title}`,
-    body: input.note ?? `A ${input.seamType} item was handed to you.`,
-    projectId: row.projectId ?? undefined,
-    linkedTaskId: row.id,
-    relatedEntityType: "work_item",
-    relatedEntityId: row.id,
-  });
-  await recordAudit({
-    userId: actorId,
-    entityType: "work_item",
-    entityId: String(row.id),
-    action: "engineering.seam.create",
-    changesJson: { seamType: input.seamType, fromTaskId: input.fromTaskId ?? null, toOwnerUserId: input.toOwnerUserId },
-  });
-  return row;
-}
+// Seam routing lives in ./engineering-seam-repository (extracted for the
+// EE-QA-015 file-size ratchet). Re-exported so callers importing the tasks-repo
+// namespace (e.g. the seam route) are unaffected.
+export { createSeamHandoff } from "./engineering-seam-repository";
 
 // ── Subtasks (reuse work_items.parentId) ─────────────────────────────────────
 
