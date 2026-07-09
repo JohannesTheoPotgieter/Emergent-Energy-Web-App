@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
-import { getRiskSeverityColor } from "@/lib/quality-ui-helpers";
+import { getRiskSeverityColor, formatDateOnly } from "@/lib/quality-ui-helpers";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1681,9 +1681,9 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                         {(instance.startDate || instance.endDate) && (
                                           <span className="flex items-center gap-1">
                                             <Clock className="w-3 h-3" />
-                                            {instance.startDate && new Date(instance.startDate).toLocaleDateString()}
+                                            {instance.startDate && formatDateOnly(instance.startDate)}
                                             {instance.startDate && instance.endDate && " -> "}
-                                            {instance.endDate && new Date(instance.endDate).toLocaleDateString()}
+                                            {instance.endDate && formatDateOnly(instance.endDate)}
                                           </span>
                                         )}
                                       </div>

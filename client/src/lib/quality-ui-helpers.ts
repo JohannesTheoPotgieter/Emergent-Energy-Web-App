@@ -21,6 +21,19 @@ export async function qFetch(url: string, options?: RequestInit) {
   return res.json();
 }
 
+/**
+ * Format a date-only value (YYYY-MM-DD or an ISO string) parsed as LOCAL
+ * midnight, so it matches the overdue comparison (which uses local midnight)
+ * and never renders the previous day in a negative-offset timezone.
+ */
+export function formatDateOnly(value: string | null | undefined): string {
+  if (!value) return "";
+  const datePart = String(value).split("T")[0];
+  const [y, m, d] = datePart.split("-").map(Number);
+  if (!y || !m || !d) return new Date(value).toLocaleDateString();
+  return new Date(y, m - 1, d).toLocaleDateString();
+}
+
 /** Canonical severity → badge classes. Distinct per level (high/medium/low). */
 export function getRiskSeverityColor(severity: string): string {
   switch (severity?.toLowerCase()) {
