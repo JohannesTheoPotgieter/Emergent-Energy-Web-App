@@ -204,18 +204,28 @@ const DELIVERY_SCOPE_STAGE_NAMES = new Set(["IFC Planning", "Construction Suppor
 
 export async function seedEngStageTemplates() {
   try {
-    const existing = await db.select({ id: engStageTemplates.id }).from(engStageTemplates).limit(1);
-    if (existing.length > 0) {
-      console.log("[Seed] Engineering stage templates already present, skipping.");
-      return;
-    }
-
+    // Per-stage idempotency (self-repair): each stage is seeded independently
+    // and skipped if it already exists by name, so a re-run after a mid-loop
+    // crash completes the MISSING stages instead of being blocked by an
+    // all-or-nothing top guard. Existence ignores deletedAt so an intentionally
+    // removed stage is never resurrected.
     let seededCount = 0;
     for (const stage of STAGE_DEFS) {
       // Pre-financial-close stages (First Assessment, Cost Proposal) are out of
       // the delivery scope and are not seeded.
       if (!DELIVERY_SCOPE_STAGE_NAMES.has(stage.name)) continue;
+      const [already] = await db
+        .select({ id: engStageTemplates.id })
+        .from(engStageTemplates)
+        .where(eq(engStageTemplates.name, stage.name))
+        .limit(1);
+      if (already) continue;
       seededCount += 1;
+      // NOTE: eng_task_templates are STAGE-CHECKLIST templates — a deliberately
+      // separate notion from the delivery task-type catalog
+      // (shared/engineering/delivery-task-catalog.ts). When instantiated into
+      // work_items they carry a null task_type_tag by design; the catalog
+      // task_type_tag is only for delivery task types (ifc_pack, as_built, …).
       const [template] = await db.insert(engStageTemplates).values({
         name: stage.name,
         purpose: stage.purpose,

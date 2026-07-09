@@ -13,6 +13,12 @@ export type TaskWorkflowMutationSource = "status_update" | "bulk_status_update" 
 // client guard (`client/src/lib/task-workflow-guard.ts`) exactly — previously
 // these were UPPER+space literals that NEVER matched the normalized statuses,
 // silently disabling the approval gate.
+// Completion notion for the GATE only. `next` is always `normalizeStatus`-d
+// before this is consulted, so alias forms ("DONE", "Closed") collapse in. This
+// is intentionally NOT `isTaskComplete` (shared/task-status.ts), which is a
+// strict canonical-only check by design (KPI trust — callers normalize first).
+// The two agree on completedAt because the engineering repo only ever transits
+// canonical `TASK_STATUSES` values, for which both resolve identically.
 const COMPLETE_STATUSES = new Set(["complete", "done", "closed"]);
 const APPROVAL_STATUSES = new Set(["needs_approval", "qc_approved", "provide_feedback", "operational_approval"]);
 

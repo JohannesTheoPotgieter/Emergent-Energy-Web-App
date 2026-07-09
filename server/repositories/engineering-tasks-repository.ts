@@ -42,7 +42,7 @@ import { createNotification } from "../services/notification-service";
 import { listManagedDocumentsByProject, getManagedDocumentById } from "./managed-documents-repository";
 import { getProjectDocumentLink } from "./project-document-register-repository";
 import { isTaskComplete } from "@shared/task-status";
-import { ApiError, conflict, notFound, badRequest } from "../lib/api-error";
+import { ApiError, conflict, notFound, badRequest, logApiError } from "../lib/api-error";
 import { runInTransaction } from "../lib/drizzle-helpers";
 import {
   derivePlanLink,
@@ -317,6 +317,7 @@ async function assignOwner(workItemId: number, userId: number): Promise<void> {
     .onConflictDoNothing();
 }
 
+
 export async function createEngineeringTask(input: BuildEngineeringTaskInput, actorId: number): Promise<WorkItemRow> {
   const insert = buildEngineeringTaskInsert(input, actorId);
   // Atomic: the task, its OWNER assignment, and its first status-history row
@@ -415,26 +416,30 @@ export async function transitionEngineeringTaskStatus(
     return row;
   });
 
-  // Audit + owner notification are post-commit side effects — a failed
-  // notification must not roll back the persisted status change.
-  await recordAudit({
-    userId: actorId,
-    entityType: "work_item",
-    entityId: String(taskId),
-    action: "engineering.task.status_change",
-    changesJson: { from: current.status, to: newStatus },
-  });
-  if (updated.ownerUserId != null && updated.ownerUserId !== actorId) {
-    await createNotification({
-      recipientUserId: updated.ownerUserId,
-      eventType: "engineering.task.status_changed",
-      title: `Task status: ${updated.title}`,
-      body: `Status changed to "${newStatus}".`,
-      projectId: updated.projectId ?? undefined,
-      linkedTaskId: updated.id,
-      relatedEntityType: "work_item",
-      relatedEntityId: updated.id,
+  // Audit + owner notification are post-commit side effects — error-isolated so
+  // a failed audit/notification never surfaces after the status change committed.
+  try {
+    await recordAudit({
+      userId: actorId,
+      entityType: "work_item",
+      entityId: String(taskId),
+      action: "engineering.task.status_change",
+      changesJson: { from: current.status, to: newStatus },
     });
+    if (updated.ownerUserId != null && updated.ownerUserId !== actorId) {
+      await createNotification({
+        recipientUserId: updated.ownerUserId,
+        eventType: "engineering.task.status_changed",
+        title: `Task status: ${updated.title}`,
+        body: `Status changed to "${newStatus}".`,
+        projectId: updated.projectId ?? undefined,
+        linkedTaskId: updated.id,
+        relatedEntityType: "work_item",
+        relatedEntityId: updated.id,
+      });
+    }
+  } catch (err) {
+    logApiError("engineering.task.status_change.side_effects", err);
   }
   return updated;
 }
@@ -465,24 +470,29 @@ export async function reassignEngineeringTaskOwner(
     .where(and(eq(workItemAssignments.workItemId, taskId), eq(workItemAssignments.role, "OWNER")));
   if (ownerUserId != null) await assignOwner(taskId, ownerUserId);
 
-  await recordAudit({
-    userId: actorId,
-    entityType: "work_item",
-    entityId: String(taskId),
-    action: "engineering.task.owner_change",
-    changesJson: { from: current.ownerUserId ?? null, to: ownerUserId },
-  });
-  if (ownerUserId != null && ownerUserId !== actorId) {
-    await createNotification({
-      recipientUserId: ownerUserId,
-      eventType: "engineering.task.assigned",
-      title: `Assigned to you: ${updated.title}`,
-      body: `You are now the owner of "${updated.title}".`,
-      projectId: updated.projectId ?? undefined,
-      linkedTaskId: updated.id,
-      relatedEntityType: "work_item",
-      relatedEntityId: updated.id,
+  // Error-isolated post-commit side effects (audit + notify the new owner).
+  try {
+    await recordAudit({
+      userId: actorId,
+      entityType: "work_item",
+      entityId: String(taskId),
+      action: "engineering.task.owner_change",
+      changesJson: { from: current.ownerUserId ?? null, to: ownerUserId },
     });
+    if (ownerUserId != null && ownerUserId !== actorId) {
+      await createNotification({
+        recipientUserId: ownerUserId,
+        eventType: "engineering.task.assigned",
+        title: `Assigned to you: ${updated.title}`,
+        body: `You are now the owner of "${updated.title}".`,
+        projectId: updated.projectId ?? undefined,
+        linkedTaskId: updated.id,
+        relatedEntityType: "work_item",
+        relatedEntityId: updated.id,
+      });
+    }
+  } catch (err) {
+    logApiError("engineering.task.owner_change.side_effects", err);
   }
   return updated;
 }
