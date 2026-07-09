@@ -2,8 +2,8 @@
 // Execution Board service — program-wide delivery control tower.
 //
 // Composes the batched repository reads into the board + detail payloads.
-// All schedule arithmetic is display-only and read VERBATIM from the latest
-// import run (normalized_plan_tasks); nothing here writes any table.
+// All schedule arithmetic is display-only and read VERBATIM from work_items
+// (the canonical Plan-tab table); nothing here writes any table.
 //
 // Pure threshold/selection logic lives in execution-board-math.ts (db-free,
 // unit-tested). This module is the db-bound orchestration layer.
@@ -12,7 +12,7 @@
 import {
   executionBoardRepository,
   type InstallerRow,
-  type ProcurementDeliveryRow,
+  type ProcurementDeliveryFullRow,
 } from "../repositories/execution-board-repository";
 import {
   executionReviewRepository,
@@ -29,10 +29,13 @@ import {
   computeScheduleSnapshot,
   selectNextTask,
   deliveryRag,
+  isDeliveryOverdue,
   selectNextDelivery,
   summarizeEngineering,
   summarizeQuality,
   summarizeWorkstream,
+  engineeringWorkstreamFromModule,
+  qualityWorkstreamFromModule,
   computeCriticalPath,
   withComputedExpected,
   type PlanTask,
@@ -44,6 +47,31 @@ import {
   type WorkstreamSummary,
   type CriticalPathResult,
 } from "./execution-board-math";
+// Wire payload types shared with the client (single source of truth) — imported
+// for local use and re-exported so `./execution-board-service` consumers keep
+// resolving them.
+import type {
+  InstallerSummary,
+  BoardRow,
+  BoardHeader,
+  BoardResult,
+  PlanTaskView,
+  ProjectDetail,
+  DeliveryProgramRow,
+  UpcomingProgramRow,
+  AllocationProgramRow,
+} from "@shared/execution-board-types";
+export type {
+  InstallerSummary,
+  BoardRow,
+  BoardHeader,
+  BoardResult,
+  PlanTaskView,
+  ProjectDetail,
+  DeliveryProgramRow,
+  UpcomingProgramRow,
+  AllocationProgramRow,
+};
 
 function groupBy<T>(rows: T[], key: (r: T) => number | null | undefined): Map<number, T[]> {
   const out = new Map<number, T[]>();
@@ -59,29 +87,6 @@ function groupBy<T>(rows: T[], key: (r: T) => number | null | undefined): Map<nu
 
 function emptyCounts(): ExecutionItemCounts {
   return { open: 0, flagged: 0, actioned: 0, closed: 0, total: 0 };
-}
-
-/**
- * Fallback Next-delivery from the program plan — the earliest open task whose
- * name mentions "delivery" (the imported tracker's delivery line). Used when a
- * project has no delivery-milestone / procurement record, so the board's
- * Next-delivery column reflects the plan the same way the Deliveries page does.
- */
-function nextDeliveryFromPlan(tasks: PlanTask[], today: Date): NextDelivery | null {
-  let best: { d: Date; raw: string; label: string } | null = null;
-  for (const t of tasks) {
-    if (!t.taskName || !t.taskName.toLowerCase().includes("delivery")) continue;
-    if ((pctTo100(t.pctComplete) ?? 0) >= 100) continue;
-    // A "delivery" is the task's completion, so key off the END date (with the
-    // same actual/planned fallback chain as deliveryTaskRows) — the board's
-    // Next-delivery column and the Deliveries page must agree on the date.
-    const raw = t.endDate ?? t.actualEndDate ?? t.startDate ?? t.actualStartDate ?? null;
-    const d = parsePlanDate(raw);
-    if (!d) continue;
-    if (!best || d < best.d) best = { d, raw: raw as string, label: t.taskName };
-  }
-  if (!best) return null;
-  return { label: best.label, date: best.raw, rag: deliveryRag(best.d, today, false), source: "task" };
 }
 
 /**
@@ -102,57 +107,9 @@ async function safe<T>(p: Promise<T>, fallback: T, label: string): Promise<T> {
 
 // ──────────────────────────────── board ─────────────────────────────────────
 
-export interface InstallerSummary {
-  count: number;
-  primary: string | null;
-  list: Array<{ id: number; counterpartyId: number; name: string | null; type: string | null; role: string | null; workPackage: string | null; scopeDescription: string | null }>;
-}
-
-export interface BoardRow {
-  projectId: number;
-  projectName: string;
-  phase: string | null;
-  sizeKwp: string | null;
-  contractValue: string | null;
-  schedule: ScheduleSnapshot & { importedAt: string | null };
-  nextTask: NextTask | null;
-  nextDelivery: NextDelivery | null;
-  /** Per-project count of overdue deliveries — lets the client recompute the
-   *  Overdue-deliveries KPI for the currently filtered (e.g. by-phase) subset. */
-  overdueDeliveryCount: number;
-  installers: InstallerSummary;
-  pmUserId: number | null;
-  pmName: string | null;
-  pdUserId: number | null;
-  pdName: string | null;
-  engineering: WorkstreamSummary;
-  quality: WorkstreamSummary;
-  flags: ExecutionItemCounts;
-  // Editable fields surfaced for the board's inline editors: RAG status
-  // (canonical lifecycle RAG) + Edit Project Info modal.
-  ragStatus: string | null;
-  constructionStartDate: string | null;
-  commissioningDate: string | null;
-  omHandoverDate: string | null;
-  clientHandoverDate: string | null;
-}
-
-export interface BoardHeader {
-  activeCount: number;
-  behindCount: number;
-  ragRed: number;
-  ragAmber: number;
-  ragGreen: number;
-  weightedActual: number | null;
-  weightedExpected: number | null;
-  openFlags: number;
-  overdueDeliveries: number;
-}
-
-export interface BoardResult {
-  header: BoardHeader;
-  rows: BoardRow[];
-}
+// The board payload types (InstallerSummary / BoardRow / BoardHeader /
+// BoardResult) live in @shared/execution-board-types and are re-exported above.
+// BoardRow.flags is ExecutionItemCounts, structurally the shared ItemCounts.
 
 // The Execution board's UNIVERSE — every project the board can show: canonical
 // phases from Financial Close (display position 3) through Compliance Handover,
@@ -165,7 +122,7 @@ const BOARD_UNIVERSE_PHASE_LABELS = new Set(
     .filter((p) => (p.displayNumber != null && p.displayNumber >= 3) || p.isTerminal)
     .map((p) => p.label),
 );
-function isBoardUniversePhase(phase: string | null): boolean {
+export function isBoardUniversePhase(phase: string | null): boolean {
   if (!phase) return false;
   const label = resolveCanonicalPhase(phase)?.label ?? phase;
   return BOARD_UNIVERSE_PHASE_LABELS.has(label);
@@ -211,17 +168,29 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
     "plan-tasks",
   );
 
-  const [installers, milestones, procurement, itemCounts] =
+  const [installers, milestones, procurement, itemCounts, engStages, openEngCounts, snags, qcSet] =
     await Promise.all([
       safe(executionBoardRepository.getInstallersForProjects(ids), [], "installers"),
       safe(executionBoardRepository.getDeliveryMilestonesForProjects(ids), [], "milestones"),
-      safe(executionBoardRepository.getOpenProcurementForProjects(ids), [], "procurement"),
+      // Full procurement rows (with linked-task dates) so the board builds the
+      // SAME delivery-row model as the program Deliveries list — this read
+      // already excludes soft-deleted orders.
+      safe(executionBoardRepository.getProcurementDeliveriesForProjects(ids), [], "procurement"),
       safe(executionReviewRepository.getCountsByProjects(ids), new Map<number, ExecutionItemCounts>(), "item-counts"),
+      // Real Engineering / Quality module signals for the Eng/QA columns; each
+      // fetch is safe() so a failing domain falls back to the plan rollup rather
+      // than blanking the board.
+      safe(executionBoardRepository.getEngStagesForProjects(ids), [], "eng-stages"),
+      safe(executionBoardRepository.getOpenEngTaskCounts(ids), new Map<number, number>(), "eng-tasks"),
+      safe(executionBoardRepository.getSnagsForProjects(ids), [], "snags"),
+      safe(executionBoardRepository.getQcLinkedProjectIds(ids), new Set<number>(), "qc-links"),
     ]);
 
   const installersByProject = groupBy(installers, (r) => r.projectId);
   const milestonesByProject = groupBy(milestones, (r) => r.projectId);
   const procurementByProject = groupBy(procurement, (r) => r.projectId);
+  const engStagesByProject = groupBy(engStages, (r) => r.projectId);
+  const snagsByProject = groupBy(snags, (r) => r.projectId);
 
   const userIds = active.flatMap((p) => [p.pmUserId, p.pdUserId]).filter((x): x is number => typeof x === "number");
   const userNames = await executionBoardRepository.getUserNamesByIds(userIds);
@@ -231,18 +200,38 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
   let actualSum = 0, expectedSum = 0, planned = 0;
 
   for (const p of active) {
-    // EXP% is computed live from each task's ACTUAL dates (not the stale Excel
-    // "Expected Status" formula cache) — see withComputedExpected.
+    // EXP% is computed live from planned dates (not the stale Excel "Expected
+    // Status" formula cache) — see withComputedExpected / liveExpectedFraction.
     const tasks = withComputedExpected(tasksByProject.get(p.id) ?? [], today);
     const schedule = computeScheduleSnapshot(tasks);
-    const deliveries = selectNextDelivery(milestonesByProject.get(p.id) ?? [], procurementByProject.get(p.id) ?? [], today);
-    // Fall back to a plan task named "delivery" when there's no milestone/procurement record.
-    const planDelivery = deliveries.next ? null : nextDeliveryFromPlan(tasks, today);
-    const nextDelivery = deliveries.next ?? planDelivery;
-    // Eng/QA roll up the plan's ENG / QUALITY workstreams (work_items) — the
-    // dedicated modules aren't built yet, so the plan is the source of truth.
-    const eng = summarizeWorkstream(tasks.filter((t) => t.workstream === "ENG"));
-    const quality = summarizeWorkstream(tasks.filter((t) => t.workstream === "QUALITY"));
+
+    // Deliveries: build the SAME canonical row model as the program Deliveries
+    // list (milestones + procurement + delivery-named plan tasks, deduped), so
+    // the board's Overdue-deliveries KPI equals the list's overdue count. The
+    // Next-delivery column is the earliest still-open row.
+    const deliveryRows = buildDeliveryRows(
+      p.id, p.projectName, milestonesByProject.get(p.id) ?? [], procurementByProject.get(p.id) ?? [], tasks, today,
+    );
+    const rowOverdueDeliveries = deliveryRows.filter((r) => r.overdue).length;
+    const nextRow = deliveryRows.find((r) => !r.complete && r.date != null) ?? null;
+    const nextDelivery: NextDelivery | null = nextRow
+      ? { label: nextRow.label, date: nextRow.date, rag: nextRow.rag, source: nextRow.source }
+      : null;
+
+    // Eng/QA: prefer the real Engineering / Quality module when the project has
+    // data there; otherwise fall back to the plan's ENG / QUALITY workstream
+    // rollup (work_items) so the column is never blank.
+    const engStagesP = engStagesByProject.get(p.id) ?? [];
+    const openEngP = openEngCounts.get(p.id) ?? 0;
+    const eng = engStagesP.length > 0 || openEngP > 0
+      ? engineeringWorkstreamFromModule(engStagesP, openEngP)
+      : summarizeWorkstream(tasks.filter((t) => t.workstream === "ENG"));
+    const snagsP = snagsByProject.get(p.id) ?? [];
+    const hasQcpP = qcSet.has(p.id);
+    const quality = snagsP.length > 0 || hasQcpP
+      ? qualityWorkstreamFromModule(snagsP, hasQcpP, today)
+      : summarizeWorkstream(tasks.filter((t) => t.workstream === "QUALITY"));
+
     const flags = itemCounts.get(p.id) ?? emptyCounts();
 
     if (schedule.rag === "red") ragRed += 1;
@@ -254,7 +243,6 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
       planned += 1;
     }
     openFlags += flags.open + flags.flagged;
-    const rowOverdueDeliveries = deliveries.overdueCount + (planDelivery?.rag === "red" ? 1 : 0);
     overdueDeliveries += rowOverdueDeliveries;
 
     rows.push({
@@ -308,23 +296,6 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
 
 // ──────────────────────────────── detail ────────────────────────────────────
 
-export interface PlanTaskView {
-  taskNo: string | null;
-  taskName: string;
-  phase: string | null;
-  parentTaskNo: string | null;
-  isMilestone: boolean;
-  plannedStart: string | null;
-  plannedEnd: string | null;
-  actualStart: string | null;
-  actualEnd: string | null;
-  pctComplete: number | null;
-  expectedPctComplete: number | null;
-  slipDays: number | null;
-  onCriticalPath: boolean;
-  comment: string | null;
-}
-
 function computeSlip(plannedEnd: string | null, actualEnd: string | null, plannedStart: string | null, actualStart: string | null): number | null {
   const pe = parsePlanDate(plannedEnd);
   const ae = parsePlanDate(actualEnd);
@@ -333,36 +304,6 @@ function computeSlip(plannedEnd: string | null, actualEnd: string | null, planne
   const as = parsePlanDate(actualStart);
   if (ps && as) return diffDays(as, ps);
   return null;
-}
-
-export interface ProjectDetail {
-  project: {
-    id: number;
-    projectName: string;
-    phase: string | null;
-    sizeKwp: string | null;
-    contractValue: string | null;
-    pmUserId: number | null;
-    pmName: string | null;
-    pdUserId: number | null;
-    pdName: string | null;
-    latestUpdate: string | null;
-    latestUpdateBy: string | null;
-    latestUpdateAt: string | null;
-  };
-  schedule: ScheduleSnapshot & { importedAt: string | null; runId: number | null };
-  criticalPath: CriticalPathResult;
-  planTasks: PlanTaskView[];
-  installers: InstallerRow[];
-  deliveries: {
-    milestones: ProjectDeliveryMilestone[];
-    procurement: ProcurementDeliveryRow[];
-    tasks: DeliveryProgramRow[];
-    next: NextDelivery | null;
-    overdueCount: number;
-  };
-  engineering: WorkstreamSummary;
-  quality: WorkstreamSummary;
 }
 
 export async function getProjectDetail(projectId: number, now: Date = new Date()): Promise<ProjectDetail | null> {
@@ -377,15 +318,32 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
     executionBoardRepository.getOpenProcurementForProjects([projectId]),
   ]);
 
-  const [userNames, latest] = await Promise.all([
+  const [userNames, latest, engStages, openEngCounts, snagRows, qcSet] = await Promise.all([
     executionBoardRepository.getUserNamesByIds(
       [header.pmUserId, header.pdUserId].filter((x): x is number => typeof x === "number"),
     ),
     executionBoardRepository.getLatestUpdate(header.projectName),
+    // Real Eng/Quality module signals for this project — safe() so a failing
+    // domain greys the column (falls back to the plan-workstream rollup).
+    safe(executionBoardRepository.getEngStagesForProjects([projectId]), [], "detail-eng-stages"),
+    safe(executionBoardRepository.getOpenEngTaskCounts([projectId]), new Map<number, number>(), "detail-eng-tasks"),
+    safe(executionBoardRepository.getSnagsForProjects([projectId]), [], "detail-snags"),
+    safe(executionBoardRepository.getQcLinkedProjectIds([projectId]), new Set<number>(), "detail-qc-links"),
   ]);
-  // EXP% is computed live from each task's ACTUAL dates (not the stale Excel
-  // "Expected Status" formula cache) — see withComputedExpected.
+  // EXP% is computed live from planned dates (not the stale Excel "Expected
+  // Status" formula cache) — see withComputedExpected / liveExpectedFraction.
   const tasks = withComputedExpected(plan.tasks, today);
+
+  // Eng/QA: prefer the real Engineering / Quality module; fall back to the plan
+  // ENG / QUALITY workstream rollup when the project has no module data.
+  const openEng = openEngCounts.get(projectId) ?? 0;
+  const hasQcp = qcSet.has(projectId);
+  const engineering = engStages.length > 0 || openEng > 0
+    ? engineeringWorkstreamFromModule(engStages, openEng)
+    : summarizeWorkstream(tasks.filter((t) => t.workstream === "ENG"));
+  const quality = snagRows.length > 0 || hasQcp
+    ? qualityWorkstreamFromModule(snagRows, hasQcp, today)
+    : summarizeWorkstream(tasks.filter((t) => t.workstream === "QUALITY"));
   const schedule = computeScheduleSnapshot(tasks);
   const criticalPath = computeCriticalPath(tasks);
   const criticalSet = new Set(criticalPath.criticalTaskNos);
@@ -436,10 +394,8 @@ export async function getProjectDetail(projectId: number, now: Date = new Date()
       next: deliveries.next,
       overdueCount: deliveries.overdueCount,
     },
-    // Eng/QA read the plan's ENG / QUALITY workstreams (work_items) — same as
-    // the board — until the dedicated modules come online.
-    engineering: summarizeWorkstream(tasks.filter((t) => t.workstream === "ENG")),
-    quality: summarizeWorkstream(tasks.filter((t) => t.workstream === "QUALITY")),
+    engineering,
+    quality,
   };
 }
 
@@ -463,18 +419,11 @@ export async function getQualitySummary(projectId: number, now: Date = new Date(
 
 // ──────────────────────────── program-wide lists ─────────────────────────────
 
-export interface UpcomingProgramRow {
-  projectId: number;
-  projectName: string;
-  taskNo: string | null;
-  taskName: string;
-  date: string | null;
-  isMilestone: boolean;
-}
-
 export async function getUpcomingProgram(daysOut = 14, now: Date = new Date()): Promise<UpcomingProgramRow[]> {
   const today = startOfDay(now);
-  const active = await executionBoardRepository.getActiveProjects();
+  // Same project universe as the board (active-only + Financial-Close-forward
+  // phase filter) so all four Execution lenses show the same set.
+  const active = (await executionBoardRepository.getActiveProjects()).filter((p) => isBoardUniversePhase(p.phase));
   const ids = active.map((p) => p.id);
   const tasksByProject = await executionBoardRepository.getPlanTasksForProjects(ids);
   const nameById = new Map(active.map((p) => [p.id, p.projectName]));
@@ -503,29 +452,8 @@ export async function getUpcomingProgram(daysOut = 14, now: Date = new Date()): 
   return out;
 }
 
-export interface DeliveryProgramRow {
-  projectId: number;
-  projectName: string;
-  label: string;
-  date: string | null; // sort/anchor date — the needed-on-site date
-  rag: ScheduleRag | null; // for procurement: the will-it-make-it signal
-  source: "milestone" | "procurement" | "task";
-  overdue: boolean;
-  complete: boolean;
-  // ── delivery planning (procurement orders only) ──
-  id?: number; // procurement_items.id — present on editable rows
-  editable?: boolean;
-  linkedWorkItemId?: number | null;
-  neededBy?: string | null; // from the linked execution task's start date
-  leadTimeDays?: number | null;
-  orderDate?: string | null;
-  orderBy?: string | null; // latest safe order date = neededBy − leadTime
-  eta?: string | null; // orderDate + leadTime, once ordered
-  willMakeIt?: ScheduleRag | null;
-  taskNo?: string | null;
-  taskTitle?: string | null;
-  isLongLead?: boolean;
-}
+// DeliveryProgramRow lives in @shared/execution-board-types (re-exported above);
+// its `rag`/`willMakeIt` are the shared Rag (= the server's ScheduleRag | null).
 
 /** yyyy-mm-dd shifted by n days (n may be negative). */
 function shiftIso(iso: string | null, days: number): string | null {
@@ -597,7 +525,7 @@ function deliveryTaskRows(
       date: raw,
       rag: deliveryRag(d, today, complete),
       source: "task",
-      overdue: !complete && d != null && diffDays(d, today) < 0,
+      overdue: isDeliveryOverdue({ date: raw, complete }, today),
       complete,
       // Promotable: editing creates a managed order linked to this work item, so
       // it can capture lead time + order date. No procurement id yet → create mode.
@@ -611,53 +539,61 @@ function deliveryTaskRows(
   return rows;
 }
 
-export async function getDeliveriesProgram(now: Date = new Date()): Promise<DeliveryProgramRow[]> {
-  const today = startOfDay(now);
-  const active = await executionBoardRepository.getActiveProjects();
-  const ids = active.map((p) => p.id);
-  const nameById = new Map(active.map((p) => [p.id, p.projectName]));
-  const [milestones, procurement, tasksByProject] = await Promise.all([
-    executionBoardRepository.getDeliveryMilestonesForProjects(ids),
-    executionBoardRepository.getProcurementDeliveriesForProjects(ids),
-    executionBoardRepository.getPlanTasksForProjects(ids),
-  ]);
-  const out: DeliveryProgramRow[] = [];
+/**
+ * Canonical per-project delivery rows — milestones + procurement orders +
+ * delivery-named plan tasks, deduped (a plan task promoted to a managed order is
+ * represented by the order, not the task). This is the SINGLE row model shared
+ * by the board's Overdue-deliveries KPI (see getBoard) and the program
+ * Deliveries list (getDeliveriesProgram), so both agree on which deliveries
+ * exist and which are overdue. Overdue is decided by the canonical
+ * isDeliveryOverdue against each row's anchor `date` (neededBy for procurement).
+ */
+export function buildDeliveryRows(
+  projectId: number,
+  projectName: string,
+  milestones: ProjectDeliveryMilestone[],
+  procurement: ProcurementDeliveryFullRow[],
+  planTasks: PlanTask[],
+  today: Date,
+): DeliveryProgramRow[] {
+  const rows: DeliveryProgramRow[] = [];
 
   for (const m of milestones) {
     const complete = m.status === "complete" || Boolean(m.actualDate);
     const raw = m.actualDate ?? m.plannedDate ?? null;
-    const d = parsePlanDate(raw);
-    out.push({
-      projectId: m.projectId,
-      projectName: nameById.get(m.projectId) ?? "",
+    rows.push({
+      projectId,
+      projectName,
       label: m.milestoneName,
       date: raw,
-      rag: deliveryRag(d, today, complete),
+      rag: deliveryRag(parsePlanDate(raw), today, complete),
       source: "milestone",
-      overdue: !complete && d != null && diffDays(d, today) < 0,
+      overdue: isDeliveryOverdue({ date: raw, complete }, today),
       complete,
     });
   }
+
+  const managedWorkItemIds = new Set<number>();
+  for (const p of procurement) if (p.linkedWorkItemId != null) managedWorkItemIds.add(p.linkedWorkItemId);
   for (const p of procurement) {
     // Needed-on-site = the linked execution task's start date; fall back to the
-    // task end, then the manual required date.
+    // task end, then the manual required date. This IS the canonical anchor date.
     const neededBy = p.taskStartDate ?? p.taskEndDate ?? p.requiredDate;
     const complete = ["received", "invoiced", "closed"].includes(p.status)
       || p.deliveryStatus === "delivered" || Boolean(p.deliveryActualDate);
     const plan = planDelivery(neededBy, p.leadTimeDays, p.orderDate, p.deliveryActualDate, today);
-    const nd = parsePlanDate(neededBy);
-    out.push({
-      projectId: p.projectId,
-      projectName: nameById.get(p.projectId) ?? "",
+    rows.push({
+      projectId,
+      projectName,
       label: p.title,
       date: neededBy,
       // RAG = "will this delivery make its needed date". Prefer the lead-time
       // planner; when it can't assess (no lead time / not ordered) fall back to
       // the same target-date RAG the milestone/task rows use, so every row's
       // colour means the same thing and an overdue order still reads red.
-      rag: plan.willMakeIt ?? deliveryRag(nd, today, complete),
+      rag: plan.willMakeIt ?? deliveryRag(parsePlanDate(neededBy), today, complete),
       source: "procurement",
-      overdue: !complete && nd != null && diffDays(nd, today) < 0,
+      overdue: isDeliveryOverdue({ date: neededBy, complete }, today),
       complete,
       id: p.id,
       editable: true,
@@ -673,29 +609,44 @@ export async function getDeliveriesProgram(now: Date = new Date()): Promise<Deli
       isLongLead: p.isLongLead ?? false,
     });
   }
+
   // Plan tasks whose name mentions "delivery" — the imported tracker's delivery
-  // lines (where most projects actually track deliveries). Skip any already
-  // promoted to a managed order (deduped by the linked work item).
-  const managedWorkItemIds = new Set<number>();
-  for (const p of procurement) if (p.linkedWorkItemId != null) managedWorkItemIds.add(p.linkedWorkItemId);
-  for (const [projectId, tasks] of tasksByProject) {
-    out.push(...deliveryTaskRows(projectId, nameById.get(projectId) ?? "", tasks, today, managedWorkItemIds));
+  // lines. Skip any already promoted to a managed order (deduped by work item).
+  rows.push(...deliveryTaskRows(projectId, projectName, planTasks, today, managedWorkItemIds));
+  rows.sort((a, b) => (parsePlanDate(a.date)?.getTime() ?? Infinity) - (parsePlanDate(b.date)?.getTime() ?? Infinity));
+  return rows;
+}
+
+export async function getDeliveriesProgram(now: Date = new Date()): Promise<DeliveryProgramRow[]> {
+  const today = startOfDay(now);
+  // Same project universe as the board (Financial-Close-forward + terminal
+  // Hold/Done) so all four Execution lenses show the same set. These lists use
+  // active-only projects; the board additionally includes archived so a by-phase
+  // filter can surface completed projects.
+  const active = (await executionBoardRepository.getActiveProjects()).filter((p) => isBoardUniversePhase(p.phase));
+  const ids = active.map((p) => p.id);
+  const nameById = new Map(active.map((p) => [p.id, p.projectName]));
+  const [milestones, procurement, tasksByProject] = await Promise.all([
+    executionBoardRepository.getDeliveryMilestonesForProjects(ids),
+    executionBoardRepository.getProcurementDeliveriesForProjects(ids),
+    executionBoardRepository.getPlanTasksForProjects(ids),
+  ]);
+  const milestonesByProject = groupBy(milestones, (r) => r.projectId);
+  const procurementByProject = groupBy(procurement, (r) => r.projectId);
+  const out: DeliveryProgramRow[] = [];
+  for (const id of ids) {
+    out.push(...buildDeliveryRows(
+      id, nameById.get(id) ?? "", milestonesByProject.get(id) ?? [], procurementByProject.get(id) ?? [], tasksByProject.get(id) ?? [], today,
+    ));
   }
   out.sort((a, b) => (parsePlanDate(a.date)?.getTime() ?? Infinity) - (parsePlanDate(b.date)?.getTime() ?? Infinity));
   return out;
 }
 
-export interface AllocationProgramRow {
-  projectId: number;
-  projectName: string;
-  phase: string | null;
-  installers: InstallerSummary;
-  pmName: string | null;
-  pmUserId: number | null;
-}
-
 export async function getAllocationsProgram(): Promise<AllocationProgramRow[]> {
-  const active = await executionBoardRepository.getActiveProjects();
+  // Same project universe as the board (active-only + Financial-Close-forward
+  // phase filter) so all four Execution lenses show the same set.
+  const active = (await executionBoardRepository.getActiveProjects()).filter((p) => isBoardUniversePhase(p.phase));
   const ids = active.map((p) => p.id);
   const [installers, userNames] = await Promise.all([
     executionBoardRepository.getInstallersForProjects(ids),

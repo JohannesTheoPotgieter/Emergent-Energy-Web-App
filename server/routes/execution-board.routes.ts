@@ -186,7 +186,8 @@ export function registerExecutionBoardRoutes(app: Express) {
     requirePermission("execution_review", "edit"),
     validateBody(createItemSchema),
     async (req: Request, res: Response) => {
-      const body = createItemSchema.parse(req.body);
+      // validateBody already parsed + replaced req.body with the validated data.
+      const body: z.infer<typeof createItemSchema> = req.body;
       const created = await executionReviewRepository.create({
         projectId: body.projectId,
         category: body.category,
@@ -214,7 +215,8 @@ export function registerExecutionBoardRoutes(app: Express) {
     validateBody(updateItemSchema),
     async (req: Request, res: Response) => {
       const id = parseIntParam(req.params.id);
-      const body = updateItemSchema.parse(req.body);
+      // validateBody already parsed + replaced req.body with the validated data.
+      const body: z.infer<typeof updateItemSchema> = req.body;
       const updated = await executionReviewRepository.update(id, body);
       if (!updated) throw notFound("Execution review item");
       res.json(updated);

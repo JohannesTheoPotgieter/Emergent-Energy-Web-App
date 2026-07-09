@@ -48,9 +48,9 @@ export const executionReviewItems = pgTable("execution_review_items", {
   /** The Execution Review meeting this item was raised in (optional). */
   meetingDate: date("meeting_date"),
   // ── Optional link to a program-plan line (verbatim import backbone). ──
-  /** normalized_plan_tasks.task_no of the linked WBS line. */
+  /** work_items task number (wbs_code / outline_number) of the linked WBS line. */
   planTaskNo: text("plan_task_no"),
-  /** normalized_plan_tasks.id of the linked WBS line. */
+  /** work_items.id of the linked WBS line. */
   planWorkItemId: integer("plan_work_item_id"),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
