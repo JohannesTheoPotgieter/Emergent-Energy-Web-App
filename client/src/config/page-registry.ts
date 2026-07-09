@@ -147,7 +147,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // TF-9 follow-up (audit V3) — Audit Prep CSV bundles for external auditors.
   // Gated on financials:approve (CFO + COO/CEO admins).
   { id: "financeAuditPrep", path: "/finance/audit-prep", label: "Audit Prep", iconKey: "ShieldCheck", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceAuditPrepPage" },
-  { id: "financeHealth", path: "/finance/health", label: "Finance Health", iconKey: "Activity", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceHealthPage" },
   { id: "financeQbReconciliation", path: "/finance/qb-reconciliation", label: "QB Reconciliation", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceQbReconciliationPage" },
   // Per-project Tracker replicas — read-only views that render the source
   // workbook 1:1 with font/fill fidelity. Not in the sidebar; reached from
@@ -250,7 +249,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "pmOnTheGo", path: "/pm/on-the-go", label: "PM On-The-Go", iconKey: "Smartphone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_on_the_go", showInSidebar: false, routeComponentKey: "PMOnTheGoHome" },
   { id: "pmOnTheGoProject", path: "/pm/on-the-go/project/:projectId", label: "On-The-Go Project", permissionEntity: "pm_on_the_go", routeComponentKey: "PMOnTheGoProject" },
   { id: "myWork", path: "/my-work", label: "My Work", iconKey: "Home", navGroup: "MY_WORK", permissionEntity: "home", showInSidebar: true, routeComponentKey: "MyWorkHomePage", matchSubRoutes: true },
-  { id: "inbox", path: "/inbox", label: "Inbox", iconKey: "Inbox", navGroup: "MY_WORK", permissionEntity: "home", showInSidebar: true, routeComponentKey: "InboxPage" },
   { id: "myWorkCalendar", path: "/my-work/calendar", label: "Calendar", iconKey: "CalendarCheck", navGroup: "MY_WORK", permissionEntity: "my_work", showInSidebar: true, routeComponentKey: "MyWorkCalendarPage" },
   // Phase 7B: showInSidebar flipped to false. Page stays routable for
   // bookmarks + the transition banner that points at /priorities?tab=my.

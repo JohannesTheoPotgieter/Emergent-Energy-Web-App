@@ -28,49 +28,9 @@ import { recordManualEditFlag } from "../lib/manual-edit-flag";
 import { isWorkItemsEnabled, getAllWorkItemsForPlanTab } from "../work-items-adapter";
 import { convertWorkItemTypeInPlace, WorkItemConversionError } from "../services/work-item-conversion-service";
 import { paramStr } from "../lib/req-params";
-import { UsersRepository } from "../repositories/users-repository";
-import { NotificationsRepository } from "../repositories/notifications-repository";
 import { WorkManagementRepository } from "../repositories/work-management-repository";
 
-const usersRepository = new UsersRepository();
-const notificationsRepository = new NotificationsRepository();
 const workManagementRepository = new WorkManagementRepository();
-
-// ── Plan change notification helpers (moved from routes.ts) ──
-
-const PLAN_CHANGE_NOTIFY_ROLES = ['PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER'];
-
-async function sendPlanChangeNotifications(
-  projectName: string,
-  changedByUserId: number | undefined,
-  changeDescription: string,
-  changeDetails: { field?: string; oldValue?: string; newValue?: string; tasks?: string[]; operation?: string }[]
-) {
-  try {
-    const recipients = await usersRepository.listByRoles(PLAN_CHANGE_NOTIFY_ROLES);
-
-    if (recipients.length === 0) return;
-
-    const changedByName = changedByUserId
-      ? (await usersRepository.getNameById(changedByUserId)) ?? "Unknown"
-      : "System";
-
-    const detailsJson = JSON.stringify({ projectName, changedBy: changedByName, changes: changeDetails, timestamp: new Date().toISOString() });
-    for (const recipient of recipients) {
-      if (recipient.id === changedByUserId) continue;
-      await notificationsRepository.create({
-        recipientUserId: recipient.id,
-        eventType: "plan_change",
-        title: `Plan updated: ${projectName}`,
-        body: changeDescription,
-        projectName,
-        changeDetails: detailsJson,
-      });
-    }
-  } catch (err: any) {
-    console.warn("[plan-notify] Failed to send plan change notifications:", err.message);
-  }
-}
 
 // ── Main registration function ──
 
@@ -172,22 +132,6 @@ export function registerPlanningExtractedRoutes(app: Express): void {
       }
 
       // Plan edit notifications are tracked via planEditNotifications table (existing mechanism)
-      const projectNameForNotif = overrides[0]?.projectName;
-      if (projectNameForNotif) {
-        const changeDetails = overrides.map((o: any) => ({
-          field: o.fieldName,
-          newValue: o.overrideValue,
-          tasks: [`Row ${o.rowNumber}`],
-        }));
-        const fieldNames = [...new Set(overrides.map((o: any) => o.fieldName))].join(", ");
-        sendPlanChangeNotifications(
-          projectNameForNotif,
-          req.user?.id,
-          `Fields updated: ${fieldNames}.`,
-          changeDetails
-        );
-      }
-
       logAuditFromReq(req, { entityType: "plan_override", action: "create", projectName: overrides[0]?.projectName, changesJson: { description: `${overrides.length} plan override(s) saved`, count: overrides.length, fields: [...new Set(overrides.map((o: any) => o.fieldName))] } });
       res.json({ message: "Project plan overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
@@ -222,9 +166,8 @@ export function registerPlanningExtractedRoutes(app: Express): void {
       const plansDirect = await storage.getProjectPlansByProject(rawProjectName);
       const projectName = plansDirect.length > 0 ? rawProjectName : trackerName;
 
-      const notifyStructureChange = (desc: string) => {
-        sendPlanChangeNotifications(rawProjectName, userId, desc, [{ operation, tasks: data?.taskRowNumbers || [] }]);
-      };
+      // Notifications feature removed — structure-change notifications are now a no-op.
+      const notifyStructureChange = (_desc: string) => {};
 
       if (operation === "createMilestone") {
         const { title } = data || {};

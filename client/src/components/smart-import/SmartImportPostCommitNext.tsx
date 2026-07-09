@@ -8,7 +8,7 @@
  * crowd out the existing summary counts.
  */
 
-import { Sparkles, Clock, RefreshCw, MailCheck } from "lucide-react";
+import { Sparkles, Clock, RefreshCw } from "lucide-react";
 
 interface SmartImportPostCommitNextProps {
   planning?: any | null;
@@ -48,13 +48,6 @@ export function SmartImportPostCommitNext({
       label: "Stage readiness is being recalculated across this project.",
       eta: "Usually <1 minute",
       icon: <RefreshCw className="w-3.5 h-3.5 text-blue-700" />,
-    });
-    lines.push({
-      key: "task-owner-notifications",
-      testId: "next-task-notifications",
-      label: "Task owners will see new date notifications in their inbox.",
-      eta: "On next page load",
-      icon: <MailCheck className="w-3.5 h-3.5 text-emerald-700" />,
     });
   }
   if (revTouched || costTouched) {

@@ -219,7 +219,7 @@ describe("commit-gate wiring + financial safety", () => {
     expect(schedulerSrc).not.toContain("enforceCosPeriodLock(");
   });
 
-  it("feeds the net-delta guard from the dry-run preview + canonical read, parks + notifies", () => {
+  it("feeds the net-delta guard from the dry-run preview + canonical read, parks on a swing", () => {
     // "Would-be" totals come from the dry-run preview (real commit, rolled back) —
     // no parallel formula — and current totals from the canonical recon read.
     expect(schedulerSrc).toContain("getReconciliationDetail(db");
@@ -233,10 +233,6 @@ describe("commit-gate wiring + financial safety", () => {
     const realCommitIdx = schedulerSrc.indexOf("const commitResult = await commitSmartImportRunAsSystem(");
     expect(parkIdx).toBeGreaterThan(-1);
     expect(realCommitIdx).toBeGreaterThan(parkIdx); // guard runs BEFORE the real commit
-    // Notifies the finance reviewers in-app (Teams alert fires via the outcome path).
-    expect(schedulerSrc).toContain("notifyNetDeltaPark(");
-    expect(schedulerSrc).toContain('eventType: "import_net_delta_park"');
-    expect(schedulerSrc).toContain("NET_DELTA_NOTIFY_ROLES");
   });
 
   it("H6: the net-delta swing park runs even under auto-commit-all (not gated by !forceCommit)", () => {

@@ -166,15 +166,6 @@ export async function recordIntegrationRun(params: {
     .set({ updatedAt: new Date() })
     .where(eq(integrations.id, integration.id));
 
-  // C3: check for a health-state transition and dispatch an alert if
-  // warranted. Wrapped so a failure here never blocks the audit log.
-  try {
-    const { checkAndDispatchIntegrationAlert } = await import("./integration-alert-monitor");
-    await checkAndDispatchIntegrationAlert(integration.id);
-  } catch (err) {
-    console.warn("[IntegrationHealth] alert dispatch hook failed:", err);
-  }
-
   return event as IntegrationRunEvent;
 }
 

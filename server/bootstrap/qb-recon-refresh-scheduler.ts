@@ -13,7 +13,6 @@
 import { db } from "../db";
 import { refreshQbTrackerReconciliation } from "../services/qb-tracker-reconcile";
 import { recordIntegrationRun } from "../services/integration-health-service";
-import { recordFinanceJobRun } from "../services/finance-observability/job-heartbeats";
 import { errMsg } from "../lib/api-error";
 
 const INTEGRATION_NAME = "quickbooks-tracker-reconcile";
@@ -64,14 +63,6 @@ async function runWithAudit(): Promise<void> {
     }).catch(() => {
       // Non-fatal — integration health log is best-effort.
     });
-    // Finance dead-man's-switch heartbeat (separate per-job interval).
-    await recordFinanceJobRun({
-      jobKey: "qb-recon-refresh",
-      status: status === "success" ? "success" : "failure",
-      startedAt,
-      error: errorDetail,
-      metadata: { lineRows, summaryRows, qbAvailable },
-    }).catch(() => {});
   }
 }
 

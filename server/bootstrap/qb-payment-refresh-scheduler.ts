@@ -21,7 +21,6 @@ import {
   quickbooksInvoiceLinks,
 } from "@shared/schema";
 import { recordIntegrationRun } from "../services/integration-health-service";
-import { recordFinanceJobRun } from "../services/finance-observability/job-heartbeats";
 import {
   getBillById,
   getQuickBooksConnectionStatus,
@@ -202,14 +201,6 @@ async function runWithAudit(): Promise<void> {
     }).catch(() => {
       // Non-fatal — integration health log is best-effort.
     });
-    // Finance dead-man's-switch heartbeat (separate per-job interval).
-    await recordFinanceJobRun({
-      jobKey: "qb-payment-refresh",
-      status: status === "success" ? "success" : "failure",
-      startedAt,
-      error: errorDetail,
-      metadata: { processed: result.processed, updated: result.updated, errors: result.errors },
-    }).catch(() => {});
   }
 }
 

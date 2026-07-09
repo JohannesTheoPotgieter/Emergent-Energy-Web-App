@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
-import { projectInfo, projectExecutionState, workItems, workItemAssignments, notifications } from "@shared/schema";
+import { projectInfo, projectExecutionState, workItems, workItemAssignments } from "@shared/schema";
 import type { CompanyRole } from "@shared/schema/users";
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
@@ -80,39 +80,6 @@ async function applyWorkItemUpdate(
 // NOTE: SA working-day / holiday helpers used to be duplicated here but were
 // never called in this file (dead code). The canonical implementation lives
 // in server/lib/sa-holidays.ts (saWorkingDays / isHoliday / parseDateParts).
-
-async function notifyWorkItemWatchers(params: {
-  workItemId: number;
-  actorUserId?: number;
-  projectName: string;
-  title: string;
-  body: string;
-  eventType?: string;
-}) {
-  try {
-    const watcherRows = await db
-      .select({ userId: workItemAssignments.userId })
-      .from(workItemAssignments)
-      .where(and(eq(workItemAssignments.workItemId, params.workItemId), eq(workItemAssignments.role, "VIEWER")));
-
-    if (!watcherRows.length) return;
-
-    for (const watcher of watcherRows) {
-      if (params.actorUserId && watcher.userId === params.actorUserId) continue;
-      await db.insert(notifications).values({
-        recipientUserId: watcher.userId,
-        eventType: params.eventType || "watcher_update",
-        title: params.title,
-        body: params.body,
-        projectName: params.projectName,
-        linkedTaskId: params.workItemId,
-        changeDetails: JSON.stringify({ source: "watcher_notification", workItemId: params.workItemId }),
-      });
-    }
-  } catch (error) {
-    console.warn("[watcher-notify] Failed to notify watchers:", errMsg(error));
-  }
-}
 
 export function registerPlanningTasksRoutes(app: Express) {
   // ==================== ENRICHED PLANNING TASKS (with rollups + expected %) ====================
@@ -1209,14 +1176,6 @@ export function registerPlanningTasksRoutes(app: Express) {
           console.warn("[planning-tasks] Non-fatal cascade error:", errMsg(cascadeErr));
         }
 
-        await notifyWorkItemWatchers({
-          workItemId: wi.id,
-          actorUserId: req.user?.id,
-          projectName,
-          title: `Task updated: ${taskName}`,
-          body: `${taskName} was updated in ${projectName}.`,
-          eventType: "task_updated",
-        });
         res.json({ success: true, taskId, workItemId: wi.id });
       } else {
         // Canonical boundary: work_items is write-master for active planning task edits.
@@ -1328,14 +1287,6 @@ export function registerPlanningTasksRoutes(app: Express) {
         changesJson: { title, status, priority, wbsCode: newWbsCode },
       });
 
-      await notifyWorkItemWatchers({
-        workItemId: workItem.id,
-        actorUserId: user.id,
-        projectName,
-        title: `Task created: ${title}`,
-        body: `${title} was created in ${projectName}.`,
-        eventType: "task_created",
-      });
       res.json({ ...task, workItemId: workItem.id, wbsCode: newWbsCode });
     } catch (err) {
       console.error("Plan task create error:", err);
