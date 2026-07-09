@@ -12,7 +12,6 @@
 import {
   executionBoardRepository,
   type InstallerRow,
-  type ProcurementDeliveryRow,
   type ProcurementDeliveryFullRow,
 } from "../repositories/execution-board-repository";
 import {
