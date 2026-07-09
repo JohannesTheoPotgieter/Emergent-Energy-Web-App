@@ -260,7 +260,7 @@ export default function QmDashboardPage() {
   });
   const [projectSort, setProjectSort] = useState<ProjectSortKey>("name");
   const [projectSortDir, setProjectSortDir] = useState<ProjectSortDir>("asc");
-  const [statusFilter, setStatusFilter] = useState<"active">("active");
+  const [statusFilter, setStatusFilter] = useState<"active" | "completed" | "all">("active");
   const [warningFilter, setWarningFilter] = useState(false);
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null);
   const [warningsExpanded, setWarningsExpanded] = useState(false);
@@ -582,6 +582,8 @@ export default function QmDashboardPage() {
       (c.projectName || "").toLowerCase().includes(searchTerm.toLowerCase())
     );
     if (statusFilter === "active") list = list.filter(c => c.status === "active");
+    else if (statusFilter === "completed") list = list.filter(c => c.status !== "active");
+    // "all" → no status filter
     if (warningFilter) list = list.filter(c => getProjectWarnings(c) > 0);
 
     list.sort((a, b) => {
@@ -1034,6 +1036,8 @@ export default function QmDashboardPage() {
                     data-testid="select-status-filter"
                     options={[
                       { value: "active", label: "Active" },
+                      { value: "completed", label: "Completed" },
+                      { value: "all", label: "All" },
                     ]}
                   />
                   <Popover>
@@ -1642,8 +1646,9 @@ function buildDeleteImpact(checklist: Checklist): ImpactRow[] {
     { label: "Warnings (all statuses)", count: warnings, severity: warnings > 0 ? "medium" : "low" },
     {
       label: "Evidence uploads, plan links, risk answers, post-mortem",
-      count: 1,
-      note: "all wiped",
+      // Count is genuinely unknown from the dashboard list response — show "—"
+      // rather than a misleading "1". The server transaction cascades them.
+      note: "all related records wiped",
       severity: "medium",
     },
   ];
