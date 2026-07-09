@@ -129,7 +129,7 @@ describe("commissioning routes wire the BESS 7-check (source contract)", () => {
   });
 
   it("a migration adds the is_bess_hybrid + countersign columns", () => {
-    const migration = fs.readFileSync(path.join(process.cwd(), "migrations/0120_bess_hybrid_seven_check.sql"), "utf8");
+    const migration = fs.readFileSync(path.join(process.cwd(), "migrations/0123_bess_hybrid_seven_check.sql"), "utf8");
     expect(migration).toContain('"is_bess_hybrid"');
     expect(migration).toContain('"countersigned_by_user_id"');
     expect(migration).toContain('"countersigned_at"');
