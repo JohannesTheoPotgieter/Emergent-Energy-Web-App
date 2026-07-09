@@ -33,4 +33,5 @@ export * from "./documents";
 export * from "./email-links";
 export * from "./pending-approvals";
 export * from "./app-settings";
+export * from "./board-targets";
 export * from "./execution-review";

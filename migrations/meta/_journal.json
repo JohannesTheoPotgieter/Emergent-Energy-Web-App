@@ -841,6 +841,13 @@
       "when": 1782818379667,
       "tag": "0119_task_plan_link",
       "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1783509565452,
+      "tag": "0120_board_finance_targets",
+      "breakpoints": true
     }
   ]
 }

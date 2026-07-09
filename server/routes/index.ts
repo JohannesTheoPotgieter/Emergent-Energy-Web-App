@@ -11,6 +11,7 @@ import { registerPdIntakeRoutes } from './pd-intake.routes';
 import { registerImpactRoutes } from './impact.routes';
 import { registerEmailLinksRoutes } from './email-links.routes';
 import { registerScreenSettingsRoutes } from './admin-screen-settings.routes';
+import { registerBoardTargetsRoutes } from './board-targets.routes';
 import { registerExceptionDashboardRoutes } from './exception-dashboard.routes';
 import { registerDocumentManagementRoutes } from './document-management.routes';
 import { registerDocumentCommentsRoutes } from './document-comments.routes';
@@ -56,6 +57,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerImpactRoutes(app);
   registerEmailLinksRoutes(app);
   registerScreenSettingsRoutes(app);
+  registerBoardTargetsRoutes(app);
   registerExceptionDashboardRoutes(app);
   registerDocumentManagementRoutes(app);
   registerDocumentCommentsRoutes(app);
