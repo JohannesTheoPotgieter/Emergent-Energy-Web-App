@@ -34,6 +34,13 @@ export function formatDateOnly(value: string | null | undefined): string {
   return new Date(y, m - 1, d).toLocaleDateString();
 }
 
+/** Treat an evidence URL as a photo when it points at an image file, so
+ *  site-inspection captures render as inline thumbnails (Task 3.1). */
+export function isImageEvidenceUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return /\.(png|jpe?g|gif|webp|heic|heif|bmp)(\?.*)?$/i.test(url);
+}
+
 export function parseRiskYesNo(value: string | null | undefined): boolean | null {
   if (value === "yes") return true;
   if (value === "no") return false;

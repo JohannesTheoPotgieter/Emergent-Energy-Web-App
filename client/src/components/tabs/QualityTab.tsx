@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { getRiskSeverityColor, formatDateOnly } from "@/lib/quality-ui-helpers";
 import { RiskQuestionsPanel } from "@/components/tabs/quality/RiskQuestionsPanel";
 import { BulkBar } from "@/components/tabs/quality/BulkBar";
 import { PhaseTabs } from "@/components/tabs/quality/PhaseTabs";
+import { EvidencePanel } from "@/components/tabs/quality/EvidencePanel";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,12 +55,6 @@ function getPhaseColor(phaseKey: string) {
 }
 
 
-// Task 3.1: treat an evidence URL as a photo when it points at an image file,
-// so site-inspection captures render as inline thumbnails.
-function isImageEvidenceUrl(url: string | null | undefined): boolean {
-  if (!url) return false;
-  return /\.(png|jpe?g|gif|webp|heic|heif|bmp)(\?.*)?$/i.test(url);
-}
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string; btnClass: string; icon: string }> = {
   not_started: { label: "Not Started", color: "text-muted-foreground", bg: "bg-muted border-border", dot: "bg-slate-400", btnClass: "border-border text-muted-foreground hover:bg-muted", icon: "O" },
@@ -228,13 +223,8 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [showAddItem, setShowAddItem] = useState<number | null>(null);
   const [newItemName, setNewItemName] = useState("");
-  const [dragOverItem, setDragOverItem] = useState<number | null>(null);
   const [evidenceUploading, setEvidenceUploading] = useState<number | null>(null);
   const [evidenceUploadState, setEvidenceUploadState] = useState<Record<number, { state: "uploading" | "uploaded" | "failed" | "too_large"; message: string }>>({});
-  const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
-  // Task 3.1: separate camera input so the mobile "Take photo" button opens the
-  // rear camera directly (capture="environment") for on-site evidence.
-  const cameraInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   // Database-driven RBAC per AGENT_GUARDRAILS § 5 / § 8.2. The previous
   // hard-coded role list (`['admin','COO_ADMIN','CEO_ADMIN']` + QUALITY_MANAGER
@@ -1783,128 +1773,15 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                       </div>
                                     )}
 
-                                    <div>
-                                      <div className="flex items-center justify-between mb-2">
-                                        <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                          Evidence ({itemEvidence.length})
-                                        </Label>
-                                      </div>
-                                      {itemEvidence.length > 0 && (
-                                        <div className="space-y-1.5 mb-3">
-                                          {itemEvidence.map((ev: any) => (
-                                            <div key={ev.id} className="flex items-center gap-2 text-xs bg-muted rounded-lg border p-2.5" data-testid={`evidence-${ev.id}`}>
-                                              {isImageEvidenceUrl(ev.evidenceUrl) ? (
-                                                <a href={ev.evidenceUrl} target="_blank" rel="noopener noreferrer" className="shrink-0" data-testid={`evidence-thumb-${ev.id}`}>
-                                                  <img
-                                                    src={ev.evidenceUrl}
-                                                    alt={ev.evidenceNote || "Evidence photo"}
-                                                    loading="lazy"
-                                                    className="w-10 h-10 rounded object-cover border"
-                                                  />
-                                                </a>
-                                              ) : (
-                                                <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                              )}
-                                              <span className="flex-1 truncate">{ev.evidenceNote || ev.evidenceUrl}</span>
-                                              {ev.evidenceUrl && (
-                                                <a href={ev.evidenceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 p-0.5" data-testid={`view-evidence-${ev.id}`}>
-                                                  <ExternalLink className="w-3.5 h-3.5" />
-                                                </a>
-                                              )}
-                                              {canEdit && (
-                                                <button
-                                                  className="text-muted-foreground hover:text-destructive p-0.5 rounded hover:bg-red-50"
-                                                  onClick={() => deleteEvidenceMutation.mutate(ev.id)}
-                                                  data-testid={`delete-evidence-${ev.id}`}
-                                                >
-                                                  <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
-                                              )}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                      {canEdit && (
-                                        <div
-                                          className={`border-2 border-dashed rounded-lg p-5 text-center transition-colors cursor-pointer ${
-                                            dragOverItem === instance.id ? "border-blue-400 bg-blue-50" : "border-border hover:border-blue-300 hover:bg-blue-50/30"
-                                          }`}
-                                          onDragOver={(e) => { e.preventDefault(); setDragOverItem(instance.id); }}
-                                          onDragLeave={() => setDragOverItem(null)}
-                                          onDrop={(e) => {
-                                            e.preventDefault();
-                                            setDragOverItem(null);
-                                            const files = e.dataTransfer.files;
-                                            if (files.length > 0) handleEvidenceFileUpload(instance.id, files[0]);
-                                          }}
-                                          onClick={() => fileInputRefs.current[instance.id]?.click()}
-                                          data-testid={`evidence-dropzone-${instance.id}`}
-                                        >
-                                          <input
-                                            type="file"
-                                            className="hidden"
-                                            ref={(el) => { fileInputRefs.current[instance.id] = el; }}
-                                            onChange={(e) => {
-                                              const file = e.target.files?.[0];
-                                              if (file) handleEvidenceFileUpload(instance.id, file);
-                                              e.target.value = "";
-                                            }}
-                                            data-testid={`evidence-input-${instance.id}`}
-                                          />
-                                          {evidenceUploading === instance.id ? (
-                                            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                                              <Loader2 className="w-4 h-4 animate-spin" /> Uploading...
-                                            </div>
-                                          ) : (
-                                            <div className="flex flex-col items-center gap-1.5">
-                                              <Upload className="w-6 h-6 text-muted-foreground/60" />
-                                              <span className="text-xs text-muted-foreground">Drop file here or click to upload</span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                      {canEdit && (
-                                        <>
-                                          {/* Task 3.1: mobile/site camera capture — opens the rear camera. */}
-                                          <input
-                                            type="file"
-                                            accept="image/*"
-                                            capture="environment"
-                                            className="hidden"
-                                            ref={(el) => { cameraInputRefs.current[instance.id] = el; }}
-                                            onChange={(e) => {
-                                              const file = e.target.files?.[0];
-                                              if (file) handleEvidenceFileUpload(instance.id, file);
-                                              e.target.value = "";
-                                            }}
-                                            data-testid={`evidence-camera-input-${instance.id}`}
-                                          />
-                                          <button
-                                            type="button"
-                                            className="mt-2 inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700"
-                                            onClick={() => cameraInputRefs.current[instance.id]?.click()}
-                                            disabled={evidenceUploading === instance.id}
-                                            data-testid={`evidence-camera-btn-${instance.id}`}
-                                          >
-                                            <Camera className="w-3.5 h-3.5" /> Take photo
-                                          </button>
-                                        </>
-                                      )}
-                                      {evidenceUploadState[instance.id] && (
-                                        <div
-                                          className={`mt-2 text-xs rounded-md border px-2.5 py-1.5 ${
-                                            evidenceUploadState[instance.id].state === "uploaded"
-                                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                              : evidenceUploadState[instance.id].state === "uploading"
-                                                ? "bg-blue-50 text-blue-700 border-blue-200"
-                                                : "bg-red-50 text-red-700 border-red-200"
-                                          }`}
-                                          data-testid={`evidence-upload-status-${instance.id}`}
-                                        >
-                                          {evidenceUploadState[instance.id].message}
-                                        </div>
-                                      )}
-                                    </div>
+                                    <EvidencePanel
+                                      itemId={instance.id}
+                                      evidence={itemEvidence}
+                                      canEdit={canEdit}
+                                      uploading={evidenceUploading === instance.id}
+                                      uploadStatus={evidenceUploadState[instance.id]}
+                                      onUpload={(file) => handleEvidenceFileUpload(instance.id, file)}
+                                      onDelete={(id) => deleteEvidenceMutation.mutate(id)}
+                                    />
 
                                     {itemLinks.length > 0 && (
                                       <div>

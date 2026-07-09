@@ -9,8 +9,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+// Task 3.3 moved the evidence UI into EvidencePanel.
 const SOURCE = fs.readFileSync(
-  path.join(process.cwd(), "client/src/components/tabs/QualityTab.tsx"),
+  path.join(process.cwd(), "client/src/components/tabs/quality/EvidencePanel.tsx"),
   "utf8",
 );
 
@@ -18,12 +19,12 @@ describe("QC evidence camera capture + thumbnails", () => {
   it("has a camera-capture input that opens the rear camera", () => {
     expect(SOURCE).toContain('capture="environment"');
     expect(SOURCE).toContain('accept="image/*"');
-    expect(SOURCE).toContain("cameraInputRefs");
+    expect(SOURCE).toContain("cameraInputRef");
   });
 
   it("offers a 'Take photo' button", () => {
     expect(SOURCE).toContain("Take photo");
-    expect(SOURCE).toMatch(/data-testid=\{`evidence-camera-btn-\$\{instance\.id\}`\}/);
+    expect(SOURCE).toMatch(/data-testid=\{`evidence-camera-btn-\$\{itemId\}`\}/);
   });
 
   it("renders image evidence as inline thumbnails", () => {

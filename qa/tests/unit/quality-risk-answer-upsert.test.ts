@@ -80,8 +80,9 @@ describe("risk-answer route — upsert path (Task 1.4)", () => {
   });
 });
 
-describe("QualityTab — risk editor renders without a seeded answer", () => {
-  const client = read("client/src/components/tabs/QualityTab.tsx");
+describe("RiskQuestionsPanel — risk editor renders without a seeded answer", () => {
+  // Task 3.3 moved the risk editor into RiskQuestionsPanel.
+  const client = read("client/src/components/tabs/quality/RiskQuestionsPanel.tsx");
 
   it("submits the template question id when no answer row exists", () => {
     expect(client).toContain("templateRiskQuestionId: rq.id, updates");

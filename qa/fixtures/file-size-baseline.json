@@ -82,7 +82,7 @@
     },
     {
       "file": "client/src/components/tabs/QualityTab.tsx",
-      "loc": 2239
+      "loc": 1944
     },
     {
       "file": "server/departments/opportunities-routes.ts",
