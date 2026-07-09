@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { getRiskSeverityColor, formatDateOnly } from "@/lib/quality-ui-helpers";
 import { RiskQuestionsPanel } from "@/components/tabs/quality/RiskQuestionsPanel";
+import { BulkBar } from "@/components/tabs/quality/BulkBar";
+import { PhaseTabs } from "@/components/tabs/quality/PhaseTabs";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1233,43 +1235,13 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
 
       <QualityWarningsPanel warnings={activeWarnings} highOnly={warningsHighOnly} onClearHighOnly={() => setWarningsHighOnly(false)} />
 
-      <div className="bg-card rounded-lg border" data-testid="phase-tabs">
-        <div className="flex items-stretch overflow-x-auto">
-          {phases.map((phase: any, idx: number) => {
-            const progress = getPhaseProgress(phase.id);
-            const colors = getPhaseColor(phase.phaseKey);
-            const isActive = selectedPhaseId === phase.id;
-            return (
-              <button
-                key={phase.id}
-                onClick={() => setSelectedPhaseId(phase.id)}
-                className={`relative flex-1 min-w-[140px] flex flex-col items-center gap-1.5 px-4 py-3 text-sm font-medium transition-all border-b-2 ${
-                  isActive
-                    ? `${colors.text} border-current bg-card`
-                    : "text-muted-foreground border-transparent hover:text-foreground hover:bg-muted/30"
-                } ${idx > 0 ? "border-l border-l-slate-100" : ""}`}
-                data-testid={`phase-tab-${phase.id}`}
-              >
-                <div className="flex items-center gap-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${isActive ? colors.progress : "bg-slate-300"}`} />
-                  <span className="whitespace-nowrap">{phase.phaseName}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${colors.progress} transition-all`} style={{ width: `${progress.percent}%` }} />
-                  </div>
-                  <span className={`text-[10px] font-mono ${isActive ? colors.text : "text-muted-foreground"}`}>
-                    {progress.completed}/{progress.applicable}
-                  </span>
-                </div>
-                {progress.failed > 0 && (
-                  <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-red-500" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <PhaseTabs
+        phases={phases}
+        selectedPhaseId={selectedPhaseId}
+        onSelect={setSelectedPhaseId}
+        getPhaseProgress={getPhaseProgress}
+        getPhaseColor={getPhaseColor}
+      />
 
       {selectedPhase && selectedPhaseProgress && (
         <div className="space-y-4">
@@ -1340,50 +1312,17 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
             </div>
           </div>
 
-          {selectedItems.size > 0 && canEdit && (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 flex items-center gap-3 flex-wrap" data-testid="bulk-actions-bar">
-              <SquareCheck className="w-4 h-4 text-slate-600" />
-              <span className="text-sm font-medium text-slate-700">{selectedItems.size} item{selectedItems.size !== 1 ? "s" : ""} selected</span>
-              <div className="flex items-center gap-1.5 ml-auto flex-wrap">
-                <Button
-                  size="sm"
-                  className="h-7 text-xs bg-amber-500 hover:bg-amber-600 gap-1"
-                  disabled={selectedItems.size === blockedApprovalSelections.length}
-                  onClick={() => { setBulkApprover(""); setBulkApproverDialogOpen(true); }}
-                  data-testid="bulk-send-for-approval"
-                >
-                  <Send className="w-3 h-3" /> Send for approval
-                </Button>
-                {chipConfig?.showHandoverPackAction && projectInfoId && (
-                  <Button
-                    size="sm"
-                    className="h-7 text-xs bg-red-600 hover:bg-red-700 gap-1"
-                    onClick={() => setCreatePackDialogOpen(true)}
-                    data-testid="bulk-create-handover-pack"
-                  >
-                    <PackagePlus className="w-3 h-3" /> Create handover pack
-                  </Button>
-                )}
-                <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => handleBulkStatusChange("pass")} disabled={updateItemMutation.isPending} data-testid="bulk-pass">
-                  <CheckCircle className="w-3 h-3 mr-1" /> Pass
-                </Button>
-                <Button size="sm" className="h-7 text-xs bg-amber-500 hover:bg-amber-600" onClick={() => handleBulkStatusChange("review")} disabled={updateItemMutation.isPending} data-testid="bulk-review">Review</Button>
-                <Button size="sm" className="h-7 text-xs" variant="destructive" onClick={() => handleBulkStatusChange("fail")} disabled={updateItemMutation.isPending} data-testid="bulk-fail">Fail</Button>
-                <Button size="sm" className="h-7 text-xs" variant="outline" onClick={() => handleBulkStatusChange("na")} disabled={updateItemMutation.isPending} data-testid="bulk-na">N/A</Button>
-                <Button size="sm" className="h-7 text-xs" variant="ghost" onClick={() => setSelectedItems(new Set())} data-testid="bulk-clear">
-                  <X className="w-3 h-3 mr-1" /> Clear
-                </Button>
-              </div>
-            </div>
-          )}
-          {selectedItems.size > 0 && blockedApprovalSelections.length > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 space-y-1" data-testid="bulk-blocked-reasons">
-              <p className="font-medium">Some selected items cannot be submitted for review:</p>
-              {blockedApprovalSelections.slice(0, 4).map((item) => (
-                <p key={item.id}>• Item #{item.id}: {item.reason}</p>
-              ))}
-              {blockedApprovalSelections.length > 4 && <p>• +{blockedApprovalSelections.length - 4} more blocked item(s)</p>}
-            </div>
+          {canEdit && (
+            <BulkBar
+              selectedCount={selectedItems.size}
+              blockedApprovalSelections={blockedApprovalSelections}
+              showHandoverPackAction={!!(chipConfig?.showHandoverPackAction && projectInfoId)}
+              isPending={updateItemMutation.isPending}
+              onSendForApproval={() => { setBulkApprover(""); setBulkApproverDialogOpen(true); }}
+              onCreatePack={() => setCreatePackDialogOpen(true)}
+              onBulkStatus={handleBulkStatusChange}
+              onClear={() => setSelectedItems(new Set())}
+            />
           )}
 
           {bulkApproverDialogOpen && (
