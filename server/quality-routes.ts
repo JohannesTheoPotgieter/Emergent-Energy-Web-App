@@ -2,7 +2,7 @@ import { Express, NextFunction, Request, Response } from "express";
 import { db } from "./db";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
-import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, isNull, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
@@ -27,6 +27,9 @@ import { logAuditFromReq } from "./audit-logger";
 import { recordAudit } from "./api/v2/services/audit-service";
 import { canOverride } from "@shared/permissions/authoriser-matrix";
 import { evidenceOverrideRecords } from "@shared/schema";
+import { buildQcEvidenceOverrideRecord } from "./lib/quality-evidence-override";
+import { buildRiskAnswerUpdates } from "./lib/quality-risk-answer";
+import { getFeatureFlag } from "./lib/feature-flags";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
@@ -59,6 +62,11 @@ import {
   mergeProjectRow as repoMergeProjectRow,
   type MergedProjectRow,
 } from "./repositories/quality-repository";
+import {
+  loadScopedChecklists,
+  loadScopedItemInstances,
+  loadScopedRiskAnswers,
+} from "./repositories/quality-dashboard-repository";
 
 // F30: post-mortem red-flag threshold. Below this the project is flagged as
 // requiring a follow-up review. Lives here (vs hard-coded in the handler)
@@ -122,6 +130,89 @@ async function resolveProjectIdForItemInstance(itemInstanceId: number): Promise<
   `);
   const value = rows.rows?.[0]?.project_id;
   return typeof value === "number" ? value : null;
+}
+
+type QualityDb = NodePgDatabase<typeof schema>;
+
+/**
+ * Recompute warnings and, on failure, record an observable audit event
+ * instead of swallowing the error in a fire-and-forget `.catch(console.error)`
+ * (Task 2.2). Callers that need read-after-write consistency `await` this;
+ * others `void` it but the failure is still surfaced.
+ */
+async function recomputeWarningsObservable(projectName: string): Promise<void> {
+  try {
+    await recalculateWarnings(projectName);
+  } catch (err: any) {
+    console.error("[Quality][ALERT] Warning recalculation failed:", err?.message || err);
+    try {
+      await recordAudit({
+        actorRole: "SYSTEM",
+        entityType: "qc_warning_recompute",
+        entityId: projectName,
+        action: "WARNING_RECOMPUTE_FAILED",
+        projectName,
+        changesJson: { error: err?.message || String(err) },
+      });
+    } catch {
+      // Audit is best-effort — never let observability mask the original flow.
+    }
+  }
+}
+
+/**
+ * Backfill any item-instances / risk-answers that the checklist's template
+ * gained after the checklist was created. Idempotent — inserts only the
+ * missing rows. Task 0.6: this used to run as a side effect inside the
+ * checklist GET (a read that wrote). It now lives here and runs from the
+ * create/sync POST path only, so a `quality:view` GET performs no writes.
+ */
+async function backfillMissingChecklistRows(
+  tx: QualityDb,
+  checklistId: number,
+  templateId: number,
+): Promise<{ itemsAdded: number; riskAnswersAdded: number }> {
+  const tplPhases = await tx
+    .select({ id: qcTemplatePhase.id })
+    .from(qcTemplatePhase)
+    .where(eq(qcTemplatePhase.templateId, templateId));
+  const tplPhaseIds = tplPhases.map((p: { id: number }) => p.id);
+  const tplGroups = tplPhaseIds.length
+    ? await tx.select({ id: qcTemplateGroup.id }).from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, tplPhaseIds))
+    : [];
+  const tplGroupIds = tplGroups.map((g: { id: number }) => g.id);
+  const tplItems = tplGroupIds.length
+    ? await tx.select({ id: qcTemplateItem.id }).from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, tplGroupIds))
+    : [];
+
+  const existingItems = await tx
+    .select({ templateItemId: qcItemInstance.templateItemId })
+    .from(qcItemInstance)
+    .where(eq(qcItemInstance.checklistId, checklistId));
+  const existingItemIds = new Set(existingItems.map((i: { templateItemId: number }) => i.templateItemId));
+  const missingTplItems = tplItems.filter((ti: { id: number }) => !existingItemIds.has(ti.id));
+  if (missingTplItems.length > 0) {
+    await tx.insert(qcItemInstance).values(
+      missingTplItems.map((ti: { id: number }) => ({ checklistId, templateItemId: ti.id })),
+    );
+  }
+
+  const tplRiskQs = tplPhaseIds.length
+    ? await tx.select({ id: qcTemplateRiskQuestion.id }).from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, tplPhaseIds))
+    : [];
+  const existingRisks = await tx
+    .select({ templateRiskQuestionId: qcRiskAnswer.templateRiskQuestionId })
+    .from(qcRiskAnswer)
+    .where(eq(qcRiskAnswer.checklistId, checklistId));
+  const existingRiskIds = new Set(existingRisks.map((r: { templateRiskQuestionId: number }) => r.templateRiskQuestionId));
+  const missingRiskQs = tplRiskQs.filter((rq: { id: number }) => !existingRiskIds.has(rq.id));
+  if (missingRiskQs.length > 0) {
+    await tx.insert(qcRiskAnswer).values(
+      missingRiskQs.map((rq: { id: number }) => ({ checklistId, templateRiskQuestionId: rq.id })),
+    );
+  }
+
+  return { itemsAdded: missingTplItems.length, riskAnswersAdded: missingRiskQs.length };
 }
 
 const requireAdminOrEpm = requireRoleCanonical([
@@ -618,13 +709,21 @@ const createItemSchema = z.object({
 }).strict();
 
 const riskAnswerSchema = z.object({
-  riskAnswerId: z.number().int().positive(),
+  // Task 1.4: either target an existing answer row by id, OR upsert by
+  // (checklistId, templateRiskQuestionId) so a question that has no seeded
+  // answer row can still be answered from the UI.
+  riskAnswerId: z.number().int().positive().optional(),
+  checklistId: z.number().int().positive().optional(),
+  templateRiskQuestionId: z.number().int().positive().optional(),
   answerYesno: z.boolean().nullable().optional(),
   answerText: z.string().nullable().optional(),
   answerNumber: z.number().nullable().optional(),
   answerValue: z.enum(["yes", "no"]).optional(),
   notes: z.string().nullable().optional(),
-}).strict();
+}).strict().refine(
+  (data) => data.riskAnswerId != null || (data.checklistId != null && data.templateRiskQuestionId != null),
+  { message: "Provide riskAnswerId, or both checklistId and templateRiskQuestionId" },
+);
 
 const warningEventSchema = z.object({
   note: z.string().nullable().optional(),
@@ -882,39 +981,12 @@ export function registerQualityRoutes(app: Express) {
         });
       }
 
-      let itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
-      let riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
-
-      // Backfill: an existing checklist may have been created when its template
-      // had no items/risk-questions seeded. Re-create any missing rows so the
-      // dashboard shows the current template content rather than an empty list.
-      // Safe to run on GET because it only fires for checklists that already
-      // exist (the user already passed `quality.view`).
-      if (checklist.templateId) {
-        const tplPhases = await db.select({ id: qcTemplatePhase.id }).from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, checklist.templateId));
-        const tplPhaseIds = tplPhases.map((p: any) => p.id);
-        const tplGroups = tplPhaseIds.length ? await db.select({ id: qcTemplateGroup.id }).from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, tplPhaseIds)) : [];
-        const tplGroupIds = tplGroups.map((g: any) => g.id);
-        const tplItems = tplGroupIds.length ? await db.select({ id: qcTemplateItem.id }).from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, tplGroupIds)) : [];
-        const existingItemIds = new Set(itemInstances.map((i: any) => i.templateItemId));
-        const missingTplItems = tplItems.filter((ti: any) => !existingItemIds.has(ti.id));
-        if (missingTplItems.length > 0) {
-          await db.insert(qcItemInstance).values(
-            missingTplItems.map((ti: any) => ({ checklistId: checklist.id, templateItemId: ti.id }))
-          );
-          itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
-        }
-
-        const tplRiskQs = tplPhaseIds.length ? await db.select({ id: qcTemplateRiskQuestion.id }).from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, tplPhaseIds)) : [];
-        const existingRiskIds = new Set(riskAnswers.map((r: any) => r.templateRiskQuestionId));
-        const missingRiskQs = tplRiskQs.filter((rq: any) => !existingRiskIds.has(rq.id));
-        if (missingRiskQs.length > 0) {
-          await db.insert(qcRiskAnswer).values(
-            missingRiskQs.map((rq: any) => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id }))
-          );
-          riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
-        }
-      }
+      // Task 0.6: this GET is read-only. Backfill of item-instances /
+      // risk-answers that a template gained after checklist creation now runs
+      // in the create/sync POST path (backfillMissingChecklistRows), so a
+      // `quality:view` GET performs no inserts.
+      const itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
+      const riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
 
       const itemIds = itemInstances.map((i: any) => i.id);
       const evidence = itemIds.length ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, itemIds), isNull(qcItemEvidence.deletedAt))) : [];
@@ -989,6 +1061,13 @@ export function registerQualityRoutes(app: Express) {
           const existing = await tx.select().from(qcChecklist).where(eq(qcChecklist.projectId, project.id));
           if (existing.length > 0) {
             const checklist = existing.sort((l: any, r: any) => r.id - l.id)[0];
+            // Task 0.6: sync-on-open. An existing checklist may predate template
+            // items/risk-questions added later. Backfill the missing rows here
+            // (inside the tx + advisory lock) instead of on GET, so opening the
+            // Quality page never writes but "Start / open" heals a stale checklist.
+            if (checklist.templateId) {
+              await backfillMissingChecklistRows(tx, checklist.id, checklist.templateId);
+            }
             return { created: false as const, checklist };
           }
 
@@ -1338,20 +1417,24 @@ export function registerQualityRoutes(app: Express) {
                   });
                 }
                 const overrideUser = getUser(req);
-                const projectIdForOverride = (existing as any).projectId ?? null;
+                // Task 0.1: qc_item_instance has NO project_id column — the
+                // previous `(existing as any).projectId` was always null, so
+                // this insert never ran. Resolve the project id through the
+                // checklist FK instead.
+                const projectIdForOverride = await resolveProjectIdForItemInstance(itemId);
                 if (projectIdForOverride != null) {
-                  await db.insert(evidenceOverrideRecords).values({
-                    projectId: projectIdForOverride,
-                    completionType: "qc_item_pass",
-                    sourceType: "qc_item_instance",
-                    sourceRef: String(itemId),
-                    scorePercent: evidenceRows.length > 0 ? 100 : 0,
-                    thresholdPercent: 100,
-                    reason: qcOverrideReason,
-                    authorizedByUserId: overrideUser.id,
-                    authorizedByName: overrideUser.name ?? null,
-                    authorizedByRole: getUserRole(req) ?? null,
-                  });
+                  await db.insert(evidenceOverrideRecords).values(
+                    buildQcEvidenceOverrideRecord({
+                      projectId: projectIdForOverride,
+                      itemInstanceId: itemId,
+                      completionType: "qc_item_pass",
+                      evidenceCount: evidenceRows.length,
+                      reason: qcOverrideReason,
+                      authorizedByUserId: overrideUser.id,
+                      authorizedByName: overrideUser.name ?? null,
+                      authorizedByRole: getUserRole(req) ?? null,
+                    }),
+                  );
                 }
                 await recordAudit({
                   actorRole: getUserRole(req) ?? "UNKNOWN",
@@ -1403,7 +1486,7 @@ export function registerQualityRoutes(app: Express) {
 
       const assignments = await getAssignmentsForEntity("quality_item", itemId, "ASSIGNEE");
       const pName = decodeURIComponent(String(req.params.projectName));
-      recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      await recomputeWarningsObservable(pName);
 
       // Refresh dashboard metrics for this project
       db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, pName)).limit(1)
@@ -1447,6 +1530,10 @@ export function registerQualityRoutes(app: Express) {
         ? req.body.override_reason.trim()
         : "";
       const approveOverrideAllowed = approveOverrideReason.length > 0 && canOverride(getUserRole(req) ?? "", "quality");
+      // Task 2.2: defer the evidence-override insert so it runs in the SAME
+      // transaction as the item update — a mid-sequence failure rolls back both.
+      let deferredOverride: ReturnType<typeof buildQcEvidenceOverrideRecord> | null = null;
+      let deferredOverrideAudit: Parameters<typeof recordAudit>[0] | null = null;
       if (approved) {
         if (existing && (existing.qmStatus === "review" || existing.qmStatus === "fail")) {
           const role = getUserRole(req);
@@ -1482,29 +1569,30 @@ export function registerQualityRoutes(app: Express) {
                 });
               }
               const overrideUser = getUser(req);
-              const projectIdForOverride = (existing as any).projectId ?? null;
+              // Task 0.1: resolve project id via the checklist FK — the item
+              // instance has no project_id column of its own.
+              const projectIdForOverride = await resolveProjectIdForItemInstance(itemId);
               if (projectIdForOverride != null) {
-                await db.insert(evidenceOverrideRecords).values({
+                // Task 2.2: capture the payload; the insert runs in the tx below.
+                deferredOverride = buildQcEvidenceOverrideRecord({
                   projectId: projectIdForOverride,
+                  itemInstanceId: itemId,
                   completionType: "qc_item_approve",
-                  sourceType: "qc_item_instance",
-                  sourceRef: String(itemId),
-                  scorePercent: evidenceRows.length > 0 ? 100 : 0,
-                  thresholdPercent: 100,
+                  evidenceCount: evidenceRows.length,
                   reason: approveOverrideReason,
                   authorizedByUserId: overrideUser.id,
                   authorizedByName: overrideUser.name ?? null,
                   authorizedByRole: getUserRole(req) ?? null,
                 });
               }
-              await recordAudit({
+              deferredOverrideAudit = {
                 actorRole: getUserRole(req) ?? "UNKNOWN",
                 userId: overrideUser.id,
                 entityType: "qc_item_instance",
                 entityId: String(itemId),
                 action: "OVERRIDE_EVIDENCE_REQUIRED",
                 changesJson: { override_applied: true, reason: approveOverrideReason, evidenceCount: evidenceRows.length },
-              });
+              };
             }
           }
         }
@@ -1528,9 +1616,18 @@ export function registerQualityRoutes(app: Express) {
         updates.approvalComment = comment?.trim() ? comment.trim() : null;
       }
 
-      const [updated] = await db.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
+      // Task 2.2: override insert + item update run in one transaction so a
+      // mid-sequence failure rolls back cleanly (no orphan override record).
+      const updated = await db.transaction(async (tx: QualityDb) => {
+        if (deferredOverride) {
+          await tx.insert(evidenceOverrideRecords).values(deferredOverride);
+        }
+        const [row] = await tx.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
+        return row;
+      });
+      if (deferredOverrideAudit) await recordAudit(deferredOverrideAudit);
       const pName = decodeURIComponent(String(req.params.projectName));
-      recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      await recomputeWarningsObservable(pName);
 
       // Refresh dashboard metrics for this project
       db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, pName)).limit(1)
@@ -1678,7 +1775,7 @@ export function registerQualityRoutes(app: Express) {
         { projectName }
       );
 
-      recalculateWarnings(projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      await recomputeWarningsObservable(projectName);
 
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName, changesJson: { description: "Sent for approval", approverUserId } });
@@ -1800,7 +1897,7 @@ export function registerQualityRoutes(app: Express) {
         await tx.delete(qcItemInstance).where(eq(qcItemInstance.id, itemId));
       });
 
-      recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      await recomputeWarningsObservable(pName);
 
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "delete", projectName: pName, changesJson: { description: "Quality item deleted" } });
@@ -1816,64 +1913,101 @@ export function registerQualityRoutes(app: Express) {
     try {
       const {
         riskAnswerId,
-        answerYesno,
-        answerText,
+        checklistId,
+        templateRiskQuestionId,
         answerNumber,
-        answerValue,
-        notes,
       } = req.body;
       const pName = decodeURIComponent(String(req.params.projectName));
 
       // F21: confirm the risk answer's checklist belongs to the project named
       // in the URL — otherwise a quality.edit holder could flip risk answers
       // for any project they don't work on.
-      const [answer] = await db
-        .select({ checklistId: qcRiskAnswer.checklistId })
-        .from(qcRiskAnswer)
-        .where(eq(qcRiskAnswer.id, riskAnswerId));
-      if (!answer) return res.status(404).json({ error: "risk_answer_not_found" });
-      const [checklist] = await db
-        .select({ projectId: qcChecklist.projectId })
-        .from(qcChecklist)
-        .where(eq(qcChecklist.id, answer.checklistId));
       const urlProjectId = await resolveProjectIdByName(pName);
-      if (!checklist || !urlProjectId || checklist.projectId !== urlProjectId) {
-        return res.status(403).json({
-          error: "project_scope_mismatch",
-          message: "Risk answer does not belong to the project named in the URL.",
+      // Defence-in-depth: a scoped role (if ever granted quality:edit) may only
+      // answer risk questions on its assigned projects, matching the item routes.
+      if (urlProjectId != null && !scopeAllowsProject(await getQualityHseScope(req), urlProjectId)) {
+        return res.status(404).json({ error: "not_found" });
+      }
+
+      // Resolve the target answer-row id. Either it was passed directly
+      // (riskAnswerId) or we upsert by (checklistId, templateRiskQuestionId)
+      // for a question with no seeded answer row (Task 1.4).
+      let targetRiskAnswerId: number;
+      if (riskAnswerId != null) {
+        const [answer] = await db
+          .select({ checklistId: qcRiskAnswer.checklistId })
+          .from(qcRiskAnswer)
+          .where(eq(qcRiskAnswer.id, riskAnswerId));
+        if (!answer) return res.status(404).json({ error: "risk_answer_not_found" });
+        const [checklist] = await db
+          .select({ projectId: qcChecklist.projectId })
+          .from(qcChecklist)
+          .where(eq(qcChecklist.id, answer.checklistId));
+        if (!checklist || !urlProjectId || checklist.projectId !== urlProjectId) {
+          return res.status(403).json({
+            error: "project_scope_mismatch",
+            message: "Risk answer does not belong to the project named in the URL.",
+          });
+        }
+        targetRiskAnswerId = riskAnswerId;
+      } else {
+        const [checklist] = await db
+          .select({ projectId: qcChecklist.projectId, templateId: qcChecklist.templateId })
+          .from(qcChecklist)
+          .where(eq(qcChecklist.id, checklistId));
+        if (!checklist || !urlProjectId || checklist.projectId !== urlProjectId) {
+          return res.status(403).json({
+            error: "project_scope_mismatch",
+            message: "Checklist does not belong to the project named in the URL.",
+          });
+        }
+        // Defence: the risk question must belong to the checklist's template.
+        const [rq] = await db
+          .select({ id: qcTemplateRiskQuestion.id })
+          .from(qcTemplateRiskQuestion)
+          .innerJoin(qcTemplatePhase, eq(qcTemplateRiskQuestion.templatePhaseId, qcTemplatePhase.id))
+          .where(and(
+            eq(qcTemplateRiskQuestion.id, templateRiskQuestionId),
+            eq(qcTemplatePhase.templateId, checklist.templateId),
+          ));
+        if (!rq) return res.status(400).json({ error: "risk_question_not_in_template" });
+
+        // Find-or-create inside a tx + advisory lock keyed on the natural
+        // pair so two concurrent first-answers can't insert duplicate rows.
+        targetRiskAnswerId = await db.transaction(async (tx: QualityDb) => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`qc_risk_answer:${checklistId}:${templateRiskQuestionId}`}))`);
+          const [existingAns] = await tx
+            .select({ id: qcRiskAnswer.id })
+            .from(qcRiskAnswer)
+            .where(and(
+              eq(qcRiskAnswer.checklistId, checklistId),
+              eq(qcRiskAnswer.templateRiskQuestionId, templateRiskQuestionId),
+            ));
+          if (existingAns) return existingAns.id;
+          const [inserted] = await tx
+            .insert(qcRiskAnswer)
+            .values({ checklistId, templateRiskQuestionId })
+            .returning({ id: qcRiskAnswer.id });
+          return inserted.id;
         });
       }
 
-      const normalizedAnswerYesno =
-        answerYesno !== undefined
-          ? answerYesno
-          : answerValue === "yes"
-            ? true
-            : answerValue === "no"
-              ? false
-              : answerValue === "unanswered" || answerValue == null
-                ? null
-                : undefined;
-      const normalizedAnswerText = answerText !== undefined ? answerText : notes;
+      const answerUpdates = buildRiskAnswerUpdates(req.body);
+      const updates: any = { lastUpdatedBy: getUser(req).id, lastUpdatedAt: new Date(), ...answerUpdates };
 
-      const updates: any = { lastUpdatedBy: getUser(req).id, lastUpdatedAt: new Date() };
-      if (normalizedAnswerYesno !== undefined) updates.answerYesno = normalizedAnswerYesno;
-      if (normalizedAnswerText !== undefined) updates.answerText = normalizedAnswerText;
-      if (answerNumber !== undefined) updates.answerNumber = answerNumber;
-
-      const [updated] = await db.update(qcRiskAnswer).set(updates).where(eq(qcRiskAnswer.id, riskAnswerId)).returning();
-      recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      const [updated] = await db.update(qcRiskAnswer).set(updates).where(eq(qcRiskAnswer.id, targetRiskAnswerId)).returning();
+      await recomputeWarningsObservable(pName);
 
 
       logAuditFromReq(req, {
         entityType: "qc_risk_answer",
-        entityId: String(riskAnswerId),
+        entityId: String(targetRiskAnswerId),
         action: "update",
         projectName: pName,
         changesJson: {
           description: "Risk answer updated",
-          answerYesno: normalizedAnswerYesno,
-          answerText: normalizedAnswerText,
+          answerYesno: answerUpdates.answerYesno,
+          answerText: answerUpdates.answerText,
           answerNumber,
         },
       });
@@ -2025,7 +2159,7 @@ export function registerQualityRoutes(app: Express) {
       const [link] = await db.insert(qcPlanLink).values({
         projectName, planItemId, itemInstanceId: itemInstanceId || null, phaseId: phaseId || null, linkType: linkType || "phase_task",
       }).returning();
-      recalculateWarnings(projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      await recomputeWarningsObservable(projectName);
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(link.id), action: "create", projectName, changesJson: { description: "Plan link created", planItemId } });
       res.json(link);
     } catch (err) {
@@ -2042,7 +2176,7 @@ export function registerQualityRoutes(app: Express) {
       // R1: scoped roles only delete links for their assigned projects.
       if (deletedLink && !(await assertProjectAccessByName(req, res, deletedLink.projectName))) return;
       await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseIntParam(req.params.linkId)));
-      if (deletedLink) recalculateWarnings(deletedLink.projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+      if (deletedLink) await recomputeWarningsObservable(deletedLink.projectName);
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.linkId), action: "delete", projectName: deletedLink?.projectName, changesJson: { description: "Plan link deleted" } });
       res.json({ success: true });
     } catch (err) {
@@ -2211,6 +2345,22 @@ export function registerQualityRoutes(app: Express) {
       const userId = getUser(req).id;
       const context = await loadProjectQualityGovernanceContext(projectName, userId);
 
+      // Task 3.5: opt-in gate (default off). When enabled, open critical NCRs
+      // block handover readiness. Only queried when the flag is on.
+      const criticalNcrGateEnabled = await getFeatureFlag("quality_critical_ncr_handover_gate");
+      let openCriticalNcrCount = 0;
+      if (criticalNcrGateEnabled && context.project?.id) {
+        const criticalNcrs = await db
+          .select({ id: schema.ncrReports.id })
+          .from(schema.ncrReports)
+          .where(and(
+            eq(schema.ncrReports.projectId, context.project.id),
+            eq(schema.ncrReports.severity, "critical"),
+            notInArray(schema.ncrReports.status, ["closed", "waived"]),
+          ));
+        openCriticalNcrCount = criticalNcrs.length;
+      }
+
       res.json({
         projectId: context.project?.id || null,
         projectName,
@@ -2277,6 +2427,8 @@ export function registerQualityRoutes(app: Express) {
           itemNames: context.governanceItems.map((item: any) => item.itemName),
           warnings: context.warnings,
           riskAnswers: context.riskAnswers,
+          openCriticalNcrCount,
+          criticalNcrGateEnabled,
         }),
       });
     } catch (err) {
@@ -2293,19 +2445,27 @@ export function registerQualityRoutes(app: Express) {
       // R1: scoped roles see only items on their assigned projects.
       const scope = await getQualityHseScope(req);
       const scopedNames = scopedProjectNamesArray(scope);
+      const scopedIds = scopedProjectIdsArray(scope);
       if (scopedNames !== null && scopedNames.length === 0) return res.json([]);
       if (projectFilter && !scopeAllowsProjectName(scope, projectFilter)) return res.json([]);
       const statusFilter = req.query.status as string | undefined;
 
-      const allInstances = await db.select().from(qcItemInstance);
-      const allChecklists = await db.select().from(qcChecklist);
+      // Task 2.1: scope the reads by project id (qc_checklist.project_id is NOT
+      // NULL). A scoped role loads only its projects' checklists + instances
+      // instead of the whole table; the same scope filter is re-applied in JS
+      // below, so the output is unchanged.
+      const allChecklists = await loadScopedChecklists(scopedIds);
+      const allInstances = await loadScopedItemInstances(scopedIds, allChecklists.map((cl: any) => cl.id));
 
       const checklistMap = new Map<number, QcChecklistRow>(allChecklists.map((cl: any) => [cl.id, cl]));
 
       let filtered = allInstances;
       if (projectFilter) {
+        // Task 3.2: case/whitespace-insensitive project match (was a strict
+        // `===`, so "Project A" wouldn't match "project a ").
+        const normalizedFilter = normalizeProjectName(projectFilter);
         const matchingChecklistIds = allChecklists
-          .filter((cl: any) => cl.projectName === projectFilter)
+          .filter((cl: any) => normalizeProjectName(cl.projectName) === normalizedFilter)
           .map((cl: any) => cl.id);
         filtered = filtered.filter((i: any) => matchingChecklistIds.includes(i.checklistId));
       }
@@ -2415,7 +2575,9 @@ export function registerQualityRoutes(app: Express) {
       const scopedIdsForChecklists = scopedProjectIdsArray(scope);
       const scopedNamesForChecklists = scopedProjectNamesArray(scope);
       if (scopedIdsForChecklists !== null && scopedIdsForChecklists.length === 0) return res.json([]);
-      const allChecklistsRaw = await db.select().from(qcChecklist);
+      // Task 2.1: scope the checklist read by project id (scoped roles load
+      // only their own); the id-or-name JS scope filter below is unchanged.
+      const allChecklistsRaw = await loadScopedChecklists(scopedIdsForChecklists);
       const allChecklists = allChecklistsRaw.filter((c: typeof allChecklistsRaw[number]) => c.projectId != null || c.projectName != null);
       const allProjectRows = await db.select().from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
@@ -2464,8 +2626,10 @@ export function registerQualityRoutes(app: Express) {
       }
 
       const allPlanLinks = await db.select().from(qcPlanLink);
-      const allItems = await db.select().from(qcItemInstance);
-      const allRiskAnswers = await db.select().from(qcRiskAnswer);
+      // Task 2.1: scope the item + risk-answer reads by the loaded checklists.
+      const scopedChecklistIdsForItems = allChecklists.map((c: any) => c.id);
+      const allItems = await loadScopedItemInstances(scopedIdsForChecklists, scopedChecklistIdsForItems);
+      const allRiskAnswers = await loadScopedRiskAnswers(scopedIdsForChecklists, scopedChecklistIdsForItems);
       const riskQuestionIds = uniqueNumberList(allRiskAnswers.map((answer: any) => answer.templateRiskQuestionId));
       const riskQuestions: QcTemplateRiskQuestionRow[] = riskQuestionIds.length > 0
         ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, riskQuestionIds))
@@ -2673,7 +2837,9 @@ export function registerQualityRoutes(app: Express) {
           blockedHandovers: 0, atRiskProjects: 0, topRiskProjects: [], outstandingPostmortems: [],
         });
       }
-      const allChecklistsRawUnfiltered = await db.select().from(qcChecklist);
+      // Task 2.1: scope the checklist read by project id; the id-or-name JS
+      // scope filter below is unchanged (now refines an already-scoped set).
+      const allChecklistsRawUnfiltered = await loadScopedChecklists(dashboardScopedIds);
       const allowedNamesNorm = dashboardScopedNames === null ? null : new Set(dashboardScopedNames.map((n) => normalizeProjectName(n)));
       const allowedIds = dashboardScopedIds === null ? null : new Set(dashboardScopedIds);
       const allChecklistsRaw = allowedIds === null
@@ -2687,8 +2853,10 @@ export function registerQualityRoutes(app: Express) {
       const allWarnings = allowedNamesNorm === null
         ? allWarningsRaw
         : allWarningsRaw.filter((w: any) => allowedNamesNorm.has(normalizeProjectName(w.projectName)));
-      const allItems = await db.select().from(qcItemInstance);
-      const allRiskAnswers = await db.select().from(qcRiskAnswer);
+      // Task 2.1: scope item + risk-answer reads by the scoped checklist ids.
+      const dashboardScopedChecklistIds = allChecklists.map((c: any) => c.id);
+      const allItems = await loadScopedItemInstances(dashboardScopedIds, dashboardScopedChecklistIds);
+      const allRiskAnswers = await loadScopedRiskAnswers(dashboardScopedIds, dashboardScopedChecklistIds);
       const riskQuestionIds = uniqueNumberList(allRiskAnswers.map((answer: any) => answer.templateRiskQuestionId));
       const riskQuestions: QcTemplateRiskQuestionRow[] = riskQuestionIds.length > 0
         ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, riskQuestionIds))

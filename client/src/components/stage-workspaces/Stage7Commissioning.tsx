@@ -4,6 +4,7 @@ import { DecisionLog } from "./DecisionLog";
 import { CurrentGateCard } from "@/components/stage-lifecycle/CurrentGateCard";
 import { DependencyList } from "@/components/stage-lifecycle/DependencyList";
 import { ExceptionDialog } from "@/components/stage-lifecycle/ExceptionDialog";
+import { BessSevenCheckPanel } from "@/components/quality/BessSevenCheckPanel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -229,6 +230,7 @@ export function Stage7Commissioning({ projectId, isAdmin }: Stage7Props) {
         }
         right={
           <>
+            <BessSevenCheckPanel projectId={projectId} />
             <DependencyList projectId={projectId} stageCode={STAGE_CODE} />
             <DecisionLog projectId={projectId} stageCode={STAGE_CODE} />
 

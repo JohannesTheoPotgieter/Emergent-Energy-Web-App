@@ -1,13 +1,60 @@
 import { Express, Request, Response } from "express";
 import { db } from "./db";
 import { eq, and, sql, ilike } from "drizzle-orm";
-import { commissioningItems, projectEngStages, engStageTemplates, approvals } from "@shared/schema";
+import { commissioningItems, projectEngStages, engStageTemplates, approvals, projectInfo, ADMIN_ROLES, normalizeRoleForPermissions } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth, getEffectiveUser, type AuthenticatedUser } from "./auth-context";
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
 import { z } from "zod";
 import { parseIntParam } from "./lib/req-params";
+import {
+  canTransitionCommissioning,
+  isCommissioningStartBlocked,
+  isHandoverPackStageComplete,
+} from "./lib/commissioning-state-machine";
+import {
+  BESS_ITEM_TYPE,
+  BESS_CATEGORY,
+  BESS_SEVEN_CHECKS,
+  bessItemCloseBlockedReason,
+  bessSevenCheckProgress,
+  isBessCommissioningItem,
+} from "./lib/bess-seven-check";
+
+/** Roles allowed to countersign a BESS 7-check item (Construction Manager + admins). */
+function canCountersignBess(role: string | null | undefined): boolean {
+  const normalized = normalizeRoleForPermissions(role ?? "");
+  if (normalized == null) return false;
+  return normalized === "CONSTRUCTION_MANAGER" || (ADMIN_ROLES as readonly string[]).includes(normalized);
+}
+
+/**
+ * Idempotently ensure the seven BESS checks exist for a project. Matches on
+ * (projectId, itemType, title) so re-running never duplicates a check.
+ * Returns the count inserted.
+ */
+async function ensureBessSevenCheck(projectId: number): Promise<number> {
+  const existing = await db
+    .select({ title: commissioningItems.title })
+    .from(commissioningItems)
+    .where(and(eq(commissioningItems.projectId, projectId), eq(commissioningItems.itemType, BESS_ITEM_TYPE)));
+  const existingTitles = new Set(existing.map((e: { title: string }) => e.title));
+  const missing = BESS_SEVEN_CHECKS.filter((c) => !existingTitles.has(c.title));
+  if (missing.length === 0) return 0;
+  await db.insert(commissioningItems).values(
+    missing.map((c, i) => ({
+      projectId,
+      itemType: BESS_ITEM_TYPE,
+      title: c.title,
+      description: c.description,
+      category: BESS_CATEGORY,
+      status: "not_started" as const,
+      sortOrder: BESS_SEVEN_CHECKS.findIndex((x) => x.key === c.key) >= 0 ? BESS_SEVEN_CHECKS.findIndex((x) => x.key === c.key) : i,
+    })),
+  );
+  return missing.length;
+}
 
 const COMMISSIONING_STATUSES = ['not_started', 'in_progress', 'ready_for_review', 'approved', 'closed'] as const;
 
@@ -46,16 +93,8 @@ async function isHandoverPackComplete(projectId: number): Promise<{ complete: bo
     .where(and(eq(projectEngStages.projectId, projectId), ilike(engStageTemplates.name, '%Handover Pack%')));
   if (stages.length === 0) return { complete: false, stageName: "Handover Pack", status: "not_found" };
   const stage = stages[0];
-  return { complete: stage.status === "complete", stageName: stage.name, status: stage.status };
+  return { complete: isHandoverPackStageComplete(stage.status), stageName: stage.name, status: stage.status };
 }
-
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  not_started: ['in_progress'],
-  in_progress: ['ready_for_review', 'not_started'],
-  ready_for_review: ['approved', 'in_progress'],
-  approved: ['closed'],
-  closed: [],
-};
 
 function rowsFromResult(result: unknown): Record<string, unknown>[] {
   if (Array.isArray(result)) return result;
@@ -75,17 +114,19 @@ export function registerCommissioningRoutes(app: Express): void {
       const typeFilter = req.query.itemType as string | undefined;
       const VALID_ITEM_TYPES = new Set(["commissioning", "closeout", "handover", "punchlist", "inspection", "test"]);
       const safeTypeFilter = typeFilter && VALID_ITEM_TYPES.has(typeFilter) ? typeFilter : null;
-      let whereClause = `WHERE ci.project_id = ${projectId} AND ci.deleted_at IS NULL`;
-      if (safeTypeFilter) whereClause += ` AND ci.item_type = '${safeTypeFilter}'`;
 
-      const rows = await db.execute(sql.raw(`
+      // Parameterised — no string interpolation. The optional item-type filter
+      // is composed as a nested sql fragment so its value binds as a parameter.
+      const rows = await db.execute(sql`
         SELECT ci.*, u.name as owner_name, p.project_name
         FROM commissioning_items ci
         LEFT JOIN users u ON ci.owner_user_id = u.id
         LEFT JOIN project_info p ON ci.project_id = p.id
-        ${whereClause}
+        WHERE ci.project_id = ${projectId} AND ci.deleted_at IS NULL${
+          safeTypeFilter ? sql` AND ci.item_type = ${safeTypeFilter}` : sql``
+        }
         ORDER BY ci.category, ci.sort_order, ci.created_at
-      `));
+      `);
       const items = rowsFromResult(rows);
       res.json(items);
     } catch (err: unknown) {
@@ -99,13 +140,13 @@ export function registerCommissioningRoutes(app: Express): void {
     try {
       const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-      const rows = await db.execute(sql.raw(`
+      const rows = await db.execute(sql`
         SELECT ci.*, u.name as owner_name, p.project_name
         FROM commissioning_items ci
         LEFT JOIN users u ON ci.owner_user_id = u.id
         LEFT JOIN project_info p ON ci.project_id = p.id
         WHERE ci.id = ${id}
-      `));
+      `);
       const items = rowsFromResult(rows);
       if (items.length === 0) return res.status(404).json({ error: "Not found" });
       res.json(items[0]);
@@ -167,20 +208,26 @@ export function registerCommissioningRoutes(app: Express): void {
       }
 
       if (parsed.data.status !== undefined && parsed.data.status !== old.status) {
-        const allowed = VALID_TRANSITIONS[old.status] || [];
-        if (!allowed.includes(parsed.data.status)) {
+        if (!canTransitionCommissioning(old.status, parsed.data.status)) {
           return res.status(400).json({ error: `Cannot transition from ${old.status} to ${parsed.data.status}` });
         }
 
-        // Gate: commissioning cannot progress until Handover Pack stage is complete
+        // Gate: commissioning cannot start until the Handover Pack stage is complete.
         if (old.status === "not_started" && parsed.data.status === "in_progress") {
           const hp = await isHandoverPackComplete(old.projectId);
-          if (!hp.complete) {
+          if (isCommissioningStartBlocked(old.status, parsed.data.status, hp.complete)) {
             return res.status(400).json({
               error: "Commissioning cannot start until the Engineering Handover Pack stage is complete.",
               handoverPack: hp,
             });
           }
+        }
+
+        // BESS 7-check: an item may only close once the Construction Manager
+        // has countersigned the Engineering-Lead sign-off.
+        const bessCloseBlock = bessItemCloseBlockedReason(old, parsed.data.status);
+        if (bessCloseBlock) {
+          return res.status(400).json({ error: bessCloseBlock });
         }
 
         updates.status = parsed.data.status;
@@ -211,12 +258,14 @@ export function registerCommissioningRoutes(app: Express): void {
               return res.status(403).json({ error: "Evidence override requires authorized role." });
             }
 
-            await db.execute(sql.raw(`
+            // Parameterised — every value binds as a parameter, so the
+            // hand-rolled single-quote escaping is gone (§ 5 SQL safety).
+            await db.execute(sql`
               INSERT INTO evidence_override_records
                 (project_id, completion_type, source_type, source_ref, score_percent, threshold_percent, reason, authorized_by_user_id, authorized_by_name, authorized_by_role)
               VALUES
-                (${old.projectId}, 'commissioning_item_close', 'commissioning_item', '${id}', ${evidence.score}, ${evidence.threshold}, '${overrideReason.replace(/'/g, "''")}', ${user?.id || "NULL"}, ${user?.name ? `'${String(user.name).replace(/'/g, "''")}'` : "NULL"}, ${user?.role ? `'${String(user.role).replace(/'/g, "''")}'` : "NULL"})
-            `));
+                (${old.projectId}, 'commissioning_item_close', 'commissioning_item', ${String(id)}, ${evidence.score}, ${evidence.threshold}, ${overrideReason}, ${user?.id ?? null}, ${user?.name ?? null}, ${user?.role ?? null})
+            `);
 
             logAuditFromReq(req, {
               entityType: "project_timeline",
@@ -258,6 +307,16 @@ export function registerCommissioningRoutes(app: Express): void {
         changesJson: { before: { status: old.status }, after: { status: result[0].status }, updates: parsed.data },
       });
 
+      // BESS 7-check: the COO is copied on every check closure.
+      if (isBessCommissioningItem(result[0]) && result[0].status === "closed" && old.status !== "closed") {
+        logAuditFromReq(req, {
+          entityType: "commissioning_item",
+          entityId: String(id),
+          action: "bess.closure.coo_notified",
+          changesJson: { title: result[0].title, projectId: result[0].projectId, note: "COO notified of BESS 7-check item closure" },
+        });
+      }
+
       res.json(result[0]);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -294,19 +353,22 @@ export function registerCommissioningRoutes(app: Express): void {
       const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
-      const rows = await db.execute(sql.raw(`
+      // Parameterised project id. The FILTER aggregate is Postgres-only (this
+      // endpoint never ran on the SQLite dev fallback), so the existing ::int
+      // casts are preserved to keep the response shape identical.
+      const rows = await db.execute(sql`
         SELECT
           category,
           item_type,
-          COUNT(*)::int as total,
-          COUNT(*) FILTER (WHERE status = 'closed' OR status = 'approved')::int as completed,
-          COUNT(*) FILTER (WHERE status = 'in_progress')::int as in_progress,
-          COUNT(*) FILTER (WHERE status = 'ready_for_review')::int as review
+          CAST(COUNT(*) AS int) as total,
+          CAST(COUNT(*) FILTER (WHERE status = 'closed' OR status = 'approved') AS int) as completed,
+          CAST(COUNT(*) FILTER (WHERE status = 'in_progress') AS int) as in_progress,
+          CAST(COUNT(*) FILTER (WHERE status = 'ready_for_review') AS int) as review
         FROM commissioning_items
         WHERE project_id = ${projectId}
         GROUP BY category, item_type
         ORDER BY category
-      `));
+      `);
       const items = rowsFromResult(rows);
       res.json(items);
     } catch (err: unknown) {
@@ -393,6 +455,120 @@ export function registerCommissioningRoutes(app: Express): void {
       res.json(evidence);
     } catch (err: unknown) {
       res.status(500).json({ error: "Failed to evaluate evidence" });
+    }
+  });
+
+  // ===================== BESS 7-check =====================
+
+  // Return the BESS 7-check for a project: whether it applies (is_bess_hybrid),
+  // the seven items, and the sign-off progress.
+  app.get("/api/commissioning/project/:projectId/bess-seven-check", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
+    try {
+      const projectId = parseIntParam(req.params.projectId);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
+      const [project] = await db
+        .select({ isBessHybrid: projectInfo.isBessHybrid })
+        .from(projectInfo)
+        .where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const items = await db
+        .select()
+        .from(commissioningItems)
+        .where(and(
+          eq(commissioningItems.projectId, projectId),
+          eq(commissioningItems.itemType, BESS_ITEM_TYPE),
+          sql`${commissioningItems.deletedAt} IS NULL`,
+        ))
+        .orderBy(commissioningItems.sortOrder);
+
+      res.json({
+        applies: project.isBessHybrid === true,
+        progress: bessSevenCheckProgress(items),
+        items,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Commissioning] BESS get error:", message);
+      res.status(500).json({ error: "Failed to fetch BESS 7-check" });
+    }
+  });
+
+  // Seed the 7 checks for a BESS/hybrid project (idempotent). Only applies to
+  // projects flagged is_bess_hybrid.
+  app.post("/api/commissioning/project/:projectId/bess-seven-check/seed", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
+    try {
+      const projectId = parseIntParam(req.params.projectId);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
+      const [project] = await db
+        .select({ isBessHybrid: projectInfo.isBessHybrid })
+        .from(projectInfo)
+        .where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (project.isBessHybrid !== true) {
+        return res.status(400).json({ error: "Project is not flagged as BESS/hybrid; the 7-check does not apply." });
+      }
+
+      const inserted = await ensureBessSevenCheck(projectId);
+      const items = await db
+        .select()
+        .from(commissioningItems)
+        .where(and(
+          eq(commissioningItems.projectId, projectId),
+          eq(commissioningItems.itemType, BESS_ITEM_TYPE),
+          sql`${commissioningItems.deletedAt} IS NULL`,
+        ))
+        .orderBy(commissioningItems.sortOrder);
+      logAuditFromReq(req, {
+        entityType: "commissioning_item",
+        entityId: String(projectId),
+        action: "bess.seven_check.seeded",
+        changesJson: { projectId, inserted },
+      });
+      res.status(inserted > 0 ? 201 : 200).json({ inserted, progress: bessSevenCheckProgress(items), items });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Commissioning] BESS seed error:", message);
+      res.status(500).json({ error: "Failed to seed BESS 7-check" });
+    }
+  });
+
+  // Construction-Manager countersignature on a BESS check (required before the
+  // item may close). Eng Lead signs off via the normal approval flow first.
+  app.post("/api/commissioning/:id/countersign", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = parseIntParam(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+      const [item] = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
+      if (!item) return res.status(404).json({ error: "Not found" });
+      if (!isBessCommissioningItem(item)) {
+        return res.status(400).json({ error: "Countersignature only applies to BESS 7-check items." });
+      }
+      const user = getEffectiveUser(req);
+      if (!canCountersignBess(user?.role)) {
+        return res.status(403).json({ error: "Only the Construction Manager (or an admin) may countersign a BESS check." });
+      }
+      // Eng-Lead sign-off first: the item must have reached approved.
+      if (item.status !== "approved" && item.status !== "closed") {
+        return res.status(400).json({ error: "The Engineering Lead must approve the check before it can be countersigned." });
+      }
+
+      const [updated] = await db
+        .update(commissioningItems)
+        .set({ countersignedByUserId: user?.id ?? null, countersignedAt: new Date(), updatedAt: new Date() })
+        .where(eq(commissioningItems.id, id))
+        .returning();
+      logAuditFromReq(req, {
+        entityType: "commissioning_item",
+        entityId: String(id),
+        action: "bess.countersigned",
+        changesJson: { title: item.title, projectId: item.projectId },
+      });
+      res.json(updated);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Commissioning] BESS countersign error:", message);
+      res.status(500).json({ error: "Failed to countersign BESS check" });
     }
   });
 }

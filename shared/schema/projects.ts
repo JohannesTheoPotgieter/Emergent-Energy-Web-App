@@ -220,6 +220,10 @@ export const projectInfo = pgTable("project_info", {
   // phase. See shared/phases.ts for the canonical 10-phase list.
   projectStatus: projectStatusEnum("project_status").notNull().default("active"),
   inDlp: boolean("in_dlp").notNull().default(false),
+  // Marks a hybrid / battery-energy-storage (BESS) job. Gates the mandatory
+  // BESS 7-check commissioning checklist (see server/lib/bess-seven-check.ts).
+  // Additive flag — there was no BESS indicator on project_info before.
+  isBessHybrid: boolean("is_bess_hybrid").notNull().default(false),
 }, (table) => ({
   uqProjectInfoProjectNameActive: uniqueIndex("uq_project_info_project_name_active")
     .on(table.projectName)

@@ -10,7 +10,9 @@ import { Loader2, AlertTriangle, Trash2 } from "lucide-react";
 
 export interface ImpactRow {
   label: string;
-  count: number;
+  /** Omit when the exact count is unknown — rendered as "—" and excluded from
+   *  the cascade total rather than shown as a misleading number. */
+  count?: number;
   /** Optional note displayed in muted text on the right. */
   note?: string;
   /** Danger level — colours the count badge. */
@@ -143,7 +145,7 @@ export function ConfirmDestructive({
                                   : "bg-muted"
                             }
                           >
-                            {row.count}
+                            {row.count ?? "—"}
                           </Badge>
                         </div>
                       </li>

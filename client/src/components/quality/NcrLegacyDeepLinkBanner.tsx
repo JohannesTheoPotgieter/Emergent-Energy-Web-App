@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Info, XCircle } from "lucide-react";
 
@@ -18,12 +19,19 @@ async function fetchNcr(id: number): Promise<{ ncr: any }> {
  * dashboard top with no obvious next step.
  */
 export function NcrLegacyDeepLinkBanner() {
-  const [dismissed, setDismissed] = useState(false);
-  const ncrId = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    const v = params.get("ncr");
-    return v && /^\d+$/.test(v) ? Number(v) : null;
-  }, []);
+  // Derive the id from the router's reactive search string so clicking an
+  // NCR row (setLocation('/quality?ncr=<id>')) updates the banner in-place.
+  // The previous useMemo read window.location.search once at mount, so the
+  // banner never changed on in-app navigation.
+  const search = useSearch();
+  const params = new URLSearchParams(search);
+  const rawNcr = params.get("ncr");
+  const ncrId = rawNcr && /^\d+$/.test(rawNcr) ? Number(rawNcr) : null;
+
+  // Dismissal is tracked per-id so navigating to a different NCR re-shows the
+  // banner even after a prior one was dismissed.
+  const [dismissedId, setDismissedId] = useState<number | null>(null);
+  const dismissed = ncrId !== null && dismissedId === ncrId;
 
   const { data, isError } = useQuery<{ ncr: any }>({
     queryKey: ["quality-ncr-detail", ncrId],
@@ -60,7 +68,7 @@ export function NcrLegacyDeepLinkBanner() {
       </div>
       <button
         type="button"
-        onClick={() => setDismissed(true)}
+        onClick={() => setDismissedId(ncrId)}
         className="text-blue-900/70 hover:text-blue-900 shrink-0"
         aria-label="Dismiss NCR notice"
         data-testid="btn-dismiss-ncr-banner"

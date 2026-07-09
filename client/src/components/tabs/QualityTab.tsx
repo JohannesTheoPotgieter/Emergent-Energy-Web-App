@@ -1,6 +1,11 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
+import { getRiskSeverityColor, formatDateOnly } from "@/lib/quality-ui-helpers";
+import { RiskQuestionsPanel } from "@/components/tabs/quality/RiskQuestionsPanel";
+import { BulkBar } from "@/components/tabs/quality/BulkBar";
+import { PhaseTabs } from "@/components/tabs/quality/PhaseTabs";
+import { EvidencePanel } from "@/components/tabs/quality/EvidencePanel";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import {
   AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield,
   AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2, Send, Loader2,
-  CheckCircle2, Upload, Paperclip, ExternalLink, UserPlus, SquareCheck,
+  CheckCircle2, Upload, Paperclip, ExternalLink, UserPlus, SquareCheck, Camera,
   Ban, FileWarning, ClipboardCheck, PackagePlus,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -49,26 +54,7 @@ function getPhaseColor(phaseKey: string) {
   return PHASE_COLORS[phaseKey] || PHASE_COLORS["planning_design"];
 }
 
-function getRiskSeverityColor(severity: string) {
-  switch (severity?.toLowerCase()) {
-    case "high": return "text-red-500 bg-red-50 border-red-500/20";
-    case "medium": return "text-amber-500 bg-amber-50 border-amber-500/20";
-    case "low": return "text-amber-500 bg-amber-50 border-amber-500/20";
-    default: return "text-muted-foreground bg-muted/50 border-border";
-  }
-}
 
-function parseRiskYesNo(value: string | null | undefined): boolean | null {
-  if (value === "yes") return true;
-  if (value === "no") return false;
-  return null;
-}
-
-function formatRiskYesNo(value: boolean | null | undefined): string {
-  if (value === true) return "yes";
-  if (value === false) return "no";
-  return "unanswered";
-}
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string; btnClass: string; icon: string }> = {
   not_started: { label: "Not Started", color: "text-muted-foreground", bg: "bg-muted border-border", dot: "bg-slate-400", btnClass: "border-border text-muted-foreground hover:bg-muted", icon: "O" },
@@ -237,10 +223,8 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [showAddItem, setShowAddItem] = useState<number | null>(null);
   const [newItemName, setNewItemName] = useState("");
-  const [dragOverItem, setDragOverItem] = useState<number | null>(null);
   const [evidenceUploading, setEvidenceUploading] = useState<number | null>(null);
   const [evidenceUploadState, setEvidenceUploadState] = useState<Record<number, { state: "uploading" | "uploaded" | "failed" | "too_large"; message: string }>>({});
-  const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   // Database-driven RBAC per AGENT_GUARDRAILS § 5 / § 8.2. The previous
   // hard-coded role list (`['admin','COO_ADMIN','CEO_ADMIN']` + QUALITY_MANAGER
@@ -418,10 +402,17 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   });
 
   const updateRiskMutation = useMutation({
-    mutationFn: async ({ riskAnswerId, updates }: { riskAnswerId: number; updates: any }) => {
+    // Task 1.4: answer either an existing answer row (riskAnswerId) or a
+    // question that has no seeded answer yet (templateRiskQuestionId +
+    // checklistId → server upserts).
+    mutationFn: async ({ riskAnswerId, templateRiskQuestionId, updates }: { riskAnswerId?: number; templateRiskQuestionId?: number; updates: any }) => {
+      const checklistId = checklistData?.checklist?.id ?? null;
+      const identity = riskAnswerId != null
+        ? { riskAnswerId }
+        : { templateRiskQuestionId, checklistId };
       const res = await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/risk-answer`, {
         method: "POST",
-        body: JSON.stringify({ riskAnswerId, ...updates }),
+        body: JSON.stringify({ ...identity, ...updates }),
       });
       if (!res.ok) throw new Error("Failed to update risk answer");
       return res.json();
@@ -707,36 +698,40 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     return true;
   };
 
+  // Task 3.4: single filter predicate shared by the Action-Centre drill-down
+  // (chip counts) and the in-phase item list (shouldShowItem). Previously the
+  // drill-down used an incomplete copy that returned false for overdue / fail /
+  // unassigned, so a card could show a count the drill-down couldn't reproduce.
+  const matchesQualityFilter = (instance: any, filter: string): boolean => {
+    if (filter === "all") return true;
+    if (filter === "unassigned") return !instance.primaryAssignment;
+    if (filter === "overdue") {
+      const status = getItemQmStatus(instance);
+      if (status === "pass" || status === "na") return false;
+      const dueDate = instance.endDate || instance.scheduledDate;
+      if (!dueDate) return false;
+      const due = new Date(String(dueDate).split("T")[0] + "T00:00:00").getTime();
+      return due < new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
+    }
+    if (filter === "evidence_gap") {
+      if (instance.isApplicable === false) return false;
+      const ti = (checklistData?.templateItems || []).find((t: any) => t.id === instance.templateItemId);
+      return !!ti?.isEvidenceRequired && (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === instance.id).length === 0;
+    }
+    if (filter === "handover_blocking") return isHandoverBlockingItem(instance);
+    if (filter === "critical_contributors") return isCriticalContributorItem(instance);
+    if (filter === "actionable_for_approval") return isActionableForApprovalItem(instance);
+    return getItemQmStatus(instance) === filter;
+  };
+
   // Drill-down items across ALL phases (matches badge counts). When the user
   // has not opened a chip drill-down (chipConfig === null) or data is still
   // loading (checklistData === undefined) this short-circuits to an empty
   // array — keeping the hook call itself unconditional.
   const drillDownInstances = useMemo(() => {
     if (!chipConfig || !checklistData) return [];
-    const filterValue = chipConfig.filter;
     const allInst = checklistData.itemInstances || [];
-    const tplItems = checklistData.templateItems || [];
-    const evid = checklistData.evidence || [];
-    return allInst.filter((instance: any) => {
-      if (filterValue === "evidence_gap") {
-        if (instance.isApplicable === false) return false;
-        const ti = tplItems.find((t: any) => t.id === instance.templateItemId);
-        return ti?.isEvidenceRequired && evid.filter((e: any) => e.itemInstanceId === instance.id).length === 0;
-      }
-      if (filterValue === "handover_blocking") {
-        return isHandoverBlockingItem(instance);
-      }
-      if (filterValue === "critical_contributors") {
-        return isCriticalContributorItem(instance);
-      }
-      if (filterValue === "actionable_for_approval") {
-        return isActionableForApprovalItem(instance);
-      }
-      if (filterValue === "review") {
-        return getItemQmStatus(instance) === "review";
-      }
-      return false;
-    });
+    return allInst.filter((instance: any) => matchesQualityFilter(instance, chipConfig.filter));
   }, [chipConfig, checklistData]);
 
   const drillDownInPhase = useMemo(() => {
@@ -792,7 +787,15 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   const governanceFocusItems = workspaceData?.focusItems || [];
   const relevantMicrosoftItems = workspaceData?.relevantMicrosoftItems || [];
 
+  // Task 2.3: per-render memo. getPhaseProgress is O(groups×items×instances)
+  // and is called once per phase in the tab header plus for the selected phase;
+  // caching within a render avoids recomputing the same phase multiple times.
+  const phaseProgressCache = new Map<number, {
+    total: number; applicable: number; completed: number; failed: number; inReview: number; percent: number;
+  }>();
   const getPhaseProgress = (phaseId: number) => {
+    const cached = phaseProgressCache.get(phaseId);
+    if (cached) return cached;
     const phaseGroups = groups.filter((g: any) => g.templatePhaseId === phaseId);
     const phaseGroupIds = phaseGroups.map((g: any) => g.id);
     const phaseTemplateItemIds = templateItems
@@ -803,7 +806,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     const passed = applicable.filter((i: any) => getItemQmStatus(i) === "pass");
     const failed = applicable.filter((i: any) => getItemQmStatus(i) === "fail");
     const inReview = applicable.filter((i: any) => getItemQmStatus(i) === "review");
-    return {
+    const result = {
       total: phaseInstances.length,
       applicable: applicable.length,
       completed: passed.length,
@@ -811,6 +814,8 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
       inReview: inReview.length,
       percent: applicable.length > 0 ? Math.round((passed.length / applicable.length) * 100) : 0,
     };
+    phaseProgressCache.set(phaseId, result);
+    return result;
   };
 
   const getItemInstance = (templateItemId: number) => itemInstances.find((ii: any) => ii.templateItemId === templateItemId);
@@ -828,33 +833,9 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     t.taskNo && t.highLevelProgramme && t.taskNo !== "No." && t.highLevelProgramme !== "HIGH LEVEL PROGRAMME"
   );
 
-  const shouldShowItem = (instance: any) => {
-    if (statusFilter === "all") return true;
-    if (statusFilter === "unassigned") return !instance.primaryAssignment;
-    if (statusFilter === "overdue") {
-      const status = getItemQmStatus(instance);
-      if (status === "pass" || status === "na") return false;
-      const dueDate = instance.endDate || instance.scheduledDate;
-      if (!dueDate) return false;
-      const due = new Date(String(dueDate).split("T")[0] + "T00:00:00").getTime();
-      return due < new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
-    }
-    if (statusFilter === "evidence_gap") {
-      if (instance.isApplicable === false) return false;
-      const ti = (checklistData?.templateItems || []).find((t: any) => t.id === instance.templateItemId);
-      return ti?.isEvidenceRequired && (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === instance.id).length === 0;
-    }
-    if (statusFilter === "handover_blocking") {
-      return isHandoverBlockingItem(instance);
-    }
-    if (statusFilter === "critical_contributors") {
-      return isCriticalContributorItem(instance);
-    }
-    if (statusFilter === "actionable_for_approval") {
-      return isActionableForApprovalItem(instance);
-    }
-    return getItemQmStatus(instance) === statusFilter;
-  };
+  // Task 3.4: reuse the single shared predicate so the item list and the
+  // Action-Centre chip counts can never diverge.
+  const shouldShowItem = (instance: any) => matchesQualityFilter(instance, statusFilter);
 
   const selectedPhase = phases.find((p: any) => p.id === selectedPhaseId);
   const selectedPhaseProgress = selectedPhaseId ? getPhaseProgress(selectedPhaseId) : null;
@@ -865,14 +846,12 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   const handleBulkStatusChange = async (newStatus: string) => {
     const ids = Array.from(selectedItems);
     setSelectedItems(new Set());
-    let failCount = 0;
-    for (const id of ids) {
-      try {
-        await updateItemMutation.mutateAsync({ itemInstanceId: id, updates: { qmStatus: newStatus } });
-      } catch {
-        failCount++;
-      }
-    }
+    // Task 2.3: batch — issue the updates in parallel instead of awaiting each
+    // one sequentially.
+    const results = await Promise.allSettled(
+      ids.map((id) => updateItemMutation.mutateAsync({ itemInstanceId: id, updates: { qmStatus: newStatus } })),
+    );
+    const failCount = results.filter((r) => r.status === "rejected").length;
     if (failCount > 0) {
       toast({ title: "Partial failure", description: `${failCount} of ${ids.length} item(s) failed to update.`, variant: "destructive" });
     } else if (ids.length > 0) {
@@ -948,18 +927,15 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
 
     const ids = Array.from(selectedItems);
     setBulkSubmitting(true);
-    const failures: Array<{ id: number; reason: string }> = [];
-    let successCount = 0;
-    for (const id of ids) {
-      try {
-        // Bypass mutation hook to avoid per-item toasts/invalidations
-        await sendForApprovalRaw(id, bulkApprover);
-        successCount++;
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : "Unknown error";
-        failures.push({ id, reason });
-      }
-    }
+    // Task 2.3: batch — bypass the mutation hook (no per-item toast/invalidate)
+    // and send all approvals in parallel; invalidate once at the end.
+    const results = await Promise.allSettled(ids.map((id) => sendForApprovalRaw(id, bulkApprover)));
+    const successCount = results.filter((r) => r.status === "fulfilled").length;
+    const failures: Array<{ id: number; reason: string }> = results.flatMap((r, i) =>
+      r.status === "rejected"
+        ? [{ id: ids[i], reason: r.reason instanceof Error ? r.reason.message : "Unknown error" }]
+        : [],
+    );
     setBulkSubmitting(false);
     setBulkApproverDialogOpen(false);
     setBulkApprover("");
@@ -1229,43 +1205,13 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
 
       <QualityWarningsPanel warnings={activeWarnings} highOnly={warningsHighOnly} onClearHighOnly={() => setWarningsHighOnly(false)} />
 
-      <div className="bg-card rounded-lg border" data-testid="phase-tabs">
-        <div className="flex items-stretch overflow-x-auto">
-          {phases.map((phase: any, idx: number) => {
-            const progress = getPhaseProgress(phase.id);
-            const colors = getPhaseColor(phase.phaseKey);
-            const isActive = selectedPhaseId === phase.id;
-            return (
-              <button
-                key={phase.id}
-                onClick={() => setSelectedPhaseId(phase.id)}
-                className={`relative flex-1 min-w-[140px] flex flex-col items-center gap-1.5 px-4 py-3 text-sm font-medium transition-all border-b-2 ${
-                  isActive
-                    ? `${colors.text} border-current bg-card`
-                    : "text-muted-foreground border-transparent hover:text-foreground hover:bg-muted/30"
-                } ${idx > 0 ? "border-l border-l-slate-100" : ""}`}
-                data-testid={`phase-tab-${phase.id}`}
-              >
-                <div className="flex items-center gap-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${isActive ? colors.progress : "bg-slate-300"}`} />
-                  <span className="whitespace-nowrap">{phase.phaseName}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${colors.progress} transition-all`} style={{ width: `${progress.percent}%` }} />
-                  </div>
-                  <span className={`text-[10px] font-mono ${isActive ? colors.text : "text-muted-foreground"}`}>
-                    {progress.completed}/{progress.applicable}
-                  </span>
-                </div>
-                {progress.failed > 0 && (
-                  <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-red-500" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <PhaseTabs
+        phases={phases}
+        selectedPhaseId={selectedPhaseId}
+        onSelect={setSelectedPhaseId}
+        getPhaseProgress={getPhaseProgress}
+        getPhaseColor={getPhaseColor}
+      />
 
       {selectedPhase && selectedPhaseProgress && (
         <div className="space-y-4">
@@ -1336,50 +1282,17 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
             </div>
           </div>
 
-          {selectedItems.size > 0 && canEdit && (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 flex items-center gap-3 flex-wrap" data-testid="bulk-actions-bar">
-              <SquareCheck className="w-4 h-4 text-slate-600" />
-              <span className="text-sm font-medium text-slate-700">{selectedItems.size} item{selectedItems.size !== 1 ? "s" : ""} selected</span>
-              <div className="flex items-center gap-1.5 ml-auto flex-wrap">
-                <Button
-                  size="sm"
-                  className="h-7 text-xs bg-amber-500 hover:bg-amber-600 gap-1"
-                  disabled={selectedItems.size === blockedApprovalSelections.length}
-                  onClick={() => { setBulkApprover(""); setBulkApproverDialogOpen(true); }}
-                  data-testid="bulk-send-for-approval"
-                >
-                  <Send className="w-3 h-3" /> Send for approval
-                </Button>
-                {chipConfig?.showHandoverPackAction && projectInfoId && (
-                  <Button
-                    size="sm"
-                    className="h-7 text-xs bg-red-600 hover:bg-red-700 gap-1"
-                    onClick={() => setCreatePackDialogOpen(true)}
-                    data-testid="bulk-create-handover-pack"
-                  >
-                    <PackagePlus className="w-3 h-3" /> Create handover pack
-                  </Button>
-                )}
-                <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => handleBulkStatusChange("pass")} data-testid="bulk-pass">
-                  <CheckCircle className="w-3 h-3 mr-1" /> Pass
-                </Button>
-                <Button size="sm" className="h-7 text-xs bg-amber-500 hover:bg-amber-600" onClick={() => handleBulkStatusChange("review")} data-testid="bulk-review">Review</Button>
-                <Button size="sm" className="h-7 text-xs" variant="destructive" onClick={() => handleBulkStatusChange("fail")} data-testid="bulk-fail">Fail</Button>
-                <Button size="sm" className="h-7 text-xs" variant="outline" onClick={() => handleBulkStatusChange("na")} data-testid="bulk-na">N/A</Button>
-                <Button size="sm" className="h-7 text-xs" variant="ghost" onClick={() => setSelectedItems(new Set())} data-testid="bulk-clear">
-                  <X className="w-3 h-3 mr-1" /> Clear
-                </Button>
-              </div>
-            </div>
-          )}
-          {selectedItems.size > 0 && blockedApprovalSelections.length > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 space-y-1" data-testid="bulk-blocked-reasons">
-              <p className="font-medium">Some selected items cannot be submitted for review:</p>
-              {blockedApprovalSelections.slice(0, 4).map((item) => (
-                <p key={item.id}>• Item #{item.id}: {item.reason}</p>
-              ))}
-              {blockedApprovalSelections.length > 4 && <p>• +{blockedApprovalSelections.length - 4} more blocked item(s)</p>}
-            </div>
+          {canEdit && (
+            <BulkBar
+              selectedCount={selectedItems.size}
+              blockedApprovalSelections={blockedApprovalSelections}
+              showHandoverPackAction={!!(chipConfig?.showHandoverPackAction && projectInfoId)}
+              isPending={updateItemMutation.isPending}
+              onSendForApproval={() => { setBulkApprover(""); setBulkApproverDialogOpen(true); }}
+              onCreatePack={() => setCreatePackDialogOpen(true)}
+              onBulkStatus={handleBulkStatusChange}
+              onClear={() => setSelectedItems(new Set())}
+            />
           )}
 
           {bulkApproverDialogOpen && (
@@ -1666,9 +1579,9 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                         {(instance.startDate || instance.endDate) && (
                                           <span className="flex items-center gap-1">
                                             <Clock className="w-3 h-3" />
-                                            {instance.startDate && new Date(instance.startDate).toLocaleDateString()}
+                                            {instance.startDate && formatDateOnly(instance.startDate)}
                                             {instance.startDate && instance.endDate && " -> "}
-                                            {instance.endDate && new Date(instance.endDate).toLocaleDateString()}
+                                            {instance.endDate && formatDateOnly(instance.endDate)}
                                           </span>
                                         )}
                                       </div>
@@ -1840,90 +1753,15 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                       </div>
                                     )}
 
-                                    <div>
-                                      <div className="flex items-center justify-between mb-2">
-                                        <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                          Evidence ({itemEvidence.length})
-                                        </Label>
-                                      </div>
-                                      {itemEvidence.length > 0 && (
-                                        <div className="space-y-1.5 mb-3">
-                                          {itemEvidence.map((ev: any) => (
-                                            <div key={ev.id} className="flex items-center gap-2 text-xs bg-muted rounded-lg border p-2.5" data-testid={`evidence-${ev.id}`}>
-                                              <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                              <span className="flex-1 truncate">{ev.evidenceNote || ev.evidenceUrl}</span>
-                                              {ev.evidenceUrl && (
-                                                <a href={ev.evidenceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 p-0.5" data-testid={`view-evidence-${ev.id}`}>
-                                                  <ExternalLink className="w-3.5 h-3.5" />
-                                                </a>
-                                              )}
-                                              {canEdit && (
-                                                <button
-                                                  className="text-muted-foreground hover:text-destructive p-0.5 rounded hover:bg-red-50"
-                                                  onClick={() => deleteEvidenceMutation.mutate(ev.id)}
-                                                  data-testid={`delete-evidence-${ev.id}`}
-                                                >
-                                                  <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
-                                              )}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                      {canEdit && (
-                                        <div
-                                          className={`border-2 border-dashed rounded-lg p-5 text-center transition-colors cursor-pointer ${
-                                            dragOverItem === instance.id ? "border-blue-400 bg-blue-50" : "border-border hover:border-blue-300 hover:bg-blue-50/30"
-                                          }`}
-                                          onDragOver={(e) => { e.preventDefault(); setDragOverItem(instance.id); }}
-                                          onDragLeave={() => setDragOverItem(null)}
-                                          onDrop={(e) => {
-                                            e.preventDefault();
-                                            setDragOverItem(null);
-                                            const files = e.dataTransfer.files;
-                                            if (files.length > 0) handleEvidenceFileUpload(instance.id, files[0]);
-                                          }}
-                                          onClick={() => fileInputRefs.current[instance.id]?.click()}
-                                          data-testid={`evidence-dropzone-${instance.id}`}
-                                        >
-                                          <input
-                                            type="file"
-                                            className="hidden"
-                                            ref={(el) => { fileInputRefs.current[instance.id] = el; }}
-                                            onChange={(e) => {
-                                              const file = e.target.files?.[0];
-                                              if (file) handleEvidenceFileUpload(instance.id, file);
-                                              e.target.value = "";
-                                            }}
-                                            data-testid={`evidence-input-${instance.id}`}
-                                          />
-                                          {evidenceUploading === instance.id ? (
-                                            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                                              <Loader2 className="w-4 h-4 animate-spin" /> Uploading...
-                                            </div>
-                                          ) : (
-                                            <div className="flex flex-col items-center gap-1.5">
-                                              <Upload className="w-6 h-6 text-muted-foreground/60" />
-                                              <span className="text-xs text-muted-foreground">Drop file here or click to upload</span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                      {evidenceUploadState[instance.id] && (
-                                        <div
-                                          className={`mt-2 text-xs rounded-md border px-2.5 py-1.5 ${
-                                            evidenceUploadState[instance.id].state === "uploaded"
-                                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                              : evidenceUploadState[instance.id].state === "uploading"
-                                                ? "bg-blue-50 text-blue-700 border-blue-200"
-                                                : "bg-red-50 text-red-700 border-red-200"
-                                          }`}
-                                          data-testid={`evidence-upload-status-${instance.id}`}
-                                        >
-                                          {evidenceUploadState[instance.id].message}
-                                        </div>
-                                      )}
-                                    </div>
+                                    <EvidencePanel
+                                      itemId={instance.id}
+                                      evidence={itemEvidence}
+                                      canEdit={canEdit}
+                                      uploading={evidenceUploading === instance.id}
+                                      uploadStatus={evidenceUploadState[instance.id]}
+                                      onUpload={(file) => handleEvidenceFileUpload(instance.id, file)}
+                                      onDelete={(id) => deleteEvidenceMutation.mutate(id)}
+                                    />
 
                                     {itemLinks.length > 0 && (
                                       <div>
@@ -2063,112 +1901,14 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
             })}
           </div>
 
-          {selectedPhaseRiskQs.length > 0 && (
-            <Card className="overflow-hidden">
-              <Collapsible open={showRiskQuestions} onOpenChange={setShowRiskQuestions}>
-                <CollapsibleTrigger asChild>
-                  <div className="flex items-center gap-3 cursor-pointer hover:bg-muted/30 px-4 py-3 transition-colors" data-testid="risk-questions-toggle">
-                    {showRiskQuestions ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
-                    <span className="text-sm font-semibold flex-1">Risk Questions</span>
-                    <Badge variant="outline" className="text-[10px]">{selectedPhaseRiskQs.length}</Badge>
-                  </div>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="border-t divide-y">
-                    {selectedPhaseRiskQs.map((rq: any) => {
-                      const answer = getRiskAnswer(rq.id);
-                      return (
-                        <div key={rq.id} className="px-4 py-3 space-y-2" data-testid={`risk-question-${rq.id}`}>
-                          <div className="flex items-start gap-2">
-                            <Badge className={getRiskSeverityColor(rq.severity)} variant="outline">{rq.severity}</Badge>
-                            <p className="text-sm font-medium">{rq.questionText}</p>
-                          </div>
-                          {canEdit && answer && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 ml-6">
-                              {rq.responseType === "yesno" ? (
-                                <SearchableSelect
-                                  value={formatRiskYesNo(answer.answerYesno)}
-                                  onValueChange={(val) =>
-                                    updateRiskMutation.mutate({
-                                      riskAnswerId: answer.id,
-                                      updates: { answerYesno: parseRiskYesNo(val === "unanswered" ? null : val) },
-                                    })
-                                  }
-                                  placeholder="Select answer..."
-                                  triggerClassName="h-8 text-xs"
-                                  data-testid={`select-risk-answer-${rq.id}`}
-                                  options={[
-                                    { value: "unanswered", label: "Unanswered" },
-                                    { value: "yes", label: "Yes" },
-                                    { value: "no", label: "No" },
-                                  ]}
-                                />
-                              ) : rq.responseType === "number" ? (
-                                <Input
-                                  type="number"
-                                  step="any"
-                                  className="h-8 text-xs"
-                                  placeholder="Enter number..."
-                                  // Uncontrolled + commit-on-blur: binding value to
-                                  // server data and mutating per keystroke fired a
-                                  // save on every key and the refetch overwrote the
-                                  // field mid-typing (lost characters).
-                                  defaultValue={answer.answerNumber ?? ""}
-                                  onBlur={(e) => {
-                                    const next = e.target.value === "" ? null : Number(e.target.value);
-                                    if (next !== (answer.answerNumber ?? null)) {
-                                      updateRiskMutation.mutate({
-                                        riskAnswerId: answer.id,
-                                        updates: { answerNumber: next },
-                                      });
-                                    }
-                                  }}
-                                  data-testid={`input-risk-number-${rq.id}`}
-                                />
-                              ) : (
-                                <Textarea
-                                  className="text-xs"
-                                  placeholder="Enter response..."
-                                  rows={2}
-                                  defaultValue={answer.answerText || ""}
-                                  onBlur={(e) => {
-                                    if (e.target.value !== (answer.answerText || "")) {
-                                      updateRiskMutation.mutate({
-                                        riskAnswerId: answer.id,
-                                        updates: { answerText: e.target.value },
-                                      });
-                                    }
-                                  }}
-                                  data-testid={`input-risk-text-${rq.id}`}
-                                />
-                              )}
-                            </div>
-                          )}
-                          {!canEdit && answer && (
-                            <div className="text-xs space-y-1 ml-6">
-                              <p>
-                                <span className="font-medium">Answer:</span>{" "}
-                                {rq.responseType === "yesno"
-                                  ? formatRiskYesNo(answer.answerYesno) === "unanswered"
-                                    ? "Unanswered"
-                                    : formatRiskYesNo(answer.answerYesno) === "yes"
-                                      ? "Yes"
-                                      : "No"
-                                  : rq.responseType === "number"
-                                    ? (answer.answerNumber ?? "Unanswered")
-                                    : (answer.answerText || "Unanswered")}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            </Card>
-          )}
+          <RiskQuestionsPanel
+            riskQuestions={selectedPhaseRiskQs}
+            getRiskAnswer={getRiskAnswer}
+            canEdit={canEdit}
+            open={showRiskQuestions}
+            onOpenChange={setShowRiskQuestions}
+            onSubmit={(payload) => updateRiskMutation.mutate(payload)}
+          />
         </div>
       )}
 
