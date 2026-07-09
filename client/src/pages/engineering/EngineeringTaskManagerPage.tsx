@@ -346,21 +346,38 @@ export default function EngineeringTaskManagerPage() {
   const [checkedOutByTask, setCheckedOutByTask] = useState<Record<number, number>>({});
 
   // ── Status change (workflow-guarded) ──────────────────────────────────────
+  // Optimistic: patch the board cache immediately so a kanban move / quick
+  // status change lands without a full-board refetch, snapshot the previous
+  // list for rollback, and reconcile with the server in onSettled. (Ported
+  // from the retired project-tab board so both surfaces behave identically.)
   const statusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) =>
       apiRequest("PATCH", `/api/engineering/tasks/${id}/status`, { status }),
+    onMutate: async ({ id, status }: { id: number; status: string }) => {
+      await qc.cancelQueries({ queryKey: ["/api/engineering/tasks"] });
+      const previous = qc.getQueryData<{ tasks: TaskListItem[] }>(["/api/engineering/tasks"]);
+      qc.setQueryData<{ tasks: TaskListItem[] }>(["/api/engineering/tasks"], (old) =>
+        old ? { ...old, tasks: old.tasks.map((t) => (t.id === id ? { ...t, status } : t)) } : old,
+      );
+      return { previous };
+    },
     onSuccess: () => {
       toast({ title: "Status updated" });
-      refresh();
     },
-    onError: (e: unknown) =>
+    onError: (e: unknown, _vars, ctx: { previous?: { tasks: TaskListItem[] } } | undefined) => {
+      // Roll the optimistic patch back on failure.
+      if (ctx?.previous) qc.setQueryData(["/api/engineering/tasks"], ctx.previous);
       // The server's complete-guard returns 409 with a message listing the
       // open blocking tasks — surface it as a "Blocked" toast.
       toast({
         title: isApiError(e) && e.status === 409 ? "Blocked by dependencies" : "Couldn't update status",
         description: e instanceof Error ? e.message : undefined,
         variant: "destructive",
-      }),
+      });
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["/api/engineering/tasks"] });
+    },
   });
 
   // Fire the real status PATCH (after the workflow guard + any doc prompt).
