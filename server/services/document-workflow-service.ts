@@ -10,7 +10,6 @@
  */
 
 import { ApiError, notFound } from "../lib/api-error";
-import { createNotification } from "./notification-service";
 import * as locks from "../repositories/document-locks-repository";
 import * as docs from "../repositories/managed-documents-repository";
 import * as revisions from "../repositories/document-revisions-repository";
@@ -88,19 +87,6 @@ export async function completeUpload(
     action: "upload",
     sizeBytes: input.sizeBytes,
   });
-
-  // Notify document owner if this is a follow-up revision (≥2) and
-  // someone other than the owner uploaded.
-  if (revision.revisionNumber > 1 && document.ownerUserId && document.ownerUserId !== input.userId) {
-    await createNotification({
-      recipientUserId: document.ownerUserId,
-      eventType: "document.revision.uploaded",
-      title: `New revision of "${document.name}"`,
-      body: `A new revision of "${document.name}" was uploaded.`,
-      relatedEntityType: "managed_document",
-      relatedEntityId: document.id,
-    });
-  }
 
   return { document, revision };
 }
@@ -222,15 +208,6 @@ export async function changeOwner(
     action: "rename", // no dedicated "owner_change" action in this build
     metadata: { kind: "owner_change", from: document.ownerUserId, to: newOwnerUserId },
   });
-  if (newOwnerUserId !== actorUserId) {
-    await createNotification({
-      recipientUserId: newOwnerUserId,
-      eventType: "document.ownership.transferred",
-      title: `You are now the owner of "${document.name}"`,
-      relatedEntityType: "managed_document",
-      relatedEntityId: document.id,
-    });
-  }
   return updated;
 }
 

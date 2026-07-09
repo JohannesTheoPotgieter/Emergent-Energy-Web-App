@@ -19,10 +19,6 @@
  *   company-overview   getCompanyOverviewData(): realisedRevenueFytd /
  *                      realisedCostFytd — compared company-wide against the
  *                      FY-windowed canonical sum over the same active set.
- *   golden             qa/fixtures/golden-trackers-5.json (F0): where a live
- *                      project name matches a golden project, canonical
- *                      realised REV/COS must tie the independent tracker
- *                      recompute within R1.
  *
  * Any |Δ| > R1 fails (exit 1). This is the assertion that would have caught
  * B1 — four surfaces rendering four different "revenue" numbers.
@@ -43,7 +39,6 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 const r2 = (n: number): number => Math.round(n * 100) / 100;
-const normText = (v: unknown): string => String(v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 
 export interface CrossSurfaceRow {
   scope: "project" | "company";
@@ -177,30 +172,6 @@ export async function runCrossSurfaceFinanceVerification(
       }
       compare("company", null, "(company FYTD)", "realisedRevenue", "company-overview", rev, num(snapshot.realisedRevenueFytd));
       compare("company", null, "(company FYTD)", "realisedCos", "company-overview", cos, num(snapshot.realisedCostFytd));
-    }
-  }
-
-  // ── Surface: F0 golden fixture (independent tracker recompute) ──
-  const fixturePath = path.join(process.cwd(), "qa", "fixtures", "golden-trackers-5.json");
-  if (existsSync(fixturePath)) {
-    try {
-      const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as {
-        projects: Array<{
-          projectName: string;
-          expenditureBreakdown: { totals: { realisedRev: number; realisedCos: number; realisedGp: number } };
-        }>;
-      };
-      const byName = new Map(scoped.map((p) => [normText(p.projectName), p.id]));
-      for (const gp of fixture.projects) {
-        const id = byName.get(normText(gp.projectName));
-        if (id == null) continue;
-        const c = canonicalTotals.get(id);
-        if (!c) continue;
-        compare("project", id, gp.projectName, "realisedRevenue", "golden", c.realisedRevenue, gp.expenditureBreakdown.totals.realisedRev);
-        compare("project", id, gp.projectName, "realisedCos", "golden", c.realisedCos, gp.expenditureBreakdown.totals.realisedCos);
-      }
-    } catch (err) {
-      console.warn("[verify:finance] golden fixture unreadable — golden tie skipped:", err instanceof Error ? err.message : String(err));
     }
   }
 

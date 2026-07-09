@@ -29,8 +29,8 @@ import { cn } from "@/lib/utils";
 import type {
   CashWeekPoint,
   GpMarginPoint,
-  MonthStatePoint,
-  OnTrackPoint,
+  MonthStateChartRow,
+  OnTrackChartRow,
   ProjectGpRow,
 } from "@/lib/finance/home-data";
 
@@ -47,6 +47,8 @@ const C = {
   marginLine: "#0F172A",
   positive: "#16A34A",
   negative: "#E11D48",
+  forecast: "#0F766E",   // teal — run-rate projection (a forecast, not an actual)
+  prior: "#CBD5E1",      // muted slate — prior-FY overlay
 } as const;
 
 const axisTick = { fontSize: 10, fill: "#64748b" } as const;
@@ -95,13 +97,17 @@ interface BarClickState {
   activePayload?: Array<{ payload?: { monthKey?: string } }>;
 }
 
-/** Revenue by month — grouped bars: budget · planned · realised. Click a month. */
+/** Revenue by month — grouped bars: budget · planned · realised. Click a month.
+ *  Optionally overlays a prior-FY realised line (compare toggle, item 6). */
 export function RevenueStatesChart({
   data,
   onMonthClick,
+  priorLabel,
 }: {
-  data: MonthStatePoint[];
+  data: MonthStateChartRow[];
   onMonthClick?: (monthKey: string) => void;
+  /** When set, a faded prior-FY realised line is overlaid (e.g. "FY25"). */
+  priorLabel?: string;
 }) {
   const handleClick = (state: unknown) => {
     const key = (state as BarClickState)?.activePayload?.[0]?.payload?.monthKey;
@@ -112,10 +118,11 @@ export function RevenueStatesChart({
   // viewer to wonder why Jul/Aug show only a Planned bar.
   const currentMonthKey = new Date().toISOString().slice(0, 7);
   const hasFutureBudgetGap = data.some((d) => !d.budgetSet && d.monthKey > currentMonthKey);
+  const showPrior = !!priorLabel && data.some((d) => d.priorRealised != null);
   return (
     <div>
       <ResponsiveContainer width="100%" height={240}>
-        <BarChart
+        <ComposedChart
           data={data}
           margin={{ top: 4, right: 8, left: 4, bottom: 4 }}
           onClick={handleClick}
@@ -134,7 +141,19 @@ export function RevenueStatesChart({
           <Bar dataKey="planned" name="Planned" fill={C.planned} radius={[2, 2, 0, 0]} />
           <Bar dataKey="realised" name="Realised" fill={C.realised} radius={[2, 2, 0, 0]} />
           <Bar dataKey="qb" name="QB realised" fill={C.quickbooks} radius={[2, 2, 0, 0]} />
-        </BarChart>
+          {showPrior && (
+            <Line
+              type="monotone"
+              dataKey="priorRealised"
+              name={`${priorLabel} realised`}
+              stroke={C.prior}
+              strokeWidth={2}
+              strokeDasharray="4 3"
+              dot={false}
+              connectNulls
+            />
+          )}
+        </ComposedChart>
       </ResponsiveContainer>
       {hasFutureBudgetGap && (
         <p className="mt-1 text-[10px] text-slate-400" data-testid="revenue-budget-future-note">
@@ -145,8 +164,22 @@ export function RevenueStatesChart({
   );
 }
 
-/** Cumulative realised vs cumulative budget across the FY (pace line). */
-export function OnTrackChart({ data }: { data: OnTrackPoint[] }) {
+/** Cumulative realised vs cumulative budget across the FY (pace line), with an
+ *  optional dotted run-rate FY-close forecast (item 2) and a prior-FY realised
+ *  overlay (item 6). */
+export function OnTrackChart({
+  data,
+  showForecast,
+  priorLabel,
+}: {
+  data: OnTrackChartRow[];
+  /** Render the dotted run-rate projection line (item 2). */
+  showForecast?: boolean;
+  /** When set, overlays a faded prior-FY cumulative realised line (e.g. "FY25"). */
+  priorLabel?: string;
+}) {
+  const hasForecast = !!showForecast && data.some((d) => d.projected != null);
+  const hasPrior = !!priorLabel && data.some((d) => d.priorCumRealised != null);
   return (
     <ResponsiveContainer width="100%" height={240}>
       <LineChart data={data} margin={{ top: 4, right: 8, left: 4, bottom: 4 }}>
@@ -158,6 +191,18 @@ export function OnTrackChart({ data }: { data: OnTrackPoint[] }) {
           contentStyle={tooltipStyle}
         />
         <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+        {hasPrior && (
+          <Line
+            type="monotone"
+            dataKey="priorCumRealised"
+            name={`${priorLabel} realised`}
+            stroke={C.prior}
+            strokeWidth={2}
+            strokeDasharray="4 3"
+            dot={false}
+            connectNulls
+          />
+        )}
         <Line
           type="monotone"
           dataKey="cumBudget"
@@ -175,6 +220,46 @@ export function OnTrackChart({ data }: { data: OnTrackPoint[] }) {
           strokeWidth={2.5}
           dot={false}
           activeDot={{ r: 4, strokeWidth: 0 }}
+        />
+        {hasForecast && (
+          <Line
+            type="monotone"
+            dataKey="projected"
+            name="Run-rate forecast"
+            stroke={C.forecast}
+            strokeWidth={2}
+            strokeDasharray="2 3"
+            strokeOpacity={0.85}
+            dot={false}
+            connectNulls={false}
+          />
+        )}
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+/**
+ * Tiny 4-week cash runway sparkline (item 9) for the KpiTile `sparkline` slot.
+ * Read-only: plots the `availablePayment` the cash card already shows. No axes,
+ * grid, legend or tooltip — a ~36px glyph. Green when the trend ends non-negative,
+ * rose when it ends negative.
+ */
+export function RunwaySparkline({ data }: { data: { weekStart: string; value: number }[] }) {
+  if (data.length === 0) return null;
+  const endsNegative = (data[data.length - 1]?.value ?? 0) < 0;
+  const stroke = endsNegative ? C.negative : C.available;
+  return (
+    <ResponsiveContainer width="100%" height={36}>
+      <LineChart data={data} margin={{ top: 4, right: 2, left: 2, bottom: 2 }}>
+        <ReferenceLine y={0} stroke="#e2e8f0" strokeWidth={1} />
+        <Line
+          type="monotone"
+          dataKey="value"
+          stroke={stroke}
+          strokeWidth={1.75}
+          dot={false}
+          isAnimationActive={false}
         />
       </LineChart>
     </ResponsiveContainer>

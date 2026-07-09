@@ -40,7 +40,6 @@ import {
   type TaskWorkflowMutationSource,
 } from "../lib/task-workflow-guard";
 import { recordAudit } from "../api/v2/services/audit-service";
-import { createNotification } from "../services/notification-service";
 import { listManagedDocumentsByProject } from "./managed-documents-repository";
 import { isTaskComplete } from "@shared/task-status";
 import { conflict, notFound, badRequest } from "../lib/api-error";
@@ -379,18 +378,6 @@ export async function transitionEngineeringTaskStatus(
     action: "engineering.task.status_change",
     changesJson: { from: current.status, to: newStatus },
   });
-  if (updated.ownerUserId != null && updated.ownerUserId !== actorId) {
-    await createNotification({
-      recipientUserId: updated.ownerUserId,
-      eventType: "engineering.task.status_changed",
-      title: `Task status: ${updated.title}`,
-      body: `Status changed to "${newStatus}".`,
-      projectId: updated.projectId ?? undefined,
-      linkedTaskId: updated.id,
-      relatedEntityType: "work_item",
-      relatedEntityId: updated.id,
-    });
-  }
   return updated;
 }
 
@@ -427,18 +414,6 @@ export async function reassignEngineeringTaskOwner(
     action: "engineering.task.owner_change",
     changesJson: { from: current.ownerUserId ?? null, to: ownerUserId },
   });
-  if (ownerUserId != null && ownerUserId !== actorId) {
-    await createNotification({
-      recipientUserId: ownerUserId,
-      eventType: "engineering.task.assigned",
-      title: `Assigned to you: ${updated.title}`,
-      body: `You are now the owner of "${updated.title}".`,
-      projectId: updated.projectId ?? undefined,
-      linkedTaskId: updated.id,
-      relatedEntityType: "work_item",
-      relatedEntityId: updated.id,
-    });
-  }
   return updated;
 }
 
@@ -573,16 +548,6 @@ export async function createSeamHandoff(
       source: "MANUAL",
     });
   }
-  await createNotification({
-    recipientUserId: input.toOwnerUserId,
-    eventType: "engineering.seam.assigned",
-    title: `Handoff to you: ${row.title}`,
-    body: input.note ?? `A ${input.seamType} item was handed to you.`,
-    projectId: row.projectId ?? undefined,
-    linkedTaskId: row.id,
-    relatedEntityType: "work_item",
-    relatedEntityId: row.id,
-  });
   await recordAudit({
     userId: actorId,
     entityType: "work_item",
@@ -848,19 +813,6 @@ export async function createComment(
       .insert(taskCommentMentions)
       .values(uniqueMentions.map((uid) => ({ commentId: comment.id, mentionedUserId: uid })))
       .onConflictDoNothing();
-    for (const uid of uniqueMentions) {
-      if (uid === actorId) continue;
-      await createNotification({
-        recipientUserId: uid,
-        eventType: "engineering.task.comment_mention",
-        title: `You were mentioned on: ${task.title}`,
-        body: body.trim().slice(0, 280),
-        projectId: task.projectId ?? undefined,
-        linkedTaskId: task.id,
-        relatedEntityType: "work_item",
-        relatedEntityId: task.id,
-      });
-    }
   }
 
   await recordAudit({
@@ -910,18 +862,6 @@ export async function addAssignee(
     action: "engineering.task.assignee_add",
     changesJson: { userId, role },
   });
-  if (userId !== actorId) {
-    await createNotification({
-      recipientUserId: userId,
-      eventType: "engineering.task.assigned",
-      title: `Added to task: ${task.title}`,
-      body: `You were added to "${task.title}" as ${role}.`,
-      projectId: task.projectId ?? undefined,
-      linkedTaskId: task.id,
-      relatedEntityType: "work_item",
-      relatedEntityId: task.id,
-    });
-  }
 }
 
 /** Remove a non-owner assignment. The OWNER row is managed via the owner PATCH. */

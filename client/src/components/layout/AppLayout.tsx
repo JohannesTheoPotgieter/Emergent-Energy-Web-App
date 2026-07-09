@@ -18,7 +18,6 @@ import { isFinanceSearchType } from "@shared/config/enabled-modules";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { useNavPreferences } from "@/hooks/use-nav-preferences";
-import { NotificationBell } from "@/components/NotificationBell";
 import { LensSwitcher } from "@/components/layout/LensSwitcher";
 import { useLensContext } from "@/hooks/use-lens-context";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
@@ -462,7 +461,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           ) : null}
 
           <LensSwitcher />
-          <NotificationBell />
 
           <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
             <DropdownMenuTrigger asChild>

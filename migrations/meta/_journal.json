@@ -845,8 +845,22 @@
     {
       "idx": 120,
       "version": "7",
-      "when": 1783511441219,
-      "tag": "0120_bess_hybrid_seven_check",
+      "when": 1783508280640,
+      "tag": "0120_notification_recipient_fk_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1783511851882,
+      "tag": "0121_drop_notification_and_observability_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1783576021599,
+      "tag": "0122_board_finance_targets",
       "breakpoints": true
     }
   ]

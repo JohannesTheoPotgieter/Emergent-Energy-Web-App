@@ -13,7 +13,6 @@ import {
 import { projectStageInstances, projectStageExceptions, projectStageDecisions } from "@shared/schema";
 import { db, getDbMode } from "../db";
 import { createProjectEvent } from "./project-event-service";
-import { notifyUsers } from "./notification-service";
 
 // ===================== TYPES =====================
 
@@ -469,55 +468,6 @@ export async function decideReview(params: {
     },
     idempotencyKey: `financial-review-decide:${params.reviewId}:${params.outcome}`,
   });
-
-  // ── Post-transaction: notifications (idempotent via throttle) ──
-  if (stageStatusChanged) {
-    // Collect notification recipients: stage owner, PM, PROGRAM_MANAGER
-    const recipientIds = new Set<number>();
-    if (s05Instance.stageOwnerUserId) recipientIds.add(s05Instance.stageOwnerUserId);
-
-    // Get PM and PROGRAM_MANAGER from execution state
-    const [execState] = await db
-      .select({
-        programManagerUserId: projectExecutionState.programManagerUserId,
-      })
-      .from(projectExecutionState)
-      .where(eq(projectExecutionState.projectId, review.projectId))
-      .limit(1);
-
-    // Get PM from project_info
-    const [projInfo] = await db
-      .select({ pmUserId: projectInfo.pmUserId })
-      .from(projectInfo)
-      .where(eq(projectInfo.id, review.projectId))
-      .limit(1);
-
-    if (projInfo?.pmUserId) recipientIds.add(projInfo.pmUserId);
-    if (execState?.programManagerUserId) recipientIds.add(execState.programManagerUserId);
-
-    // Remove the actor themselves from notifications
-    recipientIds.delete(params.actorUserId);
-
-    if (recipientIds.size > 0) {
-      const outcomeLabel = params.outcome === "NO_GO" ? "NO GO" : params.outcome.replace(/_/g, " ");
-      let body = `Financial Review outcome: ${outcomeLabel}. Stage S05 status changed from ${previousStageStatus} to ${newStageStatus}.`;
-      if (params.outcome === "NO_GO" && (params.outcomeNotes || params.outcomeConditions)) {
-        body += ` Reason: ${params.outcomeNotes || params.outcomeConditions}`;
-      }
-      if (params.outcome === "CONDITIONAL_GO" && params.outcomeConditions) {
-        body += ` Conditions: ${params.outcomeConditions}`;
-      }
-
-      await notifyUsers([...recipientIds], {
-        eventType: `financial_review.${params.outcome.toLowerCase()}`,
-        title: `Financial Review: ${outcomeLabel}`,
-        body,
-        projectId: review.projectId,
-        relatedEntityType: "project_financial_reviews",
-        relatedEntityId: params.reviewId,
-      });
-    }
-  }
 
   return updated;
 }

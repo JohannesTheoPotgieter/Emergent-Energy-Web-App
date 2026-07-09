@@ -537,7 +537,20 @@ export default function ExecutionReviewBoard() {
                   >
                     {byPhaseData.map((d) => {
                       const active = effectivePhases.includes(d.phase);
-                      return <Cell key={d.phase} fill={active ? "var(--ee-status-ties)" : "#D1FAE5"} />;
+                      return (
+                        <Cell
+                          key={d.phase}
+                          fill={active ? "var(--ee-status-ties)" : "#D1FAE5"}
+                          role="button"
+                          tabIndex={0}
+                          aria-pressed={active}
+                          aria-label={`Filter by phase ${d.phase} (${d.count} sites)`}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); togglePhase(d.phase); }
+                          }}
+                          style={{ cursor: "pointer" }}
+                        />
+                      );
                     })}
                     <LabelList dataKey="count" position="top" fontSize={10} fill="#64748b" />
                   </Bar>
@@ -567,7 +580,19 @@ export default function ExecutionReviewBoard() {
                       onClick={(d) => { const k = (d as { key?: string }).key; if (k) toggleSchedRag(k === "none" ? "all" : k); }}
                     >
                       {ragData.map((d) => (
-                        <Cell key={d.key} fill={RAG_CHART_FILL[d.key]} opacity={filters.rag === "all" || filters.rag === d.key ? 1 : 0.3} />
+                        <Cell
+                          key={d.key}
+                          fill={RAG_CHART_FILL[d.key]}
+                          opacity={filters.rag === "all" || filters.rag === d.key ? 1 : 0.3}
+                          role="button"
+                          tabIndex={0}
+                          aria-pressed={filters.rag === d.key}
+                          aria-label={`Filter by ${d.name} (${d.value} sites)`}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSchedRag(d.key === "none" ? "all" : d.key); }
+                          }}
+                          style={{ cursor: "pointer" }}
+                        />
                       ))}
                     </Pie>
                     <Tooltip />
@@ -584,6 +609,8 @@ export default function ExecutionReviewBoard() {
                   return (
                     <li key={d.key}>
                       <button
+                        type="button"
+                        aria-pressed={active}
                         className={`w-full flex items-center gap-1.5 rounded px-1.5 py-1 hover:bg-muted/60 ${active ? "bg-muted ring-1 ring-emerald-300" : ""}`}
                         onClick={() => toggleSchedRag(d.key === "none" ? "all" : d.key)}
                         data-testid={`execution-rag-legend-${d.key}`}

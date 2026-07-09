@@ -120,7 +120,6 @@ describe("nav cleanup — six-tab COO spec", () => {
     // (work_items + personal priorities in one feed).
     expect(paths).toContain("/priorities");
     expect(paths).toContain("/my-work/calendar");
-    expect(paths).toContain("/inbox");
   });
 
   it("legacy 'Projects' / 'Departments' / 'Reports' / 'Admin' display tabs are gone", () => {

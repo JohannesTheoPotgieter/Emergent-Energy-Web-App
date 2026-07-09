@@ -9,13 +9,22 @@
  * with the GP / Revenue / COS pages (whose realised totals trace to the same
  * repository). Nothing is recalculated on the page.
  *
+ * The insight/polish upgrades (variance callouts, run-rate forecast, exception
+ * watch-list, as-at basis, prior-FY compare, grain, board target, board export,
+ * cash runway) all RE-GROUP these same canonical figures — no new finance
+ * number is computed. The board FY target (when set) is a display comparison
+ * only; the frozen recognition/realisation/cashflow paths are untouched.
+ *
  *   GET /api/finance/lines?fyStart&fyEnd  — REV/COS/GP per project + per month
  *                                            (realised / planned) + manual budget
+ *   GET /api/revenue-tracker?fyStart&fyEnd — revenue by month (ties to Revenue screen)
  *   GET /api/finance/drill/{tree,invoices} — drill to the tracker source cell
  *   GET /api/weekly-cashflow?fy            — cash in/out + available, by week
- *   GET /api/finance/reconciliation        — canonical project list + names
+ *   GET /api/finance/reconciliation        — canonical project list + names + drift
  *   GET /api/weekly-cashflow/{receivables,payables} — AR overdue / AP due
- *   GET /api/smart-import/health-dashboard — "as at" last-import freshness
+ *   GET /api/smart-import/health-dashboard — import freshness + flagged trackers
+ *   GET /api/import-config/attention       — parked (needs-review) imports
+ *   GET /api/board-targets                 — board FY revenue target + margin
  *
  * FORBIDDEN here (and proven absent by qa/tests/unit/finance-home-canonical):
  * the pre-summarised per-project revenue rollup, the company-wide whole-life
@@ -24,8 +33,8 @@
  *
  * Brand: centralised tokens + shared finance template components only.
  */
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { GitCompare, Search } from "lucide-react";
 
@@ -51,45 +60,78 @@ import {
   GpMarginChart,
   CashByWeekChart,
   TopProjectsGpChart,
+  RunwaySparkline,
 } from "@/components/finance/home/finance-home-charts";
+import {
+  ImportFreshnessChip,
+  DashboardControls,
+  BoardExportMenu,
+  BoardTargetDialog,
+  ExceptionWatchList,
+} from "@/components/finance/home/finance-home-controls";
 import { MonthDrillDrawer, type MonthDrillTarget } from "@/components/finance/home/month-drill-drawer";
 import { ProjectDrillDetail } from "@/components/finance/home/project-drill-detail";
 import { fetchQueryFn } from "@/lib/queryClient";
 import { formatZar, formatZarCompact } from "@/lib/currency";
-import { useFinancialYearScope } from "@/hooks/use-financial-year-scope";
+import { formatRelativeWithAbsoluteZA } from "@/lib/datetime";
+import { useAuth } from "@/hooks/use-auth";
+import { useFinancialYearScope, getFinancialYearBounds } from "@/hooks/use-financial-year-scope";
+import { budgetDelta } from "@/lib/finance/budget-variance";
+import { exportBoardCsv, exportBoardXlsx, type BoardExportModel } from "@/lib/finance/board-export";
 import {
+  applyGrain,
+  alignPriorByIndex,
+  asAtHeadline,
+  buildMonthStateChartRows,
+  buildOnTrackChartRows,
   cashByWeekSeries,
+  currentSastMonthKey,
+  exceptionWatchList,
   fyHeadline,
   fyMonthFrame,
   gpMarginSeries,
+  lastClosedMonthKey,
   monthLabelFromKey,
+  monthStatesSeries,
   onTrackGap,
   onTrackSeries,
+  openMonthRealisedCos,
+  openMonthRealisedRevenue,
   revenueMonthStates,
+  runRateForecast,
   topProjectsByGp,
-  weakestMargins,
   weekLabel,
   type AgedWorklist,
+  type AsAtMode,
+  type BoardTarget,
+  type BoardTargetsResponse,
   type CashflowResponse,
+  type ChartGrain,
   type FinanceLinesResponse,
+  type MonthlyReconRow,
   type ProjectGpRow,
   type ReconPortfolioResponse,
   type RevenueTrackerResponse,
 } from "@/lib/finance/home-data";
 
 const todayIso = new Date().toISOString().slice(0, 10);
-const currentYyyyMm = todayIso.slice(0, 7);
 
 interface ImportHealthRow {
   lastImportDate: string | null;
+  lastImportStatus?: string;
+  unresolvedIssueCount?: number;
+  staleness?: string;
 }
 
-function fmtDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" });
+interface ImportAttentionItem {
+  state: string;
 }
+interface ImportAttentionResponse {
+  items: ImportAttentionItem[];
+}
+
+// Roles allowed to set the board FY target (mirrors the server allowlist).
+const BOARD_TARGET_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN", "CFO"]);
 
 // AR "overdue" / AP "due" tiles show PAST-DUE only — lines aged beyond 30 days
 // from the invoice-raised date. The not-yet-due 0-30 bucket is excluded so the
@@ -109,6 +151,26 @@ function pastDueTotal(w: AgedWorklist | undefined): { amount: number; count: num
   );
 }
 
+/** localStorage-backed enum state (item 5 persistence). */
+function usePersistedEnum<T extends string>(key: string, initial: T, valid: readonly T[]): [T, (v: T) => void] {
+  const [value, setValue] = useState<T>(() => {
+    if (typeof window === "undefined") return initial;
+    const stored = window.localStorage.getItem(key);
+    return stored && (valid as readonly string[]).includes(stored) ? (stored as T) : initial;
+  });
+  const set = useCallback(
+    (v: T) => {
+      setValue(v);
+      try {
+        window.localStorage.setItem(key, v);
+      } catch {
+        /* ignore quota / privacy-mode failures */
+      }
+    },
+    [key],
+  );
+  return [value, set];
+}
 
 interface AllProjectRow {
   projectId: number;
@@ -120,6 +182,8 @@ interface AllProjectRow {
 
 export default function FinanceHomePage() {
   const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
   const fyScope = useFinancialYearScope();
   const qs = fyScope.apiQueryString;
   const fyWindowQs =
@@ -127,20 +191,37 @@ export default function FinanceHomePage() {
       ? `?fyStart=${fyScope.startDate}&fyEnd=${fyScope.endDate}`
       : "";
 
+  // ── Dashboard controls (persisted) ─────────────────────────────────────────
+  const [asAt, setAsAt] = usePersistedEnum<AsAtMode>("ee.financeHome.asAt", "closed", ["closed", "open"]);
+  const [grain, setGrain] = usePersistedEnum<ChartGrain>("ee.financeHome.grain", "month", ["month", "quarter"]);
+  const [compareRaw, setCompareRaw] = usePersistedEnum<"on" | "off">("ee.financeHome.compare", "off", ["on", "off"]);
+  const [exceptionsExpanded, setExceptionsExpanded] = useState(false);
+  const canCompare = fyScope.fy != null;
+  const compare = compareRaw === "on" && canCompare;
+  const priorFy = fyScope.fy != null ? fyScope.fy - 1 : null;
+  const priorLabel = priorFy != null ? getFinancialYearBounds(priorFy).label : "prior FY";
+
   // ── Canonical reads ────────────────────────────────────────────────────────
-  // ONE source for REV/COS/GP: the §3.3 single read path. byProject + monthly +
-  // total + budgetByMonth all come from this single response.
   const linesQuery = useQuery<FinanceLinesResponse>({
     queryKey: ["/api/finance/lines", fyWindowQs],
     queryFn: fetchQueryFn(`/api/finance/lines${fyWindowQs}`),
     staleTime: 60_000,
   });
-  // The revenue-by-month chart reads the SAME endpoint as the Revenue screen so
-  // its budget / planned / realised / QuickBooks bars tie to that table exactly.
   const revTrackerQuery = useQuery<RevenueTrackerResponse>({
     queryKey: ["/api/revenue-tracker", fyWindowQs],
     queryFn: fetchQueryFn(`/api/revenue-tracker${fyWindowQs}`),
     staleTime: 60_000,
+  });
+  // Prior-FY overlay (item 6) — same endpoints, prior window; only when comparing.
+  const priorWindowQs = priorFy != null ? (() => {
+    const b = getFinancialYearBounds(priorFy);
+    return `?fyStart=${b.startDate}&fyEnd=${b.endDate}`;
+  })() : "";
+  const priorLinesQuery = useQuery<FinanceLinesResponse>({
+    queryKey: ["/api/finance/lines", "prior", priorWindowQs],
+    queryFn: fetchQueryFn(`/api/finance/lines${priorWindowQs}`),
+    staleTime: 60_000,
+    enabled: compare && priorFy != null,
   });
   const cashQuery = useQuery<CashflowResponse>({
     queryKey: ["/api/weekly-cashflow", qs],
@@ -168,6 +249,18 @@ export default function FinanceHomePage() {
     staleTime: 5 * 60_000,
     retry: false,
   });
+  const importAttentionQuery = useQuery<ImportAttentionResponse>({
+    queryKey: ["/api/import-config/attention"],
+    queryFn: fetchQueryFn("/api/import-config/attention", { on401: "returnNull" }),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const boardTargetQuery = useQuery<BoardTargetsResponse>({
+    queryKey: ["/api/board-targets"],
+    queryFn: fetchQueryFn("/api/board-targets", { on401: "returnNull" }),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
 
   // ── Derived (grouping/sorting only — no figure recalculated) ────────────────
   const linesData = linesQuery.data;
@@ -181,54 +274,149 @@ export default function FinanceHomePage() {
   const reconProjects = useMemo(() => reconQuery.data?.projects ?? [], [reconQuery.data]);
   const arPastDue = useMemo(() => pastDueTotal(arQuery.data), [arQuery.data]);
   const apPastDue = useMemo(() => pastDueTotal(apQuery.data), [apQuery.data]);
+  const revTrackerMonths = useMemo(() => revTrackerQuery.data?.months ?? [], [revTrackerQuery.data]);
 
   const frame = useMemo(
     () => fyMonthFrame(monthly, budgetByMonth, fyScope.startMonthKey, fyScope.endMonthKey),
     [monthly, budgetByMonth, fyScope.startMonthKey, fyScope.endMonthKey],
   );
 
+  // ── As-at basis (item 5): the boundary month for realised-to-date ───────────
+  const openMonthKey = useMemo(() => currentSastMonthKey(), []);
+  const lastClosed = useMemo(() => lastClosedMonthKey(frame, openMonthKey), [frame, openMonthKey]);
+  // "closed" excludes the open month (realised counted only up to the last closed
+  // month); "open" includes it. boundaryKey caps which months contribute realised.
+  const boundaryKey = asAt === "closed" ? (lastClosed ?? "0000-00") : openMonthKey;
+  const asAtBasisLabel =
+    asAt === "closed"
+      ? lastClosed
+        ? `Last closed month (${monthLabelFromKey(lastClosed)})`
+        : "Last closed month"
+      : "Incl. open month (MTD)";
+
+  // Realised zeroed for months beyond the as-at boundary — a re-grouping of the
+  // canonical per-month figures, not a recomputation.
+  const asAtMonthly = useMemo<MonthlyReconRow[]>(
+    () =>
+      monthly.map((m) =>
+        m.monthKey > boundaryKey
+          ? { ...m, realisedRevenue: 0, realisedCos: 0, realisedGp: 0, realisedGpPct: null }
+          : m,
+      ),
+    [monthly, boundaryKey],
+  );
+
   const headline = useMemo(
     () => fyHeadline(linesData?.total, budgetByMonth, frame),
     [linesData, budgetByMonth, frame],
   );
-  // Revenue figures (realised + manual budget) read the SAME /api/revenue-tracker
-  // rows the chart and the Revenue screen plot, so the revenue KPI ties
-  // cell-for-cell to both. COS stays on the canonical line path; GP is recomputed
-  // as (tracker revenue − line COS) so REV − COS = GP holds exactly on the strip.
-  const revTotals = useMemo(() => {
-    const months = revTrackerQuery.data?.months ?? [];
-    let realised = 0;
-    let budget = 0;
-    for (const m of months) {
-      realised += m.realisedRevenue ?? 0;
-      budget += m.budget ?? 0;
-    }
-    return { realised, budget };
-  }, [revTrackerQuery.data]);
-  const revenueRecognised = revTotals.realised;
-  const revenueBudgetFy = revTotals.budget;
-  const grossProfit = revenueRecognised - headline.realisedCos;
-  const marginPct = revenueRecognised !== 0 ? (grossProfit / revenueRecognised) * 100 : null;
-  const revVsTargetPct =
-    revenueBudgetFy !== 0 ? Math.round((revenueRecognised / revenueBudgetFy) * 100) : 0;
+
+  // ── KPI figures (as-at aware; include-open stays byte-identical to before) ──
+  const inclOpenRevenue = useMemo(
+    () => revTrackerMonths.reduce((s, m) => s + (m.realisedRevenue ?? 0), 0),
+    [revTrackerMonths],
+  );
+  const revenueBudgetFy = useMemo(
+    () => revTrackerMonths.reduce((s, m) => s + (m.budget ?? 0), 0),
+    [revTrackerMonths],
+  );
+  const openRevenue = useMemo(
+    () => openMonthRealisedRevenue(revTrackerMonths, openMonthKey),
+    [revTrackerMonths, openMonthKey],
+  );
+  const openCos = useMemo(() => openMonthRealisedCos(monthly, openMonthKey), [monthly, openMonthKey]);
+  const kpi = useMemo(
+    () =>
+      asAtHeadline({
+        inclOpenRevenue,
+        inclOpenCos: headline.realisedCos,
+        openRevenue,
+        openCos,
+        mode: asAt,
+      }),
+    [inclOpenRevenue, headline.realisedCos, openRevenue, openCos, asAt],
+  );
+  const revenueRecognised = kpi.realisedRevenue;
+  const realisedCos = kpi.realisedCos;
+  const grossProfit = kpi.grossProfit;
+  const marginPct = kpi.marginPct;
+
+  const cosBudgetFy = useMemo(
+    () => frame.reduce((s, mk) => s + (budgetByMonth.cos[mk] ?? 0), 0),
+    [frame, budgetByMonth],
+  );
+
   const revFiguresLoading = linesQuery.isLoading || revTrackerQuery.isLoading;
-  // Fail loud: never show a fabricated R0 / negative GP when a source errored.
-  // Revenue rides the tracker; GP also needs line-level COS, so it errors if
-  // either source is down.
   const revFiguresError = revTrackerQuery.isError;
   const gpFiguresError = revTrackerQuery.isError || linesQuery.isError;
 
-  const monthStates = useMemo(
-    () => revenueMonthStates(revTrackerQuery.data?.months ?? []),
-    [revTrackerQuery.data],
-  );
+  // ── Board FY target (item 8) — display comparison only ──────────────────────
+  const boardTarget = useMemo<BoardTarget | null>(() => {
+    const targets = boardTargetQuery.data?.targets ?? [];
+    return targets.find((t) => t.fy === fyScope.fy) ?? null;
+  }, [boardTargetQuery.data, fyScope.fy]);
+  const revenueTargetValue = boardTarget?.revenueTarget ?? null;
+  const targetMarginValue = boardTarget?.targetMarginPct ?? null;
+  const hasBoardRevenueTarget = revenueTargetValue != null && revenueTargetValue > 0;
+  // Comparison denominator: board target when set, else the manual FY budget.
+  const revenueTarget = hasBoardRevenueTarget ? (revenueTargetValue as number) : revenueBudgetFy;
+  const revenueTargetLabel = hasBoardRevenueTarget ? "board target" : "FY budget";
+  const revVsTargetPct = revenueTarget !== 0 ? Math.round((revenueRecognised / revenueTarget) * 100) : 0;
+  const revVariance = budgetDelta(revenueRecognised, revenueTarget); // realised − target
+  const cosVariance = budgetDelta(realisedCos, cosBudgetFy); // realised − budget (over = +)
+  const canEditBoardTarget =
+    fyScope.fy != null && BOARD_TARGET_ROLES.has(String(user?.role ?? "").toUpperCase());
+
+  // ── Chart series (as-at applied; grain + prior-FY overlay) ──────────────────
+  const monthStatesAsAt = useMemo(() => {
+    const base = revenueMonthStates(revTrackerMonths);
+    return base.map((p) =>
+      p.monthKey > boundaryKey ? { ...p, realised: 0, qb: 0 } : p,
+    );
+  }, [revTrackerMonths, boundaryKey]);
+  const baseStates = useMemo(() => applyGrain(monthStatesAsAt, grain), [monthStatesAsAt, grain]);
+
   const onTrack = useMemo(
-    () => onTrackSeries(monthly, budgetByMonth, frame),
-    [monthly, budgetByMonth, frame],
+    () => onTrackSeries(asAtMonthly, budgetByMonth, frame),
+    [asAtMonthly, budgetByMonth, frame],
   );
-  const onTrackGapValue = useMemo(() => onTrackGap(onTrack, currentYyyyMm), [onTrack]);
-  const gpMonths = useMemo(() => gpMarginSeries(monthly, frame), [monthly, frame]);
+  const onTrackGapValue = useMemo(() => onTrackGap(onTrack, boundaryKey), [onTrack, boundaryKey]);
+  const forecast = useMemo(
+    () => runRateForecast(onTrack, boundaryKey, openMonthKey),
+    [onTrack, boundaryKey, openMonthKey],
+  );
+  const gpMonths = useMemo(() => gpMarginSeries(asAtMonthly, frame), [asAtMonthly, frame]);
   const cashWeeks = useMemo(() => cashByWeekSeries(weeks), [weeks]);
+
+  // Prior-FY series for the compare overlay.
+  const priorMonthly = useMemo(() => priorLinesQuery.data?.monthly ?? [], [priorLinesQuery.data]);
+  const priorBudget = useMemo(
+    () => priorLinesQuery.data?.budgetByMonth ?? { cos: {}, revenue: {} },
+    [priorLinesQuery.data],
+  );
+  const priorFrame = useMemo(() => {
+    if (priorFy == null) return [] as string[];
+    const b = getFinancialYearBounds(priorFy);
+    return fyMonthFrame([], { cos: {}, revenue: {} }, b.startMonthKey, b.endMonthKey);
+  }, [priorFy]);
+  const priorOnTrack = useMemo(
+    () => onTrackSeries(priorMonthly, priorBudget, priorFrame),
+    [priorMonthly, priorBudget, priorFrame],
+  );
+  const priorRealisedByIndex = useMemo(() => {
+    if (!compare) return null;
+    const priorStates = applyGrain(monthStatesSeries(priorMonthly, priorBudget, priorFrame), grain);
+    return alignPriorByIndex(priorStates, baseStates.length, (p) => p.realised);
+  }, [compare, priorMonthly, priorBudget, priorFrame, grain, baseStates.length]);
+
+  const onTrackRows = useMemo(
+    () => buildOnTrackChartRows(onTrack, forecast, compare ? priorOnTrack : null),
+    [onTrack, forecast, compare, priorOnTrack],
+  );
+  const monthStateRows = useMemo(
+    () => buildMonthStateChartRows(baseStates, priorRealisedByIndex),
+    [baseStates, priorRealisedByIndex],
+  );
 
   const nameById = useMemo(() => {
     const m = new Map<number, string>();
@@ -240,9 +428,15 @@ export default function FinanceHomePage() {
     () => topProjectsByGp(byProject, nameById),
     [byProject, nameById],
   );
-  const weakMargins = useMemo<ProjectGpRow[]>(
-    () => weakestMargins(byProject, nameById, 5),
-    [byProject, nameById],
+
+  // Exception watch-list (item 3) — rule-flagged projects from the ledger rollup
+  // + reconciliation drift. Ranked worst-first; capped unless expanded.
+  const exceptions = useMemo(
+    () =>
+      exceptionWatchList(byProject, reconProjects, nameById, {
+        topN: exceptionsExpanded ? Math.max(byProject.length, 8) : 8,
+      }),
+    [byProject, reconProjects, nameById, exceptionsExpanded],
   );
 
   // Current week + negative-cash guard.
@@ -257,14 +451,38 @@ export default function FinanceHomePage() {
   const cashNegativeNoInflows =
     currentWeek != null && currentWeek.availablePayment < 0 && !inflowsLoaded;
 
-  // As-at: latest committed import date.
-  const asOf = useMemo(() => {
-    const dates = (importHealthQuery.data ?? [])
+  // 4-week cash runway (item 9) — current week + next 3, plot availablePayment.
+  const runway = useMemo(() => {
+    const curIdx = weeks.findIndex((w) => w.weekStart <= todayIso && todayIso < w.weekEnd);
+    const startIdx = curIdx >= 0 ? curIdx : weeks.findIndex((w) => w.weekStart <= todayIso);
+    if (startIdx < 0) return [] as { weekStart: string; value: number }[];
+    return weeks
+      .slice(startIdx, startIdx + 4)
+      .map((w) => ({ weekStart: w.weekStart, value: w.availablePayment ?? 0 }));
+  }, [weeks]);
+
+  // ── Import freshness / health chip (item 4) ─────────────────────────────────
+  const importHealthRows = useMemo(() => importHealthQuery.data ?? [], [importHealthQuery.data]);
+  const latestImportIso = useMemo(() => {
+    const dates = importHealthRows
       .map((r) => r.lastImportDate)
       .filter((d): d is string => !!d)
       .sort();
-    return fmtDate(dates[dates.length - 1] ?? null);
-  }, [importHealthQuery.data]);
+    return dates[dates.length - 1] ?? null;
+  }, [importHealthRows]);
+  const importTrackers = useMemo(
+    () => importHealthRows.filter((r) => !!r.lastImportDate).length,
+    [importHealthRows],
+  );
+  const importFlagged = useMemo(
+    () => importHealthRows.filter((r) => (r.unresolvedIssueCount ?? 0) > 0).length,
+    [importHealthRows],
+  );
+  const importParked = useMemo(
+    () => (importAttentionQuery.data?.items ?? []).filter((i) => i.state === "needs_review").length,
+    [importAttentionQuery.data],
+  );
+  const importRelative = latestImportIso ? formatRelativeWithAbsoluteZA(latestImportIso) : null;
 
   // ── All-projects table ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
@@ -276,13 +494,11 @@ export default function FinanceHomePage() {
       return {
         projectId: p.projectId,
         projectName: p.projectName,
-        // Realised basis — sums to the realised KPI headline.
         revenue: m?.realisedRevenue ?? 0,
         gp: m?.realisedGp ?? 0,
         gpPct: m?.realisedGpPct != null ? m.realisedGpPct * 100 : null,
       };
     });
-    // Default ordering: biggest realised revenue first.
     return built.sort((a, b) => b.revenue - a.revenue);
   }, [reconProjects, byProject]);
 
@@ -338,14 +554,132 @@ export default function FinanceHomePage() {
     },
   ];
 
+  // ── Board-ready export (item 7) ─────────────────────────────────────────────
+  const buildExportModel = useCallback((): BoardExportModel => {
+    const byKeyMonthly = new Map(monthly.map((m) => [m.monthKey, m]));
+    const byKeyRev = new Map(revTrackerMonths.map((m) => [m.monthKey, m]));
+    const byKeyOnTrack = new Map(onTrack.map((p) => [p.monthKey, p]));
+    const monthlyRows = frame.map((mk) => {
+      const budget = budgetByMonth.revenue[mk] ?? 0;
+      const planned = byKeyMonthly.get(mk)?.plannedRevenue ?? 0;
+      const beyond = mk > boundaryKey;
+      const realised = beyond ? 0 : byKeyRev.get(mk)?.realisedRevenue ?? 0;
+      const qb = beyond ? 0 : byKeyRev.get(mk)?.qbRevenueActual ?? 0;
+      const ot = byKeyOnTrack.get(mk);
+      return {
+        month: monthLabelFromKey(mk),
+        budget,
+        planned,
+        realised,
+        qb,
+        variance: realised - budget,
+        cumRealised: ot?.cumRealised ?? 0,
+        cumBudget: ot?.cumBudget ?? 0,
+        onTrackGap: ot ? ot.cumRealised - ot.cumBudget : 0,
+      };
+    });
+    const kpis = [
+      { metric: "Revenue recognised", value: formatZar(revenueRecognised) },
+      { metric: `Revenue ${revenueTargetLabel}`, value: formatZar(revenueTarget) },
+      { metric: "Revenue vs target", value: `${formatZar(revVariance)} (${revVsTargetPct}%)` },
+      { metric: "Cost of sales", value: formatZar(realisedCos) },
+      { metric: "COS budget", value: formatZar(cosBudgetFy) },
+      { metric: "Gross profit", value: formatZar(grossProfit) },
+      { metric: "GP margin", value: marginPct != null ? `${marginPct.toFixed(1)}%` : "—" },
+      {
+        metric: "Target margin",
+        value: targetMarginValue != null ? `${targetMarginValue.toFixed(1)}%` : "not set",
+      },
+      {
+        metric: "Projected FY-close (run-rate)",
+        value: forecast.projectedFyClose != null ? formatZar(forecast.projectedFyClose) : "—",
+      },
+      {
+        metric: "Projected gap to budget",
+        value: forecast.gapToBudget != null ? formatZar(forecast.gapToBudget) : "—",
+      },
+      {
+        metric: "Cash available this week",
+        value: currentWeek ? formatZar(currentWeek.availablePayment) : "—",
+      },
+      { metric: "AR overdue (30+ days)", value: formatZar(arPastDue.amount) },
+      { metric: "AP due (30+ days)", value: formatZar(apPastDue.amount) },
+    ];
+    return {
+      fyLabel: fyScope.label,
+      asAtLabel: asAtBasisLabel,
+      basis: "ex-VAT · canonical line-level ledger",
+      kpis,
+      monthly: monthlyRows,
+    };
+  }, [
+    monthly,
+    revTrackerMonths,
+    onTrack,
+    frame,
+    budgetByMonth,
+    boundaryKey,
+    revenueRecognised,
+    revenueTargetLabel,
+    revenueTarget,
+    revVariance,
+    revVsTargetPct,
+    realisedCos,
+    cosBudgetFy,
+    grossProfit,
+    marginPct,
+    targetMarginValue,
+    forecast,
+    currentWeek,
+    arPastDue,
+    apPastDue,
+    fyScope.label,
+    asAtBasisLabel,
+  ]);
+
+  const handleExport = useCallback(
+    (format: "csv" | "xlsx") => {
+      const model = buildExportModel();
+      const filename = `finance-home-board-${fyScope.label.replace(/\s+/g, "-")}`;
+      if (format === "csv") exportBoardCsv(model, filename);
+      else void exportBoardXlsx(model, filename);
+    },
+    [buildExportModel, fyScope.label],
+  );
+
   // ── Month drill ─────────────────────────────────────────────────────────────
   const [drill, setDrill] = useState<MonthDrillTarget | null>(null);
   const openMonth = (monthKey: string) =>
     setDrill({ monthKey, monthLabel: monthLabelFromKey(monthKey) });
 
-  const subtitle = `${fyScope.label} · every figure from your trackers, line-for-line${asOf ? ` · as at ${asOf}` : ""}`;
-  const asAtTag = "FYTD · incl. open month";
+  const subtitle = `${fyScope.label} · every figure from your trackers, line-for-line`;
   const figuresLoading = linesQuery.isLoading;
+
+  // Directional variance callout node (item 1) — colour ONLY signals direction.
+  const varianceCallout = (
+    prefix: string,
+    delta: number,
+    goodWhenNegative: boolean,
+  ) => {
+    const isGood = goodWhenNegative ? delta <= 0 : delta >= 0;
+    const word = goodWhenNegative
+      ? delta <= 0
+        ? "under"
+        : "over"
+      : delta >= 0
+        ? "ahead"
+        : "behind";
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1">
+        <span>{prefix}</span>
+        <MoneyValue value={Math.abs(delta)} align="left" className="text-[11px] font-medium" />
+        <span className="text-slate-300">·</span>
+        <span className={isGood ? "font-medium text-emerald-700" : "font-medium text-status-drift"}>
+          {word}
+        </span>
+      </span>
+    );
+  };
 
   return (
     <PageShell data-testid="finance-home-page">
@@ -354,34 +688,75 @@ export default function FinanceHomePage() {
         title="Finance Home"
         question={subtitle}
         source="Canonical line-level ledger · ex-VAT"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <ImportFreshnessChip
+              relative={importRelative}
+              title={latestImportIso ? `Last committed import · ${latestImportIso}` : undefined}
+              trackers={importTrackers}
+              parked={importParked}
+              flagged={importFlagged}
+            />
+            {canEditBoardTarget && fyScope.fy != null && (
+              <BoardTargetDialog
+                fy={fyScope.fy}
+                fyLabel={fyScope.label}
+                current={boardTarget}
+                onSaved={() => queryClient.invalidateQueries({ queryKey: ["/api/board-targets"] })}
+              />
+            )}
+            <BoardExportMenu onExport={handleExport} disabled={figuresLoading || revFiguresLoading} />
+          </div>
+        }
         period={<FinancialYearScopeControl scope={fyScope} />}
       />
 
-      {/* KPI ROW — the four headline answers (realised, FYTD incl. open month) */}
+      {/* Dashboard controls — as-at basis · grain · prior-FY compare */}
+      <section className="mb-3 flex flex-wrap items-center justify-between gap-2" aria-label="Dashboard controls">
+        <DashboardControls
+          asAt={asAt}
+          onAsAt={setAsAt}
+          grain={grain}
+          onGrain={setGrain}
+          compare={compare}
+          onCompare={(v) => setCompareRaw(v ? "on" : "off")}
+          priorLabel={priorLabel}
+        />
+        <span className="text-[11px] text-slate-400" data-testid="finance-home-asat-note">
+          Realised as at: <span className="font-medium text-slate-600">{asAtBasisLabel}</span>
+          {asAt === "open" && kpi.openGp !== 0 && (
+            <> · open-month MTD GP {formatZarCompact(kpi.openGp)}</>
+          )}
+        </span>
+      </section>
+
+      {/* KPI ROW — the four headline answers (realised, per the as-at basis) */}
       <section className="mb-3" aria-label="Headline finance figures">
         <KpiRow>
           <KpiTile
             data-testid="finance-home-kpi-revenue"
             label="Revenue recognised"
-            description={asAtTag}
+            description={asAtBasisLabel}
             value={revFiguresLoading ? "…" : revFiguresError ? "—" : <MoneyValue value={revenueRecognised} align="left" />}
             tone="positive"
-            progress={!revFiguresError && revenueBudgetFy !== 0 ? { pct: revVsTargetPct, tone: "positive" } : undefined}
+            progress={!revFiguresError && revenueTarget !== 0 ? { pct: revVsTargetPct, tone: "positive" } : undefined}
             supporting={
-              <span className="inline-flex items-center gap-1.5">
-                <span>
-                  {revFiguresError
-                    ? "Revenue source unavailable"
-                    : `vs FY budget ${formatZarCompact(revenueBudgetFy)} · ${revVsTargetPct}%`}
+              revFiguresError ? (
+                "Revenue source unavailable"
+              ) : (
+                <span className="inline-flex flex-wrap items-center gap-1.5">
+                  {varianceCallout(`vs ${revenueTargetLabel} ${formatZarCompact(revenueTarget)} ·`, revVariance, false)}
+                  {!hasBoardRevenueTarget && (
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] border-status-drift/40 text-status-drift"
+                      title={`${fyScope.label} manual monthly budget — provisional until a board FY revenue target is set.`}
+                    >
+                      Provisional
+                    </Badge>
+                  )}
                 </span>
-                <Badge
-                  variant="outline"
-                  className="text-[9px] border-status-drift/40 text-status-drift"
-                  title={`${fyScope.label} manual monthly budget — provisional until a board FY revenue target is set.`}
-                >
-                  Provisional
-                </Badge>
-              </span>
+              )
             }
             href="/revenue-tracker"
           />
@@ -389,25 +764,45 @@ export default function FinanceHomePage() {
           <KpiTile
             data-testid="finance-home-kpi-cos"
             label="Cost of sales"
-            description={asAtTag}
-            value={figuresLoading ? "…" : <MoneyValue value={headline.realisedCos} align="left" />}
+            description={asAtBasisLabel}
+            value={figuresLoading ? "…" : <MoneyValue value={realisedCos} align="left" />}
             tone="default"
-            supporting="Realised COS, line-for-line"
+            supporting={
+              cosBudgetFy !== 0
+                ? varianceCallout("vs budget", cosVariance, true)
+                : "Realised COS, line-for-line"
+            }
             href="/cos"
           />
 
           <KpiTile
             data-testid="finance-home-kpi-gp"
             label="Gross profit"
-            description={asAtTag}
+            description={asAtBasisLabel}
             value={revFiguresLoading ? "…" : gpFiguresError ? "—" : <MoneyValue value={grossProfit} align="left" />}
             tone={gpFiguresError ? "default" : grossProfit >= 0 ? "positive" : "critical"}
             supporting={
-              gpFiguresError
-                ? "Source unavailable"
-                : marginPct != null
-                  ? `Margin ${marginPct.toFixed(1)}%`
-                  : "No realised revenue yet"
+              gpFiguresError ? (
+                "Source unavailable"
+              ) : marginPct == null ? (
+                "No realised revenue yet"
+              ) : targetMarginValue != null ? (
+                <span className="inline-flex flex-wrap items-center gap-1">
+                  <span>margin {marginPct.toFixed(1)}%</span>
+                  <span className="text-slate-300">vs target</span>
+                  <span
+                    className={
+                      marginPct >= targetMarginValue ? "font-medium text-emerald-700" : "font-medium text-status-drift"
+                    }
+                  >
+                    {targetMarginValue.toFixed(1)}%
+                  </span>
+                </span>
+              ) : (
+                <span>
+                  margin {marginPct.toFixed(1)}% · <span className="text-slate-400">no target set</span>
+                </span>
+              )
             }
             href="/finance/gp/company"
           />
@@ -441,8 +836,9 @@ export default function FinanceHomePage() {
                   ? "Inflows not yet loaded — opening + outflows only"
                   : currentWeek.hasAvailPayOverride
                     ? "Manual override in effect"
-                    : "Opening + inflows − outflows"
+                    : "4-week runway →"
             }
+            sparkline={runway.length > 0 ? { content: <RunwaySparkline data={runway} />, widthClass: "w-24" } : undefined}
             href="/cashflow"
           />
         </KpiRow>
@@ -459,19 +855,23 @@ export default function FinanceHomePage() {
             <FinanceLoading label="Loading revenue…" />
           ) : revTrackerQuery.isError ? (
             <FinanceError title="Could not load revenue." onRetry={() => revTrackerQuery.refetch()} />
-          ) : monthStates.length === 0 ? (
+          ) : monthStateRows.length === 0 ? (
             <FinanceEmpty title="No revenue in this FY." />
           ) : (
-            <RevenueStatesChart data={monthStates} onMonthClick={openMonth} />
+            <RevenueStatesChart
+              data={monthStateRows}
+              onMonthClick={grain === "month" ? openMonth : undefined}
+              priorLabel={compare ? priorLabel : undefined}
+            />
           )}
         </ChartCard>
       </section>
 
-      {/* SECTION 5 — On track for the year? */}
+      {/* SECTION 5 — On track for the year? + run-rate forecast */}
       <section className="mb-3">
         <ChartCard
           title="On track for the year?"
-          hint="Cumulative realised vs cumulative budget across the FY."
+          hint="Cumulative realised vs cumulative budget, with a dotted run-rate forecast to FY-close."
           action={
             onTrackGapValue != null ? (
               <Badge
@@ -486,10 +886,27 @@ export default function FinanceHomePage() {
         >
           {figuresLoading ? (
             <FinanceLoading label="Loading…" />
-          ) : onTrack.length === 0 ? (
+          ) : onTrackRows.length === 0 ? (
             <FinanceEmpty title="No revenue in this FY." />
           ) : (
-            <OnTrackChart data={onTrack} />
+            <>
+              <OnTrackChart data={onTrackRows} showForecast priorLabel={compare ? priorLabel : undefined} />
+              {forecast.projectedFyClose != null && (
+                <p className="mt-1 text-[11px] text-slate-500" data-testid="finance-home-forecast-note">
+                  Run-rate forecast:{" "}
+                  <span className="font-medium text-slate-700">
+                    projected {formatZarCompact(forecast.projectedFyClose)}
+                  </span>{" "}
+                  at FY-close ·{" "}
+                  {forecast.gapToBudget != null && (
+                    <span className={forecast.gapToBudget >= 0 ? "font-medium text-emerald-700" : "font-medium text-status-drift"}>
+                      {forecast.gapToBudget >= 0 ? "ahead of" : "behind"} budget {formatZarCompact(Math.abs(forecast.gapToBudget))}
+                    </span>
+                  )}{" "}
+                  <span className="text-slate-400">(forecast — distinct from the actual-to-date gap above)</span>
+                </p>
+              )}
+            </>
           )}
         </ChartCard>
       </section>
@@ -516,7 +933,7 @@ export default function FinanceHomePage() {
         </ChartCard>
       </section>
 
-      {/* SECTION 7 — Top projects by GP · Weakest margins / AR overdue + AP due */}
+      {/* SECTION 7 — Top projects by GP · Exception watch-list + AR/AP */}
       <section className="mb-3 grid gap-3 lg:grid-cols-2">
         <ChartCard title="Top projects by GP" data-testid="finance-home-top-gp">
           {figuresLoading ? (
@@ -528,7 +945,11 @@ export default function FinanceHomePage() {
           )}
         </ChartCard>
 
-        <ChartCard title="Weakest margins · AR overdue + AP due" data-testid="finance-home-risk">
+        <ChartCard
+          title="Exceptions · AR overdue + AP due"
+          hint="Projects flagged by rule: negative GP, sub-5% margin, or app-vs-tracker drift."
+          data-testid="finance-home-risk"
+        >
           <div className="grid grid-cols-2 gap-3">
             <KpiTile
               label="AR overdue"
@@ -544,29 +965,13 @@ export default function FinanceHomePage() {
             />
           </div>
           <div className="mt-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Weakest margins</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+              Exception watch-list
+            </p>
             {figuresLoading ? (
               <FinanceLoading label="Loading…" />
-            ) : weakMargins.length === 0 ? (
-              <p className="text-xs text-slate-400">No project margins yet.</p>
             ) : (
-              <ul className="divide-y divide-slate-100">
-                {weakMargins.map((p) => (
-                  <li key={p.projectId} className="flex items-center justify-between gap-2 py-1 text-sm">
-                    <Link
-                      href={`/projects/${p.projectId}/finance`}
-                      className="truncate font-medium text-slate-700 hover:underline"
-                    >
-                      {p.projectName}
-                    </Link>
-                    <span
-                      className={`tabular-nums font-medium ${(p.gpPct ?? 0) < 0 ? "text-status-adverse" : "text-slate-700"}`}
-                    >
-                      {p.gpPct != null ? `${p.gpPct.toFixed(1)}%` : "—"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <ExceptionWatchList list={exceptions} onViewAll={() => setExceptionsExpanded(true)} />
             )}
           </div>
         </ChartCard>

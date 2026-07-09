@@ -33,7 +33,6 @@ import { recomputeAllDerivedKpis } from "../services/derived-project-kpis-materi
 import { evaluateAppSchemaReadiness } from "./schema-readiness-runtime";
 import { formatPendingSummary, isSchemaBehind } from "../lib/schema-readiness";
 import { formatDriftSummary, getCachedSchemaVerification, isSchemaDrifted } from "../lib/schema-verification";
-import { recordFinanceJobRun } from "../services/finance-observability/job-heartbeats";
 import { errMsg } from "../lib/api-error";
 
 const FIFTEEN_MIN_MS = 15 * 60 * 1000;
@@ -85,12 +84,6 @@ async function runOnce(): Promise<void> {
   try {
     const count = await recomputeAllDerivedKpis();
     lastRunProjectCount = count;
-    await recordFinanceJobRun({
-      jobKey: "derived-project-kpis",
-      status: "success",
-      startedAt,
-      metadata: { projectCount: count },
-    }).catch(() => {});
   } catch (err) {
     lastRunErrored = true;
     // One concise line — the materializer already catches per-project, so this
@@ -98,12 +91,6 @@ async function runOnce(): Promise<void> {
     console.warn(
       `[derived-project-kpis-scheduler] refresh cycle failed: ${errMsg(err)}`,
     );
-    await recordFinanceJobRun({
-      jobKey: "derived-project-kpis",
-      status: "failure",
-      startedAt,
-      error: errMsg(err),
-    }).catch(() => {});
   } finally {
     lastRunFinishedAt = new Date().toISOString();
   }
