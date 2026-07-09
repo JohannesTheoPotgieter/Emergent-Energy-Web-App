@@ -33,6 +33,12 @@ import {
   type ProjectDeliveryMilestone,
 } from "@shared/schema";
 import type { PlanTask } from "../services/execution-board-math";
+// Wire payload types shared with the client (single source of truth). The repo's
+// historical *Row names are kept as aliases so internal call sites don't change.
+import type { InstallerRow, ProcurementDelivery, WorkItemPick } from "@shared/execution-board-types";
+export type { InstallerRow };
+export type ProcurementDeliveryRow = ProcurementDelivery;
+export type WorkItemPickRow = WorkItemPick;
 
 export interface ActiveProjectRow {
   id: number;
@@ -54,30 +60,6 @@ export interface ActiveProjectRow {
   clientHandoverDate: string | null;
 }
 
-export interface InstallerRow {
-  id: number;
-  projectId: number;
-  counterpartyId: number;
-  counterpartyName: string | null;
-  counterpartyType: string | null;
-  /** Per-assignment role on this project (SUBCONTRACTOR_ROLES); falls back to the
-   *  counterparty type for display when not set. */
-  role: string | null;
-  workPackage: string | null;
-  scopeDescription: string | null;
-  status: string;
-}
-
-export interface ProcurementDeliveryRow {
-  id: number;
-  projectId: number;
-  title: string;
-  status: string;
-  requiredDate: string | null;
-  supplierId: number | null;
-  progressPercent: number | null;
-}
-
 /** A procurement order as a planned delivery: its lead-time fields plus the
  *  execution task it feeds (the task's start date is the "needed on site" date). */
 export interface ProcurementDeliveryFullRow {
@@ -97,15 +79,6 @@ export interface ProcurementDeliveryFullRow {
   taskTitle: string | null;
   taskStartDate: string | null;
   taskEndDate: string | null;
-}
-
-/** A work item exposed for the deliveries task picker. */
-export interface WorkItemPickRow {
-  id: number;
-  taskNo: string | null;
-  title: string;
-  startDate: string | null;
-  endDate: string | null;
 }
 
 export interface EngStageRow {

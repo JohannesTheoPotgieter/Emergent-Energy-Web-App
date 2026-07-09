@@ -14,6 +14,25 @@ import type {
   SnagRow,
   ProcurementDeliveryRow,
 } from "../repositories/execution-board-repository";
+// Wire payload types shared with the client (single source of truth) — imported
+// for local use and re-exported so `./execution-board-math` consumers keep
+// resolving them.
+import type {
+  ScheduleSnapshot,
+  NextTask,
+  NextDelivery,
+  WorkstreamSummary,
+  CriticalPathTask,
+  CriticalPathResult,
+} from "@shared/execution-board-types";
+export type {
+  ScheduleSnapshot,
+  NextTask,
+  NextDelivery,
+  WorkstreamSummary,
+  CriticalPathTask,
+  CriticalPathResult,
+};
 
 /**
  * Normalized plan-task shape the schedule/critical-path math operates on.
@@ -134,15 +153,6 @@ export function withComputedExpected(tasks: PlanTask[], today: Date): PlanTask[]
 }
 
 
-export interface ScheduleSnapshot {
-  actualPct: number | null;
-  expectedPct: number | null;
-  variance: number | null;
-  rag: ScheduleRag | null;
-  leafCount: number;
-  hasPlan: boolean;
-}
-
 function leafTasks(tasks: PlanTask[]): PlanTask[] {
   const parentSet = new Set(
     tasks.map((t) => t.parentTaskNo).filter((p): p is string => Boolean(p)),
@@ -183,13 +193,6 @@ export function computeScheduleSnapshot(tasks: PlanTask[]): ScheduleSnapshot {
     leafCount: leaves.length,
     hasPlan: true,
   };
-}
-
-export interface NextTask {
-  taskNo: string | null;
-  taskName: string;
-  date: string | null;
-  isMilestone: boolean;
 }
 
 /** Earliest incomplete leaf task starting within [today, today+daysOut]. */
@@ -242,14 +245,6 @@ export function isDeliveryOverdue(row: { date: string | null; complete: boolean 
   if (row.complete) return false;
   const d = parsePlanDate(row.date);
   return d != null && diffDays(d, today) < 0;
-}
-
-export interface NextDelivery {
-  label: string;
-  date: string | null;
-  rag: ScheduleRag | null;
-  source: "milestone" | "procurement" | "task";
-  blocker?: string | null;
 }
 
 export interface DeliveriesResult {
@@ -319,18 +314,6 @@ export function selectNextDelivery(
  * actual/expected are the same duration-weighted % as the schedule column,
  * scoped to the workstream, and the RAG is schedule-variance based.
  */
-export interface WorkstreamSummary {
-  total: number;
-  complete: number;
-  inProgress: number;
-  notStarted: number;
-  actualPct: number | null;
-  expectedPct: number | null;
-  variance: number | null;
-  rag: ScheduleRag | null;
-  hasPlan: boolean;
-}
-
 export function summarizeWorkstream(tasks: PlanTask[]): WorkstreamSummary {
   const snap = computeScheduleSnapshot(tasks);
   const leaves = leafTasks(tasks);
@@ -462,26 +445,6 @@ function isoDate(d: Date): string {
 /** Inclusive whole-day span between two midnight-aligned dates (min 1). */
 function spanDaysInclusive(start: Date, end: Date): number {
   return Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1);
-}
-
-export interface CriticalPathTask {
-  taskNo: string;
-  taskName: string;
-  start: string | null;
-  end: string | null;
-  durationDays: number;
-}
-
-export interface CriticalPathResult {
-  /** task_no of every task on the critical path. */
-  criticalTaskNos: string[];
-  /** Ordered start→finish chain. */
-  chain: CriticalPathTask[];
-  projectStart: string | null;
-  projectFinish: string | null;
-  spanDays: number | null;
-  /** Number of dated leaf tasks considered. */
-  datedTaskCount: number;
 }
 
 /**

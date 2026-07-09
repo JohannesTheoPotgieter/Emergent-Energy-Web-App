@@ -48,6 +48,31 @@ import {
   type WorkstreamSummary,
   type CriticalPathResult,
 } from "./execution-board-math";
+// Wire payload types shared with the client (single source of truth) — imported
+// for local use and re-exported so `./execution-board-service` consumers keep
+// resolving them.
+import type {
+  InstallerSummary,
+  BoardRow,
+  BoardHeader,
+  BoardResult,
+  PlanTaskView,
+  ProjectDetail,
+  DeliveryProgramRow,
+  UpcomingProgramRow,
+  AllocationProgramRow,
+} from "@shared/execution-board-types";
+export type {
+  InstallerSummary,
+  BoardRow,
+  BoardHeader,
+  BoardResult,
+  PlanTaskView,
+  ProjectDetail,
+  DeliveryProgramRow,
+  UpcomingProgramRow,
+  AllocationProgramRow,
+};
 
 function groupBy<T>(rows: T[], key: (r: T) => number | null | undefined): Map<number, T[]> {
   const out = new Map<number, T[]>();
@@ -83,57 +108,9 @@ async function safe<T>(p: Promise<T>, fallback: T, label: string): Promise<T> {
 
 // ──────────────────────────────── board ─────────────────────────────────────
 
-export interface InstallerSummary {
-  count: number;
-  primary: string | null;
-  list: Array<{ id: number; counterpartyId: number; name: string | null; type: string | null; role: string | null; workPackage: string | null; scopeDescription: string | null }>;
-}
-
-export interface BoardRow {
-  projectId: number;
-  projectName: string;
-  phase: string | null;
-  sizeKwp: string | null;
-  contractValue: string | null;
-  schedule: ScheduleSnapshot & { importedAt: string | null };
-  nextTask: NextTask | null;
-  nextDelivery: NextDelivery | null;
-  /** Per-project count of overdue deliveries — lets the client recompute the
-   *  Overdue-deliveries KPI for the currently filtered (e.g. by-phase) subset. */
-  overdueDeliveryCount: number;
-  installers: InstallerSummary;
-  pmUserId: number | null;
-  pmName: string | null;
-  pdUserId: number | null;
-  pdName: string | null;
-  engineering: WorkstreamSummary;
-  quality: WorkstreamSummary;
-  flags: ExecutionItemCounts;
-  // Editable fields surfaced for the board's inline editors: RAG status
-  // (canonical lifecycle RAG) + Edit Project Info modal.
-  ragStatus: string | null;
-  constructionStartDate: string | null;
-  commissioningDate: string | null;
-  omHandoverDate: string | null;
-  clientHandoverDate: string | null;
-}
-
-export interface BoardHeader {
-  activeCount: number;
-  behindCount: number;
-  ragRed: number;
-  ragAmber: number;
-  ragGreen: number;
-  weightedActual: number | null;
-  weightedExpected: number | null;
-  openFlags: number;
-  overdueDeliveries: number;
-}
-
-export interface BoardResult {
-  header: BoardHeader;
-  rows: BoardRow[];
-}
+// The board payload types (InstallerSummary / BoardRow / BoardHeader /
+// BoardResult) live in @shared/execution-board-types and are re-exported above.
+// BoardRow.flags is ExecutionItemCounts, structurally the shared ItemCounts.
 
 // The Execution board's UNIVERSE — every project the board can show: canonical
 // phases from Financial Close (display position 3) through Compliance Handover,
@@ -320,23 +297,6 @@ export async function getBoard(now: Date = new Date()): Promise<BoardResult> {
 
 // ──────────────────────────────── detail ────────────────────────────────────
 
-export interface PlanTaskView {
-  taskNo: string | null;
-  taskName: string;
-  phase: string | null;
-  parentTaskNo: string | null;
-  isMilestone: boolean;
-  plannedStart: string | null;
-  plannedEnd: string | null;
-  actualStart: string | null;
-  actualEnd: string | null;
-  pctComplete: number | null;
-  expectedPctComplete: number | null;
-  slipDays: number | null;
-  onCriticalPath: boolean;
-  comment: string | null;
-}
-
 function computeSlip(plannedEnd: string | null, actualEnd: string | null, plannedStart: string | null, actualStart: string | null): number | null {
   const pe = parsePlanDate(plannedEnd);
   const ae = parsePlanDate(actualEnd);
@@ -345,36 +305,6 @@ function computeSlip(plannedEnd: string | null, actualEnd: string | null, planne
   const as = parsePlanDate(actualStart);
   if (ps && as) return diffDays(as, ps);
   return null;
-}
-
-export interface ProjectDetail {
-  project: {
-    id: number;
-    projectName: string;
-    phase: string | null;
-    sizeKwp: string | null;
-    contractValue: string | null;
-    pmUserId: number | null;
-    pmName: string | null;
-    pdUserId: number | null;
-    pdName: string | null;
-    latestUpdate: string | null;
-    latestUpdateBy: string | null;
-    latestUpdateAt: string | null;
-  };
-  schedule: ScheduleSnapshot & { importedAt: string | null; runId: number | null };
-  criticalPath: CriticalPathResult;
-  planTasks: PlanTaskView[];
-  installers: InstallerRow[];
-  deliveries: {
-    milestones: ProjectDeliveryMilestone[];
-    procurement: ProcurementDeliveryRow[];
-    tasks: DeliveryProgramRow[];
-    next: NextDelivery | null;
-    overdueCount: number;
-  };
-  engineering: WorkstreamSummary;
-  quality: WorkstreamSummary;
 }
 
 export async function getProjectDetail(projectId: number, now: Date = new Date()): Promise<ProjectDetail | null> {
@@ -490,15 +420,6 @@ export async function getQualitySummary(projectId: number, now: Date = new Date(
 
 // ──────────────────────────── program-wide lists ─────────────────────────────
 
-export interface UpcomingProgramRow {
-  projectId: number;
-  projectName: string;
-  taskNo: string | null;
-  taskName: string;
-  date: string | null;
-  isMilestone: boolean;
-}
-
 export async function getUpcomingProgram(daysOut = 14, now: Date = new Date()): Promise<UpcomingProgramRow[]> {
   const today = startOfDay(now);
   // Same project universe as the board (active-only + Financial-Close-forward
@@ -532,29 +453,8 @@ export async function getUpcomingProgram(daysOut = 14, now: Date = new Date()): 
   return out;
 }
 
-export interface DeliveryProgramRow {
-  projectId: number;
-  projectName: string;
-  label: string;
-  date: string | null; // sort/anchor date — the needed-on-site date
-  rag: ScheduleRag | null; // for procurement: the will-it-make-it signal
-  source: "milestone" | "procurement" | "task";
-  overdue: boolean;
-  complete: boolean;
-  // ── delivery planning (procurement orders only) ──
-  id?: number; // procurement_items.id — present on editable rows
-  editable?: boolean;
-  linkedWorkItemId?: number | null;
-  neededBy?: string | null; // from the linked execution task's start date
-  leadTimeDays?: number | null;
-  orderDate?: string | null;
-  orderBy?: string | null; // latest safe order date = neededBy − leadTime
-  eta?: string | null; // orderDate + leadTime, once ordered
-  willMakeIt?: ScheduleRag | null;
-  taskNo?: string | null;
-  taskTitle?: string | null;
-  isLongLead?: boolean;
-}
+// DeliveryProgramRow lives in @shared/execution-board-types (re-exported above);
+// its `rag`/`willMakeIt` are the shared Rag (= the server's ScheduleRag | null).
 
 /** yyyy-mm-dd shifted by n days (n may be negative). */
 function shiftIso(iso: string | null, days: number): string | null {
@@ -742,15 +642,6 @@ export async function getDeliveriesProgram(now: Date = new Date()): Promise<Deli
   }
   out.sort((a, b) => (parsePlanDate(a.date)?.getTime() ?? Infinity) - (parsePlanDate(b.date)?.getTime() ?? Infinity));
   return out;
-}
-
-export interface AllocationProgramRow {
-  projectId: number;
-  projectName: string;
-  phase: string | null;
-  installers: InstallerSummary;
-  pmName: string | null;
-  pmUserId: number | null;
 }
 
 export async function getAllocationsProgram(): Promise<AllocationProgramRow[]> {
