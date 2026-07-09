@@ -809,7 +809,15 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   const governanceFocusItems = workspaceData?.focusItems || [];
   const relevantMicrosoftItems = workspaceData?.relevantMicrosoftItems || [];
 
+  // Task 2.3: per-render memo. getPhaseProgress is O(groups×items×instances)
+  // and is called once per phase in the tab header plus for the selected phase;
+  // caching within a render avoids recomputing the same phase multiple times.
+  const phaseProgressCache = new Map<number, {
+    total: number; applicable: number; completed: number; failed: number; inReview: number; percent: number;
+  }>();
   const getPhaseProgress = (phaseId: number) => {
+    const cached = phaseProgressCache.get(phaseId);
+    if (cached) return cached;
     const phaseGroups = groups.filter((g: any) => g.templatePhaseId === phaseId);
     const phaseGroupIds = phaseGroups.map((g: any) => g.id);
     const phaseTemplateItemIds = templateItems
@@ -820,7 +828,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     const passed = applicable.filter((i: any) => getItemQmStatus(i) === "pass");
     const failed = applicable.filter((i: any) => getItemQmStatus(i) === "fail");
     const inReview = applicable.filter((i: any) => getItemQmStatus(i) === "review");
-    return {
+    const result = {
       total: phaseInstances.length,
       applicable: applicable.length,
       completed: passed.length,
@@ -828,6 +836,8 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
       inReview: inReview.length,
       percent: applicable.length > 0 ? Math.round((passed.length / applicable.length) * 100) : 0,
     };
+    phaseProgressCache.set(phaseId, result);
+    return result;
   };
 
   const getItemInstance = (templateItemId: number) => itemInstances.find((ii: any) => ii.templateItemId === templateItemId);
@@ -882,14 +892,12 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   const handleBulkStatusChange = async (newStatus: string) => {
     const ids = Array.from(selectedItems);
     setSelectedItems(new Set());
-    let failCount = 0;
-    for (const id of ids) {
-      try {
-        await updateItemMutation.mutateAsync({ itemInstanceId: id, updates: { qmStatus: newStatus } });
-      } catch {
-        failCount++;
-      }
-    }
+    // Task 2.3: batch — issue the updates in parallel instead of awaiting each
+    // one sequentially.
+    const results = await Promise.allSettled(
+      ids.map((id) => updateItemMutation.mutateAsync({ itemInstanceId: id, updates: { qmStatus: newStatus } })),
+    );
+    const failCount = results.filter((r) => r.status === "rejected").length;
     if (failCount > 0) {
       toast({ title: "Partial failure", description: `${failCount} of ${ids.length} item(s) failed to update.`, variant: "destructive" });
     } else if (ids.length > 0) {
@@ -965,18 +973,15 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
 
     const ids = Array.from(selectedItems);
     setBulkSubmitting(true);
-    const failures: Array<{ id: number; reason: string }> = [];
-    let successCount = 0;
-    for (const id of ids) {
-      try {
-        // Bypass mutation hook to avoid per-item toasts/invalidations
-        await sendForApprovalRaw(id, bulkApprover);
-        successCount++;
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : "Unknown error";
-        failures.push({ id, reason });
-      }
-    }
+    // Task 2.3: batch — bypass the mutation hook (no per-item toast/invalidate)
+    // and send all approvals in parallel; invalidate once at the end.
+    const results = await Promise.allSettled(ids.map((id) => sendForApprovalRaw(id, bulkApprover)));
+    const successCount = results.filter((r) => r.status === "fulfilled").length;
+    const failures: Array<{ id: number; reason: string }> = results.flatMap((r, i) =>
+      r.status === "rejected"
+        ? [{ id: ids[i], reason: r.reason instanceof Error ? r.reason.message : "Unknown error" }]
+        : [],
+    );
     setBulkSubmitting(false);
     setBulkApproverDialogOpen(false);
     setBulkApprover("");
@@ -1377,12 +1382,12 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                     <PackagePlus className="w-3 h-3" /> Create handover pack
                   </Button>
                 )}
-                <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => handleBulkStatusChange("pass")} data-testid="bulk-pass">
+                <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => handleBulkStatusChange("pass")} disabled={updateItemMutation.isPending} data-testid="bulk-pass">
                   <CheckCircle className="w-3 h-3 mr-1" /> Pass
                 </Button>
-                <Button size="sm" className="h-7 text-xs bg-amber-500 hover:bg-amber-600" onClick={() => handleBulkStatusChange("review")} data-testid="bulk-review">Review</Button>
-                <Button size="sm" className="h-7 text-xs" variant="destructive" onClick={() => handleBulkStatusChange("fail")} data-testid="bulk-fail">Fail</Button>
-                <Button size="sm" className="h-7 text-xs" variant="outline" onClick={() => handleBulkStatusChange("na")} data-testid="bulk-na">N/A</Button>
+                <Button size="sm" className="h-7 text-xs bg-amber-500 hover:bg-amber-600" onClick={() => handleBulkStatusChange("review")} disabled={updateItemMutation.isPending} data-testid="bulk-review">Review</Button>
+                <Button size="sm" className="h-7 text-xs" variant="destructive" onClick={() => handleBulkStatusChange("fail")} disabled={updateItemMutation.isPending} data-testid="bulk-fail">Fail</Button>
+                <Button size="sm" className="h-7 text-xs" variant="outline" onClick={() => handleBulkStatusChange("na")} disabled={updateItemMutation.isPending} data-testid="bulk-na">N/A</Button>
                 <Button size="sm" className="h-7 text-xs" variant="ghost" onClick={() => setSelectedItems(new Set())} data-testid="bulk-clear">
                   <X className="w-3 h-3 mr-1" /> Clear
                 </Button>
