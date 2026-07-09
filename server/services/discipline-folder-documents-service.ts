@@ -14,7 +14,6 @@ import {
   listManagedDocumentsByProject,
   setDisciplineFolderId,
   getManagedDocumentByDriveItem,
-  upsertManagedDocumentFromGraph,
 } from "../repositories/managed-documents-repository";
 import { getLock } from "../repositories/document-locks-repository";
 import { notFound } from "../lib/api-error";
@@ -181,15 +180,14 @@ export interface BoundFolderItemDetail {
 
 /**
  * Fetch a single item under a project's bound discipline folder with its
- * tracked-document + lock overlay. Mirrors the company-scope item handler:
- * for a file we ensure a managed_documents tracking row exists (so revisions /
- * comments / checkout / request-approval can attach), tagging it with the
- * bound discipline folder id. Folders are returned untracked.
+ * tracked-document + lock overlay. READ-ONLY: it surfaces whatever tracking row
+ * already exists (created by explicit write actions) but never creates or tags
+ * one — a documents:view GET must not mutate state. Folders are returned
+ * untracked.
  */
 export async function getBoundFolderItem(
   resolved: ResolvedBoundFolder,
   itemId: string,
-  userId: number,
 ): Promise<BoundFolderItemDetail> {
   const item = await getItem(resolved.driveId, itemId);
   if (!item) throw notFound("Item");
@@ -198,29 +196,14 @@ export async function getBoundFolderItem(
     return { item, managedDocument: null, lock: null };
   }
 
-  // Ensure a tracking row exists for this file (project scope), tagged with the
-  // bound discipline folder so the approval engine resolves the discipline ACL.
-  let tracked = await getManagedDocumentByDriveItem(resolved.driveId, itemId);
-  if (!tracked) {
-    tracked = await upsertManagedDocumentFromGraph({
-      rootScope: "project",
-      projectId: resolved.binding.projectId,
-      companyRootId: null,
-      driveId: resolved.driveId,
-      driveItemId: item.id,
-      name: item.name,
-      path: item.path,
-      createdByUserId: userId,
-    });
-  }
-  if (tracked && tracked.disciplineFolderId !== resolved.binding.id) {
-    try {
-      await setDisciplineFolderId(tracked.id, resolved.binding.id);
-      tracked = { ...tracked, disciplineFolderId: resolved.binding.id };
-    } catch (err) {
-      console.error("[discipline-folder-documents] disciplineFolderId tag-on-detail failed:", err);
-    }
-  }
+  // READ-ONLY: a documents:view GET must NOT mutate state, so a read-only user
+  // can never trigger writes and a write failure can never 500 the detail view.
+  // The tracking row is created by explicit write actions (upload / checkout /
+  // request-approval via document-workflow-service), and the disciplineFolderId
+  // association is reconciled by the list-path best-effort backfill
+  // (`listBoundFolderDocuments` / `listBoundFolderChildren`). Here we only READ
+  // whatever tracking row already exists.
+  const tracked = await getManagedDocumentByDriveItem(resolved.driveId, itemId);
 
   const lock = tracked ? await getLock(tracked.id) : null;
   return {
